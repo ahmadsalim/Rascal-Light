@@ -1,6 +1,8 @@
 package syntax
 
 
+case class Module(defs: Seq[Def])
+
 sealed trait Def
 case class GlobalVarDef(typ: Type, name: VarName, initialValue: Expr) extends Def
 case class FunDef(returntype: Type, name: VarName, parameters: Seq[Parameter], body: Expr) extends Def
@@ -14,7 +16,8 @@ sealed trait Basic
 case class IntLit(i: Int) extends Basic
 case class StringLit(s: String) extends Basic
 
-sealed trait Expr extends Basic
+sealed trait Expr
+case class BasicExpr(b: Basic) extends Expr
 case class VarExpr(name: VarName) extends Expr
 case class UnaryExpr(name: OpName, operand : Expr) extends Expr
 case class BinaryExpr(left: Expr, name: OpName, right: Expr) extends Expr
@@ -22,6 +25,8 @@ case class ConstructorExpr(name: ConsName, args: Seq[Expr]) extends Expr
 case class ListExpr(elements: Seq[Expr]) extends Expr
 case class SetExpr(elements: Seq[Expr]) extends Expr
 case class MapExpr(keyvalues: Seq[(Expr, Expr)]) extends Expr
+case class LookupExpr(emap: Expr, ekey: Expr) extends Expr
+case class UpdateExpr(emap: Expr, ekey: Expr, eval: Expr) extends Expr
 case class FunCallExpr(functionName: VarName, args: Seq[Expr]) extends Expr
 case class ReturnExpr(result: Expr) extends Expr
 case class AssignExpr(name: VarName, expr : Expr) extends Expr
@@ -54,7 +59,8 @@ case object BottomUpBreak extends Strategy
 case object Innermost extends Strategy
 case object Outermost extends Strategy
 
-sealed trait Patt extends Basic
+sealed trait Patt
+case class BasicPatt(b: Basic) extends Patt
 case class VarPatt(name: VarName) extends Patt
 case class ConstructorPatt(name: ConsName, patst: Seq[Patt]) extends Patt
 case class LabelledTypedPatt(typ: TypeName, labelVar: VarName, patt: Patt) extends Patt
@@ -62,14 +68,16 @@ case class ListPatt(spatts: Seq[StarPatt]) extends Patt
 case class SetPatt(spatts: Seq[StarPatt]) extends Patt
 case class DescendantPatt(patt: Patt) extends Patt
 
-sealed trait StarPatt extends Patt
+sealed trait StarPatt
+case class OrdinaryPatth(p: Patt) extends StarPatt
 case class ArbitraryPatt(name: VarName) extends StarPatt
 
 sealed trait BasicType
 case object IntType extends BasicType
 case object StringType extends BasicType
-sealed trait Type extends BasicType
-case class AstType(name: TypeName) extends Type
+sealed trait Type
+case class BaseType(b: BasicType) extends Type
+case class DataType(name: TypeName) extends Type
 case class ListType(elementType: Type) extends Type
 case class SetType(elementType: Type) extends Type
 case class MapType(keyType: Type, valueType: Type) extends Type
