@@ -6,7 +6,7 @@ import scalaz.syntax.traverse._
 import scalaz.std.option._
 import scalaz.std.list._
 
-class Typing(module: Module) {
+case class Typing(module: Module) {
 
   private def lub(types: List[Type]): Type =
     types.fold(VoidType) { (t1, t2) =>

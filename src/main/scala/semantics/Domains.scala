@@ -1,6 +1,6 @@
 package semantics
 
-import syntax._
+import syntax.{Module => _, _}
 
 case class Module( globalVars: Map[VarName, Type]
                  , funs: Map[VarName, (Type, List[Parameter], Expr)]
@@ -29,3 +29,12 @@ case object Break extends Exceptional
 case object Continue extends Exceptional
 case object Fail extends Exceptional
 case object Error extends Exceptional
+
+object Domains {
+  val prelude = Module(Map.empty, Map.empty,
+    Map("Bool" -> List("true", "false"), "NoKey" -> List("nokey"), "Pair" -> List("pair")),
+    Map("true" -> ("Bool", List()),
+        "false" -> ("Bool", List()),
+        "nokey" -> ("NoKey", List(Parameter(ValueType, "key"))),
+        "pair" -> ("Pair", List(Parameter(ValueType, "fst"), Parameter(ValueType, "snd")))))
+}
