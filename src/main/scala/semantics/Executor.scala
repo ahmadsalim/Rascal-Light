@@ -2,12 +2,13 @@ package semantics
 
 import syntax.{Module => _, _}
 
-import scala.collection.immutable.Nil
+import scala.collection.immutable.{::, Nil}
 import scalaz.\/
 import scalaz.std.list._
+import scalaz.std.option._
 import scalaz.syntax.either._
 import scalaz.syntax.foldable._
-import scalaz.syntax.monad._
+import scalaz.syntax.monadPlus._
 
 object Executor {
   private
@@ -16,12 +17,123 @@ object Executor {
   private
   def evalBinary(lhvl: Value, op: OpName, rhvl: Value): Result[Value] = ???
 
+  private def children(v: Value): List[Value] = v match {
+    case ConstructorValue(_, vals) => vals.toList
+    case ListValue(vals) => vals
+    case SetValue(vals) => vals.toList
+    case MapValue(vals) => vals.keySet.toList ++ vals.values.toList
+    case _ => List()
+  }
+
+  def matchPatt(module: Module, store : Store, tval: Value, patt: Patt): List[Map[VarName, Value]] = {
+    val typing = Typing(module)
+    def mergePairs(pairs: List[(Map[VarName, Value], Map[VarName, Value])]): List[Map[VarName, Value]] =
+      pairs.map { case (env1, env2) =>
+        if (env1.keySet.intersect(env2.keySet).forall(x => env1(x) == env2(x))) Some(env1 ++ env2)
+        else None
+      }.unite
+    def merge(envss: List[List[Map[VarName, Value]]]): List[Map[VarName, Value]] =
+      envss.foldLeft(List(Map[VarName, Value]())) { (envs, merged) =>
+        mergePairs(envs.flatMap(env => merged.map(menv => (env, menv))))
+      }
+    def matchPattAll(module: Module, store: Store, vals: List[Value], spatts: List[StarPatt],
+                     extract: Value => Option[List[Value]],
+                     allPartitions: (List[Value]) => List[List[Value]],
+                     restPartition: (List[Value], List[Value]) => Option[List[Value]]): List[Map[VarName, Value]] = spatts match {
+      case Nil => if (vals.isEmpty) List() else List(Map())
+      case sp :: sps =>
+        sp match {
+          case OrdinaryPatt(p) => vals match {
+            case Nil => List()
+            case v :: vs =>
+              merge(List(matchPatt(module, store, v, p),
+                matchPattAll(module, store, vs, sps, extract, allPartitions, restPartition)))
+          }
+          case ArbitraryPatt(sx) =>
+            if (store.map.contains(sx)) {
+              extract(store.map(sx)) match {
+                case Some(vs) =>
+                  restPartition(vs, vals) match {
+                    case Some(vs_) => matchPattAll(module, store, vs_, sps, extract, allPartitions, restPartition)
+                    case None => List()
+                  }
+                case None => List()
+              }
+            }
+            else ???
+        }
+    }
+    patt match {
+      case BasicPatt(b) => tval match {
+        case BasicValue(bv) if b == bv => List(Map())
+        case _ => List()
+      }
+      case VarPatt(x) =>
+        if (store.map.contains(x))
+          if (store.map(x) == tval) List(Map())
+          else List()
+        else List(Map(x -> tval))
+      case ConstructorPatt(k, pats) =>
+        tval match {
+          case ConstructorValue(k2, vals) if k == k2 && pats.length == vals.length =>
+            merge(pats.toList.zip(vals.toList).map { case (p, v) => matchPatt(module, store, v, p) })
+          case _ => List()
+        }
+      case LabelledTypedPatt(typ, labelVar, inpatt) =>
+        if (typing.checkType(tval, typ)) merge(List(List(Map(labelVar -> tval)), matchPatt(module, store, tval, inpatt)))
+        else List()
+      case ListPatt(spatts) =>
+        def extractList(v: Value): Option[List[Value]] = v match {
+          case ListValue(vals) => Some(vals)
+          case _ => None
+        }
+        def sublists(vs: List[Value]): List[List[Value]] =
+          vs.foldRight(List(List[Value]())) { (x, sxs) =>
+            List() :: sxs.map(x :: _)
+          }
+        tval match {
+          case ListValue(vals) => matchPattAll(module, store, vals, spatts.toList, extractList, sublists)
+          case _ => List()
+        }
+      case SetPatt(spatts) =>
+        def extractSet(v: Value): Option[List[Value]] = v match {
+          case SetValue(vals) => Some(vals.toList)
+          case _ => None
+        }
+        def subsets(vs: List[Value]): List[List[Value]] =
+          vs.foldRight(List(List[Value]())) { (x, sxs) =>
+            sxs ++ sxs.map(x :: _)
+          }
+        tval match {
+          case SetValue(vals) => matchPattAll(module, store, vals.toList, spatts.toList, extractSet, subsets)
+          case _ => List()
+        }
+      case DescendantPatt(inpatt) => matchPatt(module, store, tval, inpatt) ++
+        children(tval).flatMap(cv => matchPatt(module, store, cv, DescendantPatt(inpatt)))
+    }
+  }
+
   def eval(module: Module, store: Store, expr: Expr): (Result[Value], Store) = {
     val typing = Typing(module)
 
+    def evalVisit(strategy: Strategy, localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) = ???
+
+    def evalCases(localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) = ???
+
     def evalEach(localVars: Map[VarName, Type], store: Store, envs: List[Map[VarName, Value]], body: Expr): (Result[Unit], Store) = envs match {
       case Nil => (().point[Result], store)
-      case env :: envs => ???
+      case env :: envs_ =>
+        val (bodyres, store_) = evalLocal(localVars, store.copy(store.map ++ env), body)
+        bodyres match {
+          case SuccessResult(vl) =>
+            evalEach(localVars, store_, envs_, body)
+          case ExceptionalResult(exres) =>
+            exres match {
+              case Break => (().point[Result], store_)
+              case Continue => evalEach(localVars, store_, envs_, body)
+              case _ => (ExceptionalResult(exres), store_)
+            }
+        }
     }
 
     def evalLocalAll(localVars: Map[VarName, Type], store: Store, exprs: Seq[Expr]): (Result[List[Value]], Store) = {
@@ -37,7 +149,27 @@ object Executor {
       (res.map(_.reverse), store_)
     }
 
-    def evalEnum(localVars: Map[VarName, Type], store: Store, enum: Enum): (Result[List[Map[VarName, Value]]], Store) = ???
+    def evalEnum(localVars: Map[VarName, Type], store: Store, enum: Enum): (Result[List[Map[VarName, Value]]], Store) =
+      enum match {
+        case MatchAssign(patt, target) =>
+          val (tres, store_) = evalLocal(localVars, store, target)
+          tres match {
+            case SuccessResult(tval) => (matchPatt(module, store_, tval, patt).point[Result], store_)
+            case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+          }
+        case EnumAssign(varname, target) =>
+          val (tres, store_) = evalLocal(localVars, store, target)
+          tres match {
+            case SuccessResult(tval) =>
+              tval match {
+                case ListValue(vals) => (vals.map(vl => Map(varname -> vl)).point[Result], store_)
+                case SetValue(vals) => (vals.toList.map(vl => Map(varname -> vl)).point[Result], store_)
+                case MapValue(vals) => (vals.keys.toList.map(vl => Map(varname -> vl)).point[Result], store_)
+                case _ => (ExceptionalResult(Error), store_)
+              }
+            case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+          }
+      }
 
     def evalLocal(localVars: Map[VarName, Type], store: Store, expr: Expr): (Result[Value], Store) =
       expr match {
@@ -183,8 +315,36 @@ object Executor {
               }
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
-        case SwitchExpr(scrutinee, cases) => ???
-        case VisitExpr(strategy, scrutinee, cases) => ???
+        case SwitchExpr(scrutinee, cases) =>
+          val (scrres, store__) = evalLocal(localVars, store, scrutinee)
+          scrres match {
+            case SuccessResult(scrval) =>
+              val (caseres, store_) = evalCases(localVars, store__, scrval, cases.toList)
+              caseres match {
+                case SuccessResult(caseval) => (caseval.point[Result], store_)
+                case ExceptionalResult(exres) =>
+                  exres match {
+                    case Fail => (BottomValue.point[Result], store_)
+                    case _ => (ExceptionalResult(exres), store_)
+                  }
+              }
+            case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+          }
+        case VisitExpr(strategy, scrutinee, cases) =>
+          val (scrres, store__) = evalLocal(localVars, store, scrutinee)
+          scrres match {
+            case SuccessResult(scrval) =>
+              val (caseres, store_) = evalVisit(strategy, localVars, store__, scrval, cases.toList)
+              caseres match {
+                case SuccessResult(caseval) => (caseval.point[Result], store_)
+                case ExceptionalResult(exres) =>
+                  exres match {
+                    case Fail => (BottomValue.point[Result], store_)
+                    case _ => (ExceptionalResult(exres), store_)
+                  }
+              }
+            case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+          }
         case BreakExpr => (ExceptionalResult(Break), store)
         case ContinueExpr => (ExceptionalResult(Continue), store)
         case FailExpr => (ExceptionalResult(Fail), store)
@@ -206,8 +366,44 @@ object Executor {
               (bodyres.map{_ => BottomValue}, store_)
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
-        case WhileExpr(cond, body) => ???
-        case SolveExpr(vars, body) => ???
+        case WhileExpr(cond, body) =>
+          def loopWhile(store: Store): (Result[Unit], Store) = {
+            val (condres, store__) = evalLocal(localVars, store, cond)
+            condres match {
+              case SuccessResult(condval) =>
+                condval match {
+                  case ConstructorValue("true", Seq()) =>
+                    val (condres, store_) = evalLocal(localVars, store__, body)
+                    condres match {
+                      case SuccessResult(_) =>
+                        loopWhile(store_)
+                      case ExceptionalResult(exres) =>
+                        exres match {
+                          case Break => (().point[Result], store_)
+                          case Continue => loopWhile(store_)
+                          case _ => (ExceptionalResult(exres), store_)
+                        }
+                    }
+                  case ConstructorValue("false", Seq()) => (().point[Result], store__)
+                  case _ => (ExceptionalResult(Error), store__)
+                }
+              case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+            }
+          }
+          val (res, store_) = loopWhile(store)
+          (res.map(_ => BottomValue), store_)
+        case SolveExpr(vars, body) =>
+          def loopSolve(store: Store): (Result[Value], Store) = {
+            val (bodyres, store_) = evalLocal(localVars, store, body)
+            bodyres match {
+              case SuccessResult(v) =>
+                if (vars.toList.map(store.map).zip(vars.toList.map(store_.map)).forall { case (v1, v2) => v1 == v2 })
+                  (SuccessResult(v), store_)
+                else loopSolve(store_)
+              case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+            }
+          }
+          loopSolve(store)
         case ThrowExpr(evl) =>
           val (res, store_) = evalLocal(localVars, store, evl)
           res match {
