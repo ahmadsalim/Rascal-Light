@@ -14,17 +14,52 @@ import scalaz.syntax.monadPlus._
 import fs2.{Pure, Stream}
 
 object Executor {
+
+  private
+  def evalUnary(op: OpName, vl: Value): Result[Value] = (op, vl) match {
+    case ("-", BasicValue(IntLit(i))) => BasicValue(IntLit(-i)).point[Result]
+    case ("!", ConstructorValue("true", Seq())) => ConstructorValue("false", Seq()).point[Result]
+    case ("!", ConstructorValue("false", Seq())) => ConstructorValue("true", Seq()).point[Result]
+    case _ => ExceptionalResult(Error)
+  }
+
+  private
+  def evalBinary(lhvl: Value, op: OpName, rhvl: Value): Result[Value] =
+    (lhvl, op, rhvl) match {
+      case (lhvl, "==", rhvl) =>
+        (if (lhvl == rhvl) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
+      case (lhvl, "!=", rhvl) =>
+        (if (lhvl != rhvl) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
+      case (lhvl, "in", ListValue(vs)) =>
+        (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
+      case (lhvl, "in", SetValue(vs)) =>
+        (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
+      case (lhvl, "in", MapValue(vs)) =>
+        (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
+      case (lhvl, "notin", rhvl) => evalBinary(lhvl, "in", rhvl).flatMap(v => evalUnary("!", v))
+      case (ConstructorValue("false", Seq()), "&&", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
+        ConstructorValue("false", Seq()).point[Result]
+      case (ConstructorValue("true", Seq()), "&&", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
+        ConstructorValue(bnm, Seq()).point[Result]
+      case (ConstructorValue("true", Seq()), "||", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
+        ConstructorValue("true", Seq()).point[Result]
+      case (ConstructorValue("false", Seq()), "||", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
+        ConstructorValue(bnm, Seq()).point[Result]
+      case (MapValue(vs), "delete", rhvl) => MapValue(vs - rhvl).point[Result]
+      case (BasicValue(StringLit(s1)), "+", BasicValue(StringLit(s2))) => BasicValue(StringLit(s1 + s2)).point[Result]
+      case (BasicValue(IntLit(i1)), "+", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 + i2)).point[Result]
+      case (BasicValue(IntLit(i1)), "-", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 - i2)).point[Result]
+      case (BasicValue(IntLit(i1)), "*", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 * i2)).point[Result]
+      case (BasicValue(IntLit(i1)), "/", BasicValue(IntLit(i2))) if i2 != 0 => BasicValue(IntLit(i1 / i2)).point[Result]
+      case (BasicValue(IntLit(i1)), "%", BasicValue(IntLit(i2))) if i2 > 0 => BasicValue(IntLit(i1 % i2)).point[Result]
+      case _ => ExceptionalResult(Error)
+    }
+
   private
   def ifFail(rs1: Result[Value], v: Value): Result[Value] = rs1 match {
     case ExceptionalResult(Fail) => v.point[Result]
     case _ => rs1
   }
-
-  private
-  def evalUnary(op: OpName, vl: Value): Result[Value] = ???
-
-  private
-  def evalBinary(lhvl: Value, op: OpName, rhvl: Value): Result[Value] = ???
 
   def matchPatt(module: Module, store : Store, tval: Value, patt: Patt): Stream[Pure, Map[VarName, Value]] = {
     val typing = Typing(module)
