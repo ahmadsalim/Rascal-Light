@@ -3,6 +3,7 @@ package semantics
 import syntax.{Module => _, _}
 
 import scala.collection.immutable.{::, Nil}
+
 import scalaz.\/
 import scalaz.std.list._
 import scalaz.std.option._
@@ -10,131 +11,263 @@ import scalaz.syntax.either._
 import scalaz.syntax.foldable._
 import scalaz.syntax.monadPlus._
 
+import fs2.{Pure, Stream}
+
 object Executor {
+  private
+  def ifFail(rs1: Result[Value], v: Value): Result[Value] = rs1 match {
+    case ExceptionalResult(Fail) => v.point[Result]
+    case _ => rs1
+  }
+
   private
   def evalUnary(op: OpName, vl: Value): Result[Value] = ???
 
   private
   def evalBinary(lhvl: Value, op: OpName, rhvl: Value): Result[Value] = ???
 
-  private def children(v: Value): List[Value] = v match {
-    case ConstructorValue(_, vals) => vals.toList
-    case ListValue(vals) => vals
-    case SetValue(vals) => vals.toList
-    case MapValue(vals) => vals.keySet.toList ++ vals.values.toList
-    case _ => List()
-  }
-
-  def matchPatt(module: Module, store : Store, tval: Value, patt: Patt): List[Map[VarName, Value]] = {
+  def matchPatt(module: Module, store : Store, tval: Value, patt: Patt): Stream[Pure, Map[VarName, Value]] = {
     val typing = Typing(module)
-    def mergePairs(pairs: List[(Map[VarName, Value], Map[VarName, Value])]): List[Map[VarName, Value]] =
+    def mergePairs(pairs: Stream[Pure, (Map[VarName, Value], Map[VarName, Value])]): Stream[Pure, Map[VarName, Value]] =
       pairs.map { case (env1, env2) =>
         if (env1.keySet.intersect(env2.keySet).forall(x => env1(x) == env2(x))) Some(env1 ++ env2)
         else None
-      }.unite
-    def merge(envss: List[List[Map[VarName, Value]]]): List[Map[VarName, Value]] =
-      envss.foldLeft(List(Map[VarName, Value]())) { (envs, merged) =>
+      }.filter(_.isDefined).map(_.get)
+    def merge(envss: List[Stream[Pure, Map[VarName, Value]]]): Stream[Pure, Map[VarName, Value]] =
+      envss.foldLeft(Stream(Map[VarName, Value]())) { (envs, merged) =>
         mergePairs(envs.flatMap(env => merged.map(menv => (env, menv))))
       }
     def matchPattAll(module: Module, store: Store, vals: List[Value], spatts: List[StarPatt],
                      extract: Value => Option[List[Value]],
-                     allPartitions: (List[Value]) => List[List[Value]],
-                     restPartition: (List[Value], List[Value]) => Option[List[Value]]): List[Map[VarName, Value]] = spatts match {
-      case Nil => if (vals.isEmpty) List() else List(Map())
+                     construct: List[Value] => Value,
+                     allPartitions: (List[Value]) => Stream[Pure, List[Value]],
+                     restPartition: (List[Value], List[Value]) => Option[List[Value]]): Stream[Pure, Map[VarName, Value]] = spatts match {
+      case Nil => if (vals.isEmpty) Stream() else Stream(Map())
       case sp :: sps =>
         sp match {
           case OrdinaryPatt(p) => vals match {
-            case Nil => List()
+            case Nil => Stream()
             case v :: vs =>
               merge(List(matchPatt(module, store, v, p),
-                matchPattAll(module, store, vs, sps, extract, allPartitions, restPartition)))
+                matchPattAll(module, store, vs, sps, extract, construct, allPartitions, restPartition)))
           }
           case ArbitraryPatt(sx) =>
             if (store.map.contains(sx)) {
               extract(store.map(sx)) match {
                 case Some(vs) =>
                   restPartition(vs, vals) match {
-                    case Some(vs_) => matchPattAll(module, store, vs_, sps, extract, allPartitions, restPartition)
-                    case None => List()
+                    case Some(vs_) => matchPattAll(module, store, vs_, sps, extract, construct, allPartitions, restPartition)
+                    case None => Stream()
                   }
-                case None => List()
+                case None => Stream()
               }
             }
-            else ???
+            else
+              allPartitions(vals).flatMap(part =>
+                matchPattAll(module, store.copy(store.map.updated(sx, construct(part))),
+                  restPartition(part, vals).get, sps, extract, construct, allPartitions, restPartition))
         }
     }
     patt match {
       case BasicPatt(b) => tval match {
-        case BasicValue(bv) if b == bv => List(Map())
-        case _ => List()
+        case BasicValue(bv) if b == bv => Stream(Map())
+        case _ => Stream()
       }
       case VarPatt(x) =>
         if (store.map.contains(x))
-          if (store.map(x) == tval) List(Map())
-          else List()
-        else List(Map(x -> tval))
+          if (store.map(x) == tval) Stream(Map())
+          else Stream()
+        else Stream(Map(x -> tval))
       case ConstructorPatt(k, pats) =>
         tval match {
           case ConstructorValue(k2, vals) if k == k2 && pats.length == vals.length =>
             merge(pats.toList.zip(vals.toList).map { case (p, v) => matchPatt(module, store, v, p) })
-          case _ => List()
+          case _ => Stream()
         }
       case LabelledTypedPatt(typ, labelVar, inpatt) =>
-        if (typing.checkType(tval, typ)) merge(List(List(Map(labelVar -> tval)), matchPatt(module, store, tval, inpatt)))
-        else List()
+        if (typing.checkType(tval, typ)) merge(List(Stream(Map(labelVar -> tval)), matchPatt(module, store, tval, inpatt)))
+        else Stream()
       case ListPatt(spatts) =>
         def extractList(v: Value): Option[List[Value]] = v match {
           case ListValue(vals) => Some(vals)
           case _ => None
         }
-        def sublists(vs: List[Value]): List[List[Value]] =
-          vs.foldRight(List(List[Value]())) { (x, sxs) =>
-            List() :: sxs.map(x :: _)
+        def restList(svs: List[Value], vs: List[Value]): Option[List[Value]] = {
+          if (svs.length <= vs.length && svs.zip(vs).forall { case (v1, v2) => v1 == v2 }) Some(vs.drop(svs.length))
+          else None
+        }
+        def sublists(vs: List[Value]): Stream[Pure, List[Value]] =
+          vs.foldRight(Stream(List[Value]())) { (x, sxs) =>
+            Stream(List()) append sxs.map(x :: _)
           }
         tval match {
-          case ListValue(vals) => matchPattAll(module, store, vals, spatts.toList, extractList, sublists)
-          case _ => List()
+          case ListValue(vals) =>
+            matchPattAll(module, store, vals, spatts.toList, extractList, ListValue, sublists, restList)
+          case _ => Stream()
         }
       case SetPatt(spatts) =>
         def extractSet(v: Value): Option[List[Value]] = v match {
           case SetValue(vals) => Some(vals.toList)
           case _ => None
         }
-        def subsets(vs: List[Value]): List[List[Value]] =
-          vs.foldRight(List(List[Value]())) { (x, sxs) =>
-            sxs ++ sxs.map(x :: _)
-          }
+        def restSet(svs: List[Value], vs: List[Value]): Option[List[Value]] = {
+          val svss = svs.toSet
+          val vss = vs.toSet
+          if (svss.subsetOf(vss)) Some((vss diff svss).toList)
+          else None
+        }
+        def subsets(vs: List[Value]): Stream[Pure, List[Value]] =
+          Stream.emits(vs.toSet.subsets.toList).map(_.toList)
         tval match {
-          case SetValue(vals) => matchPattAll(module, store, vals.toList, spatts.toList, extractSet, subsets)
-          case _ => List()
+          case SetValue(vals) =>
+            matchPattAll(module, store, vals.toList, spatts.toList, extractSet, vs => SetValue(vs.toSet), subsets, restSet)
+          case _ => Stream()
         }
       case DescendantPatt(inpatt) => matchPatt(module, store, tval, inpatt) ++
-        children(tval).flatMap(cv => matchPatt(module, store, cv, DescendantPatt(inpatt)))
+        Stream.emits(tval.children).flatMap(cv => matchPatt(module, store, cv, DescendantPatt(inpatt)))
     }
   }
 
-  def eval(module: Module, store: Store, expr: Expr): (Result[Value], Store) = {
+  def eval(module: Module, store: Store, expr: Expr) = {
     val typing = Typing(module)
 
-    def evalVisit(strategy: Strategy, localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) = ???
+    def reconstruct(vl: Value, cvs: List[Value]): Result[Value] = {
+      vl match {
+        case BasicValue(b) =>
+          if (cvs.isEmpty) BasicValue(b).point[Result] else ExceptionalResult(Error)
+        case ConstructorValue(name, vals) =>
+          val (_, parameters) = module.constructors(name)
+          if (cvs.length == parameters.length &&
+                cvs.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled)) ConstructorValue(name, cvs).point[Result]
+          else ExceptionalResult(Error)
+        case ListValue(vals) => ListValue(cvs).point[Result]
+        case SetValue(vals) => SetValue(cvs.toSet).point[Result]
+        case MapValue(vals) => MapValue(cvs.take(cvs.length/2).zip(cvs.drop(cvs.length/2)).toMap).point[Result]
+        case BottomValue =>
+          if (cvs.isEmpty) BottomValue.point[Result] else ExceptionalResult(Error)
+      }
+    }
 
-    def evalCases(localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) = ???
-
-    def evalEach(localVars: Map[VarName, Type], store: Store, envs: List[Map[VarName, Value]], body: Expr): (Result[Unit], Store) = envs match {
-      case Nil => (().point[Result], store)
-      case env :: envs_ =>
-        val (bodyres, store_) = evalLocal(localVars, store.copy(store.map ++ env), body)
-        bodyres match {
-          case SuccessResult(vl) =>
-            evalEach(localVars, store_, envs_, body)
-          case ExceptionalResult(exres) =>
-            exres match {
-              case Break => (().point[Result], store_)
-              case Continue => evalEach(localVars, store_, envs_, body)
-              case _ => (ExceptionalResult(exres), store_)
+    def evalTD(localVars: Map[VarName, Type], store: Store, scrutineeval: Value, cases: List[Case], break: Boolean): (Result[Value], Store) = {
+      def evalTDAll(vals: List[Value], store: Store): (Result[List[Value]], Store) =
+        vals match {
+          case Nil => (List().point[Result], store)
+          case cvl::cvls =>
+            val (cvres, store___) = evalTD(localVars, store, cvl, cases, break)
+            ifFail(cvres, cvl) match {
+              case SuccessResult(cvl_) =>
+                if (break && cvres != ExceptionalResult(Fail)) ((cvl_ :: cvls).point[Result], store___)
+                else {
+                  val (cvsres, store_) = evalTDAll(cvls, store___)
+                  (cvsres.map(cvls_ => cvl_ :: cvls_), store_)
+                }
+              case ExceptionalResult(exres) => (ExceptionalResult(exres), store___)
             }
         }
+      // TODO optimize traversal by checking types
+       val (scres, store__) = evalCases(localVars, store, scrutineeval, cases)
+       ifFail(scres, scrutineeval) match {
+        case SuccessResult(vl) =>
+          if (break && scres != ExceptionalResult(Fail)) (vl.point[Result], store__)
+          else {
+            val (cvres, store_) = evalTDAll(vl.children, store__)
+            (cvres.flatMap(cvs => reconstruct(vl, cvs)), store_)
+          }
+        case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+      }
     }
+
+    def evalBU(localVars: Map[VarName, Type], store: Store, scrutineeval: Value, cases: List[Case], break: Boolean): (Result[Value], Store) = {
+      def evalBUAll(vals: List[Value], store: Store): (Boolean, Result[List[Value]], Store) =
+        vals match {
+          case Nil => (true, List().point[Result], store)
+          case cvl::cvls =>
+            val (cvres, store___) = evalBU(localVars, store, cvl, cases, break)
+            ifFail(cvres, cvl) match {
+              case SuccessResult(cvl_) =>
+                if (break && cvres != ExceptionalResult(Fail)) (false, (cvl_ :: cvls).point[Result], store___)
+                else {
+                  val (allfailed, cvsres, store_) = evalBUAll(cvls, store___)
+                  (cvres == ExceptionalResult(Fail) && allfailed, cvsres.map(cvls_ => cvl_ :: cvls_), store_)
+                }
+              case ExceptionalResult(exres) => (false, ExceptionalResult(exres), store___)
+            }
+        }
+      val (allfailed, cvres, store__) = evalBUAll(scrutineeval.children, store)
+      cvres match {
+        case SuccessResult(cvls) =>
+          if (break && allfailed) evalCases(localVars, store__, scrutineeval, cases)
+          else reconstruct(scrutineeval, cvls) match {
+            case SuccessResult(newval) => evalCases(localVars, store__, newval, cases)
+            case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+          }
+        case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+      }
+    }
+
+    def evalVisit(strategy: Strategy, localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) =
+      strategy match {
+        case TopDown => evalTD(localVars, store, scrutineeval, cases, break = false)
+        case TopDownBreak => evalTD(localVars, store, scrutineeval, cases, break = true)
+        case BottomUp => evalBU(localVars, store, scrutineeval, cases, break = false)
+        case BottomUpBreak => evalBU(localVars, store, scrutineeval, cases, break = true)
+        case Innermost =>
+          val (res, store_) = evalBU(localVars, store, scrutineeval, cases, break = false)
+          res match {
+            case SuccessResult(newval) =>
+              if (scrutineeval == newval) (newval.point[Result], store_)
+              else evalVisit(Innermost, localVars, store_, newval, cases)
+            case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+          }
+        case Outermost =>
+          val (res, store_) = evalTD(localVars, store, scrutineeval, cases, break = false)
+          res match {
+            case SuccessResult(newval) =>
+              if (scrutineeval == newval) (newval.point[Result], store_)
+              else evalVisit(Outermost, localVars, store_, newval, cases)
+            case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+          }
+      }
+
+    def evalCases(localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) = {
+      def evalCase(store: Store, action: Expr, envs: Stream[Pure, Map[VarName, Value]]): (Result[Value], Store) =
+        envs.head.toList match {
+          case Nil => (ExceptionalResult(Fail), store)
+          case env :: _ =>
+            val (actres, store_) = evalLocal(localVars, store.copy(store.map ++ env), action)
+            actres match {
+              case ExceptionalResult(Fail) => evalCase(store, action, envs.tail)
+              case _ => (actres, store_)
+            }
+        }
+      cases match {
+        case Nil => (ExceptionalResult(Fail), store)
+        case Case(cspatt, csaction) :: css =>
+          val envs = matchPatt(module, store, scrutineeval, cspatt)
+          val (cres, store_) = evalCase(store, csaction, envs)
+          cres match {
+            case ExceptionalResult(Fail) => evalCases(localVars, store, scrutineeval, css)
+            case _ => (cres, store_)
+          }
+      }
+    }
+
+    def evalEach(localVars: Map[VarName, Type], store: Store, envs: Stream[Pure, Map[VarName, Value]], body: Expr): (Result[Unit], Store) =
+      envs.head.toList match {
+          case Nil => (().point[Result], store)
+          case env :: _ =>
+            val (bodyres, store_) = evalLocal(localVars, store.copy(store.map ++ env), body)
+            bodyres match {
+              case SuccessResult(vl) =>
+                evalEach(localVars, store_, envs.tail, body)
+              case ExceptionalResult(exres) =>
+                exres match {
+                  case Break => (().point[Result], store_)
+                  case Continue => evalEach(localVars, store_, envs.tail, body)
+                  case _ => (ExceptionalResult(exres), store_)
+                }
+            }
+        }
 
     def evalLocalAll(localVars: Map[VarName, Type], store: Store, exprs: Seq[Expr]): (Result[List[Value]], Store) = {
       val (res, store_) = exprs.toList.foldLeft[(Result[List[Value]], Store)]((List().pure[Result], store)) { (st, e) =>
@@ -149,7 +282,7 @@ object Executor {
       (res.map(_.reverse), store_)
     }
 
-    def evalEnum(localVars: Map[VarName, Type], store: Store, enum: Enum): (Result[List[Map[VarName, Value]]], Store) =
+    def evalEnum(localVars: Map[VarName, Type], store: Store, enum: Enum): (Result[Stream[Pure, Map[VarName, Value]]], Store) =
       enum match {
         case MatchAssign(patt, target) =>
           val (tres, store_) = evalLocal(localVars, store, target)
@@ -162,9 +295,9 @@ object Executor {
           tres match {
             case SuccessResult(tval) =>
               tval match {
-                case ListValue(vals) => (vals.map(vl => Map(varname -> vl)).point[Result], store_)
-                case SetValue(vals) => (vals.toList.map(vl => Map(varname -> vl)).point[Result], store_)
-                case MapValue(vals) => (vals.keys.toList.map(vl => Map(varname -> vl)).point[Result], store_)
+                case ListValue(vals) => (Stream.emits(vals.map(vl => Map(varname -> vl))).point[Result], store_)
+                case SetValue(vals) => (Stream.emits(vals.toList.map(vl => Map(varname -> vl))).point[Result], store_)
+                case MapValue(vals) => (Stream.emits(vals.keys.toList.map(vl => Map(varname -> vl))).point[Result], store_)
                 case _ => (ExceptionalResult(Error), store_)
               }
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
@@ -441,8 +574,9 @@ object Executor {
           val (enres, store_) = evalEnum(localVars, store, enum)
           enres match {
             case SuccessResult(envs) =>
-              if (envs.isEmpty) (ConstructorValue("false", Seq.empty).point[Result], store_)
-              else (ConstructorValue("true", Seq.empty).point[Result], store_.copy(store_.map ++ envs.head))
+              val env = envs.head.toList
+              if (env.isEmpty) (ConstructorValue("false", Seq.empty).point[Result], store_)
+              else (ConstructorValue("true", Seq.empty).point[Result], store_.copy(store_.map ++ env.head))
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
           }
       }

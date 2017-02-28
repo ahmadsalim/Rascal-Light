@@ -8,13 +8,13 @@ case class Module( globalVars: Map[VarName, Type]
                  , constructors: Map[ConsName, (TypeName, List[Parameter])]
                  )
 
-sealed trait Value
-case class BasicValue(b: Basic) extends Value
-case class ConstructorValue(name: ConsName, vals: Seq[Value]) extends Value
-case class ListValue(vals: List[Value]) extends Value
-case class SetValue(vals: Set[Value]) extends Value
-case class MapValue(vals: Map[Value, Value]) extends Value
-case object BottomValue extends Value
+sealed trait Value { val children: List[Value] }
+case class BasicValue(b: Basic) extends Value { override val children: List[Value] = List() }
+case class ConstructorValue(name: ConsName, vals: Seq[Value]) extends Value { override val children: List[Value] = vals.toList }
+case class ListValue(vals: List[Value]) extends Value { override val children: List[Value] = vals }
+case class SetValue(vals: Set[Value]) extends Value { override val children: List[Value] = vals.toList }
+case class MapValue(vals: Map[Value, Value]) extends Value { override val children: List[Value] = vals.keys.toList ++ vals.values.toList }
+case object BottomValue extends Value { override val children: List[Value] = List() }
 
 case class Store(map: Map[VarName, Value])
 
