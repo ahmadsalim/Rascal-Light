@@ -1,4 +1,4 @@
-package semantics
+package semantics.domains
 
 import syntax.{Module => _, _}
 

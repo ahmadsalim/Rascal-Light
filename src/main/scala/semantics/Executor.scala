@@ -3,15 +3,13 @@ package semantics
 import syntax.{Module => _, _}
 
 import scala.collection.immutable.{::, Nil}
-
 import scalaz.\/
 import scalaz.std.list._
-import scalaz.std.option._
 import scalaz.syntax.either._
 import scalaz.syntax.foldable._
 import scalaz.syntax.monadPlus._
-
 import fs2.{Pure, Stream}
+import semantics.domains._
 
 object Executor {
 
@@ -20,7 +18,7 @@ object Executor {
     case ("-", BasicValue(IntLit(i))) => BasicValue(IntLit(-i)).point[Result]
     case ("!", ConstructorValue("true", Seq())) => ConstructorValue("false", Seq()).point[Result]
     case ("!", ConstructorValue("false", Seq())) => ConstructorValue("true", Seq()).point[Result]
-    case _ => ExceptionalResult(Error)
+    case _ => ExceptionalResult(domains.Error)
   }
 
   private
@@ -52,7 +50,7 @@ object Executor {
       case (BasicValue(IntLit(i1)), "*", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 * i2)).point[Result]
       case (BasicValue(IntLit(i1)), "/", BasicValue(IntLit(i2))) if i2 != 0 => BasicValue(IntLit(i1 / i2)).point[Result]
       case (BasicValue(IntLit(i1)), "%", BasicValue(IntLit(i2))) if i2 > 0 => BasicValue(IntLit(i1 % i2)).point[Result]
-      case _ => ExceptionalResult(Error)
+      case _ => ExceptionalResult(domains.Error)
     }
 
   private
@@ -169,17 +167,17 @@ object Executor {
     def reconstruct(vl: Value, cvs: List[Value]): Result[Value] = {
       vl match {
         case BasicValue(b) =>
-          if (cvs.isEmpty) BasicValue(b).point[Result] else ExceptionalResult(Error)
+          if (cvs.isEmpty) BasicValue(b).point[Result] else ExceptionalResult(domains.Error)
         case ConstructorValue(name, vals) =>
           val (_, parameters) = module.constructors(name)
           if (cvs.length == parameters.length &&
                 cvs.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled)) ConstructorValue(name, cvs).point[Result]
-          else ExceptionalResult(Error)
+          else ExceptionalResult(domains.Error)
         case ListValue(vals) => ListValue(cvs).point[Result]
         case SetValue(vals) => SetValue(cvs.toSet).point[Result]
         case MapValue(vals) => MapValue(cvs.take(cvs.length/2).zip(cvs.drop(cvs.length/2)).toMap).point[Result]
         case BottomValue =>
-          if (cvs.isEmpty) BottomValue.point[Result] else ExceptionalResult(Error)
+          if (cvs.isEmpty) BottomValue.point[Result] else ExceptionalResult(domains.Error)
       }
     }
 
@@ -333,7 +331,7 @@ object Executor {
                 case ListValue(vals) => (Stream.emits(vals.map(vl => Map(varname -> vl))).point[Result], store_)
                 case SetValue(vals) => (Stream.emits(vals.toList.map(vl => Map(varname -> vl))).point[Result], store_)
                 case MapValue(vals) => (Stream.emits(vals.keys.toList.map(vl => Map(varname -> vl))).point[Result], store_)
-                case _ => (ExceptionalResult(Error), store_)
+                case _ => (ExceptionalResult(domains.Error), store_)
               }
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
           }
@@ -344,7 +342,7 @@ object Executor {
         case BasicExpr(b) => (BasicValue(b).pure[Result], store)
         case VarExpr(x) =>
           if (store.map.contains(x)) (store.map(x).pure[Result], store)
-          else (ExceptionalResult(Error), store)
+          else (ExceptionalResult(domains.Error), store)
         case UnaryExpr(op, operand) =>
           val (res, store_) = evalLocal(localVars, store, operand)
           (res.flatMap(vl => evalUnary(op, vl)), store_)
@@ -364,7 +362,7 @@ object Executor {
               if (vals.length == parameters.length &&
                    vals.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled))
                 (ConstructorValue(name, vals).pure[Result], store_)
-              else (ExceptionalResult(Error), store_)
+              else (ExceptionalResult(domains.Error), store_)
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
           }
         case ListExpr(elements) =>
@@ -405,7 +403,7 @@ object Executor {
                       else (ExceptionalResult(Throw(ConstructorValue("nokey", Seq(keyv)))), store_)
                     case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
                   }
-                case _ => (ExceptionalResult(Error), store__)
+                case _ => (ExceptionalResult(domains.Error), store__)
               }
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
@@ -425,7 +423,7 @@ object Executor {
                       }
                     case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
                   }
-                case _ => (ExceptionalResult(Error), store___)
+                case _ => (ExceptionalResult(domains.Error), store___)
               }
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store___)
           }
@@ -442,7 +440,7 @@ object Executor {
                 val store_ = Store(module.globalVars.map { case (x, _) => (x, resstore.map(x)) })
                 def funcallsuccess(resval: Value): (Result[Value], Store) = {
                   if (typing.checkType(resval, funresty)) (resval.point[Result], store_)
-                  else (ExceptionalResult(Error), store_)
+                  else (ExceptionalResult(domains.Error), store_)
                 }
                 res match {
                   case SuccessResult(resval) => funcallsuccess(resval)
@@ -450,11 +448,11 @@ object Executor {
                     exres match {
                       case Return(value) => funcallsuccess(value)
                       case Throw(value) => (ExceptionalResult(Throw(value)), store_)
-                      case Break | Continue | Fail | Error => (ExceptionalResult(Error), store_)
+                      case Break | Continue | Fail | domains.Error => (ExceptionalResult(domains.Error), store_)
                     }
                 }
               }
-              else (ExceptionalResult(Error), store__)
+              else (ExceptionalResult(domains.Error), store__)
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
         case ReturnExpr(evl) =>
@@ -469,7 +467,7 @@ object Executor {
             case SuccessResult(vl) =>
               val varty = if (localVars.contains(name)) localVars(name) else module.globalVars(name)
               if (typing.checkType(vl, varty)) (vl.pure[Result], store_.copy(map = store_.map.updated(name, vl)))
-              else (ExceptionalResult(Error), store_)
+              else (ExceptionalResult(domains.Error), store_)
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
           }
         case IfExpr(cond, thenB, elseB) =>
@@ -479,7 +477,7 @@ object Executor {
               condv match {
                 case ConstructorValue("true", Seq()) => evalLocal(localVars, store__, thenB)
                 case ConstructorValue("false", Seq()) => evalLocal(localVars, store__, elseB)
-                case _ => (ExceptionalResult(Error), store__)
+                case _ => (ExceptionalResult(domains.Error), store__)
               }
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
@@ -553,7 +551,7 @@ object Executor {
                         }
                     }
                   case ConstructorValue("false", Seq()) => (().point[Result], store__)
-                  case _ => (ExceptionalResult(Error), store__)
+                  case _ => (ExceptionalResult(domains.Error), store__)
                 }
               case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
             }
@@ -618,7 +616,7 @@ object Executor {
     evalLocal(Map.empty, store, expr)
   }
 
-  def execute(module: syntax.Module): String \/ (Store, Module) = {
+  def execute(module: syntax.Module, initialStore: Store = Store(Map())): String \/ (Store, Module) = {
     def alreadyDefined(name: Name, outmod: Module): Boolean = {
       outmod.funs.contains(name) || outmod.globalVars.contains(name) ||
         outmod.datatypes.contains(name) || outmod.constructors.contains(name)
@@ -649,18 +647,19 @@ object Executor {
               }
               consmapr.map { consmap => (unevalglobvars,
                   outmod.copy(datatypes = outmod.datatypes.updated(tyname, constructors.map(_.name).toList),
-                              constructors = consmap)) }
+                              constructors = outmod.constructors ++ consmap)) }
             }
         }
     }
     transr.flatMap { case (unevalglobvars, semmod) =>
-        unevalglobvars.reverse.foldLeftM[String \/ ?, Store](Store(Map.empty)) { (store, unevalglobvar) =>
-          val (varname, varexpr) = unevalglobvar
-          val (res, store_) = eval(semmod, store, varexpr)
-          res match {
-            case ExceptionalResult(exres) => s"Evaluation of left-hand side for variable $varname failed with $exres".left
-            case SuccessResult(value) => store_.copy(map = store_.map.updated(varname, value)).right
-          }
+        unevalglobvars.reverse.foldLeftM[String \/ ?, Store](Store(initialStore.map ++ unevalglobvars.toMap.mapValues(_ => BottomValue))) {
+          (store, unevalglobvar) =>
+            val (varname, varexpr) = unevalglobvar
+            val (res, store_) = eval(semmod, store, varexpr)
+            res match {
+              case ExceptionalResult(exres) => s"Evaluation of left-hand side for variable $varname failed with $exres".left
+              case SuccessResult(value) => store_.copy(map = store_.map.updated(varname, value)).right
+            }
         }.map(store => (store, semmod))
     }
   }

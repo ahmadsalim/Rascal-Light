@@ -1,12 +1,14 @@
 package semantics
 
+import semantics.domains._
 import syntax._
+
 import scalaz.syntax.monad._
 import scalaz.syntax.traverse._
 import scalaz.std.option._
 import scalaz.std.list._
 
-case class Typing(module: Module) {
+case class Typing(module: domains.Module) {
 
   private def lub(types: List[Type]): Type =
     types.fold(VoidType) { (t1, t2) =>

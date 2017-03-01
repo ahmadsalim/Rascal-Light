@@ -1,3 +1,5 @@
+import semantics.domains.{ExceptionalResult, Result, SuccessResult}
+
 import scalaz.Monad
 
 /**
