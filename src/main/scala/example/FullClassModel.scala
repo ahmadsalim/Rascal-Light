@@ -22,7 +22,7 @@ object FullClassModel {
           Seq(Parameter(BaseType(StringType), "name"),
             Parameter(BaseType(StringType), "return_typ"),
             Parameter(ListType(DataType("Parameter")), "parameters"),
-            Parameter(DataType("Statement"), "body")
+            Parameter(DataType("Stmt"), "body")
             ))
       )),
       DataDef("Parameter", Seq(ConstructorDef("parameter",
@@ -42,7 +42,7 @@ object FullClassModel {
       DataDef("Expr", Seq(
         ConstructorDef("fieldaccessexpr",
           Seq(Parameter(BaseType(StringType), "typ"),
-                Parameter(DataType("target"), "expr"),
+                Parameter(DataType("Expr"), "target"),
                   Parameter(BaseType(StringType), "fieldname"))),
         ConstructorDef("var", Seq(Parameter(BaseType(StringType), "typ"), Parameter(BaseType(StringType), "name"))),
         ConstructorDef("methodcallexpr", Seq(

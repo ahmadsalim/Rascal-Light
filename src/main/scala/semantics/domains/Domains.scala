@@ -28,7 +28,17 @@ case class Throw(value: Value) extends Exceptional
 case object Break extends Exceptional
 case object Continue extends Exceptional
 case object Fail extends Exceptional
-case object Error extends Exceptional
+case class Error(kind: ErrorKind) extends Exceptional
+
+sealed trait ErrorKind
+case class TypeError(value: Value, typ: Type) extends ErrorKind
+case class ReconstructError(value: Value, newchildren: List[Value]) extends ErrorKind
+case class UnassignedVarError(varname: VarName) extends ErrorKind
+case class NotEnumerableError(value: Value) extends ErrorKind
+case class InvalidOperationError(opname: OpName, values: List[Value]) extends ErrorKind
+case class SignatureMismatch(fun: Name, vals: List[Value], typ: List[Type]) extends ErrorKind
+case object EscapedControlOperator extends ErrorKind
+case object OtherError extends ErrorKind
 
 object Domains {
   val prelude = Module(Map.empty, Map.empty,

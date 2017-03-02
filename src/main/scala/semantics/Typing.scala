@@ -37,7 +37,10 @@ case class Typing(module: domains.Module) {
         .map(valueType => MapType(keyType, valueType)))
     case BottomValue => VoidType.pure[Option]
   }
-  def checkType(value: Value, typ: Type): Boolean = inferType(value).exists(inftyp => isSubType(inftyp, typ))
+  def checkType(value: Value, typ: Type): Boolean = {
+    val inferRes = inferType(value)
+    inferRes.exists(inftyp => isSubType(inftyp, typ))
+  }
   
   def isSubType(t1: Type, t2: Type): Boolean = (t1, t2) match {
     case _ if t1 == t2 => true

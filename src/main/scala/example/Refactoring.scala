@@ -23,9 +23,21 @@ object Refactoring {
         ),
         AssignExpr("fieldDef",
           SwitchExpr(VarExpr("fieldDef"),
-            Seq(Case(ConstructorPatt("field", Seq(VarPatt("fieldDef.typ"), VarPatt("fieldDef.name"))),
-              ConstructorExpr("field", Seq(VarExpr("fieldDef.typ"), VarExpr("newFieldName"))))))
+            Seq(Case(ConstructorPatt("field", Seq(VarPatt("fieldDef.name"), VarPatt("fieldDef.typ"))),
+              ConstructorExpr("field", Seq(VarExpr("newFieldName"), VarExpr("fieldDef.typ"))))))
           ),
+        AssignExpr("pkg",
+          SwitchExpr(VarExpr("pkg"),
+            Seq(Case(ConstructorPatt("package", Seq(VarPatt("pkg_classes"))),
+              ConstructorExpr("package",
+                Seq(SwitchExpr(LookupExpr(VarExpr("pkg_classes"), VarExpr("cl")),
+                  Seq(Case(ConstructorPatt("class", Seq(VarPatt("cl.name"), VarPatt("cl.fields"), VarPatt("cl.methods"), VarPatt("cl.super"))),
+                     UpdateExpr(VarExpr("pkg_classes"), VarExpr("cl"),
+                       ConstructorExpr("class", Seq(VarExpr("cl.name"),
+                         UpdateExpr(BinaryExpr(VarExpr("cl.fields"), "delete", VarExpr("oldFieldName")), VarExpr("newFieldName"), VarExpr("fieldDef")), VarExpr("cl.methods"), VarExpr("cl.super"))))
+                  ))))
+              ))))
+        ),
         VisitExpr(TopDown, VarExpr("pkg"),
           Seq(Case(LabelledTypedPatt(DataType("Expr"), "fae",
             ConstructorPatt("fieldaccessexpr", Seq(VarPatt("faty"), VarPatt("target"), VarPatt("oldFieldName")))),
