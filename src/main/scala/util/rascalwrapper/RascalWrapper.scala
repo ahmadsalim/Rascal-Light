@@ -6,12 +6,12 @@ import java.nio.file.Files
 
 import org.rascalmpl.ast.Declaration.{Data, Function, Variable}
 import org.rascalmpl.ast.Name.Lexical
-import org.rascalmpl.ast.{Declaration, Expression, Module, Type}
+import org.rascalmpl.ast.{BasicType, _}
 import org.rascalmpl.library.lang.rascal.syntax.RascalParser
 import org.rascalmpl.parser.{ASTBuilder, Parser}
 import org.rascalmpl.parser.gtd.result.out.DefaultNodeFlattener
 import org.rascalmpl.parser.uptr.UPTRNodeFactory
-import syntax.GlobalVarDef
+import syntax.{BasicType => _, Module => _, Type => _, _}
 
 import scalaz.\/
 import scalaz.syntax.either._
@@ -34,9 +34,49 @@ object RascalWrapper {
 
   def translateData(data: Data): String \/ List[syntax.DataDef] = ???
 
-  def translateType(getType: Type): String \/ syntax.Type = ???
+  def translateBasicType(basicTy: BasicType): String \/ syntax.Type = {
+    if (basicTy.isVoid) VoidType.right
+    else if (basicTy.isValue) ValueType.right
+    else if (basicTy.isString) BaseType(StringType).right
+    else if (basicTy.isInt) BaseType(IntType).right
+    else if (basicTy.isBool) DataType("Bool").right
+    else s"Unsupported basic type: $basicTy".left
+  }
 
-  def translateExpr(getInitial: Expression): String \/ syntax.Expr = ???
+  def translateStructured(structuredTy: StructuredType): String \/ syntax.Type =  {
+    val args = structuredTy.getArguments
+    val basicTy = structuredTy.getBasicType
+    if (basicTy.isList) {
+      val argTy = translateType(args.get(0).getType)
+      argTy.map(ListType)
+    } else if (basicTy.isSet) {
+      val argTy = translateType(args.get(0).getType)
+      argTy.map(SetType)
+    } else if (basicTy.isMap) {
+      val keyTy = translateType(args.get(0).getType)
+      val valTy = translateType(args.get(1).getType)
+      keyTy.flatMap(keyTy =>
+        valTy.map(valTy =>
+          MapType(keyTy, valTy)
+        )
+      )
+    } else s"Unsupported collection type: $structuredTy".left
+  }
+
+  def translateType(ty: Type): String \/ syntax.Type = {
+    if (ty.isBasic) translateBasicType(ty.getBasic)
+    else if (ty.isStructured) translateStructured(ty.getStructured)
+    else if (ty.isUser) {
+      val user = ty.getUser
+      val names = user.getName.getNames.asScala.toList
+      val name = names.map(_.asInstanceOf[Lexical].getString).mkString(".")
+      if (user.hasParameters && user.getParameters.size > 0)
+        s"Unsupported data-type with parameters: $name ".left
+      else DataType(name).right
+    } else s"Unsupported type: $ty".left
+  }
+
+  def translateExpr(expr: Expression): String \/ syntax.Expr = ???
 
   def translateGlobalVariable(variable: Variable): String \/ List[syntax.GlobalVarDef] = {
     val vartyr = translateType(variable.getType)
