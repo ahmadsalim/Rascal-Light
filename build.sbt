@@ -20,6 +20,4 @@ libraryDependencies += "co.fs2" %% "fs2-core" % "0.9.4"
 libraryDependencies += "org.scalactic" %% "scalactic" % "3.0.1"
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.1" % "test"
 
-libraryDependencies += "org.rascalmpl" % "rascal-shell-stable" % "0.8" from "http://update.rascal-mpl.org/console/rascal-shell-stable.jar"
-
 addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3")

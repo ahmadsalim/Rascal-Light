@@ -614,6 +614,17 @@ object Executor {
               else (ConstructorValue("true", Seq.empty).point[Result], store_.copy(store_.map ++ env.head))
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
           }
+        case AssertExpr(cond) =>
+          val (condres, store_) = evalLocal(localVars, store, cond)
+          condres match {
+            case SuccessResult(condval) =>
+              condval match {
+                case ConstructorValue("true", Seq()) => (condres, store_)
+                case ConstructorValue("false", Seq()) => (ExceptionalResult(Error(AssertionError(cond))), store_)
+                case _ => (ExceptionalResult(Error(TypeError(condval, DataType("Bool")))), store_)
+              }
+            case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+          }
       }
     evalLocal(Map.empty, store, expr)
   }

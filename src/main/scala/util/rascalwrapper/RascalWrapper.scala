@@ -5,7 +5,9 @@ import java.io.File
 import java.nio.file.Files
 
 import org.rascalmpl.ast.Declaration.{Data, Function, Variable}
+import org.rascalmpl.ast.Expression.TypedVariable
 import org.rascalmpl.ast.Name.Lexical
+import org.rascalmpl.ast.Statement.VariableDeclaration
 import org.rascalmpl.ast.{BasicType, _}
 import org.rascalmpl.library.lang.rascal.syntax.RascalParser
 import org.rascalmpl.parser.{ASTBuilder, Parser}
@@ -15,10 +17,11 @@ import syntax.{BasicType => _, Module => _, Type => _, _}
 
 import scalaz.\/
 import scalaz.syntax.either._
-import scalaz.std.either._
 import scalaz.std.list._
+import scalaz.std.option._
 import scalaz.syntax.traverse._
-import scalaz.syntax.monad._
+import scalaz.syntax.foldable._
+import scalaz.syntax.monadPlus._
 
 object RascalWrapper {
   def parseRascal(path: String): Module = {
@@ -30,7 +33,54 @@ object RascalWrapper {
     astbuilder.buildModule(parsed)
   }
 
-  def translateFunction(function: Function): String \/ List[syntax.FunDef] = ???
+  def translateStatement(stmt: Statement): String \/ Expr = ???
+
+  def translateStatements(stmts: List[Statement]): String \/ syntax.Expr = {
+    val vardecls = stmts.takeWhile(_.isInstanceOf[VariableDeclaration])
+    val reststmts = stmts.drop(vardecls.length)
+    val restbeforeblock = reststmts.takeWhile(!_.isInstanceOf[VariableDeclaration])
+    val restblock = reststmts.drop(restbeforeblock.length)
+    val tstmtsr = restbeforeblock.map(translateStatement).sequenceU.flatMap(es =>
+      translateStatements(restblock).map(re => es :+ re))
+    val tvardeclsinit = vardecls.map(_.asInstanceOf[VariableDeclaration]).map { vdec =>
+      val locvardecl = vdec.getDeclaration.getDeclarator
+      val varstysr = translateType(locvardecl.getType)
+      val parsinit = varstysr.flatMap(varsty =>
+        locvardecl.getVariables.asScala.toList.map { vr =>
+          val vrname = vr.getName.asInstanceOf[Lexical].getString
+          val initvalr =
+            if (vr.hasInitial) {
+              translateExpr(vr.getInitial).map(e => Some(AssignExpr(vrname, e)))
+            } else None.right
+          initvalr.map(initval => (Parameter(varsty, vrname), initval))
+        }.sequenceU
+      )
+      parsinit
+    }.sequenceU.map(_.flatten.unzip)
+    tvardeclsinit.flatMap { case (tvardecls, tvaroptinit) =>
+      val tvarinits = tvaroptinit.unite
+      tstmtsr.map(tstmts => LocalBlockExpr(tvardecls, tvarinits ++ tstmts))
+    }
+  }
+
+  def translateFunction(function: Function): String \/ syntax.FunDef = {
+    val fundecl = function.getFunctionDeclaration
+    val funsig = fundecl.getSignature
+    val funrety = funsig.getType
+    val tfunrety = translateType(funrety)
+    val funname = funsig.getName.asInstanceOf[Lexical].getString
+    val funpars = funsig.getParameters.getFormals.getFormals.asScala.toList
+    val tfunpars = funpars.map {
+      case tvar: TypedVariable =>
+        val varTyr = translateType(tvar.getType)
+        val varNm = tvar.getName.asInstanceOf[Lexical].getString
+        varTyr.map(varTy => Parameter(varTy, varNm))
+      case e => s"Function parameter unsupported: $e".left
+    }.sequenceU
+    val funbody = fundecl.getBody
+    val tfunbody = translateStatements(funbody.getStatements.asScala.toList)
+    tfunrety.flatMap(rety => tfunpars.flatMap(fps => tfunbody.map(body => FunDef(rety, funname, fps, body))))
+  }
 
   def translateData(data: Data): String \/ List[syntax.DataDef] = ???
 
@@ -91,7 +141,7 @@ object RascalWrapper {
   }
 
   def translateDecl(decl: Declaration): String \/ List[syntax.Def] = {
-    if (decl.isFunction) translateFunction(decl.asInstanceOf[Function])
+    if (decl.isFunction) translateFunction(decl.asInstanceOf[Function]).map(_.point[List])
     else if (decl.isData) translateData(decl.asInstanceOf[Data])
     else if (decl.isVariable) translateGlobalVariable(decl.asInstanceOf[Variable])
     else s"${decl.getName} is unsupported".left

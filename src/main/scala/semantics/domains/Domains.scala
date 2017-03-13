@@ -38,6 +38,7 @@ case class NotEnumerableError(value: Value) extends ErrorKind
 case class InvalidOperationError(opname: OpName, values: List[Value]) extends ErrorKind
 case class SignatureMismatch(fun: Name, vals: List[Value], typ: List[Type]) extends ErrorKind
 case object EscapedControlOperator extends ErrorKind
+case class AssertionError(cond: Expr) extends ErrorKind
 case object OtherError extends ErrorKind
 
 object Domains {

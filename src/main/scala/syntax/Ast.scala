@@ -44,6 +44,7 @@ case class ThrowExpr(result: Expr) extends Expr
 case class TryCatchExpr(tryB: Expr, catchVar: VarName, catchB: Expr) extends Expr
 case class TryFinallyExpr(tryB: Expr, finallyB: Expr) extends Expr
 case class EnumExpr(enum: Enum) extends Expr
+case class AssertExpr(cond: Expr) extends Expr
 
 case class Case(patt: Patt, action: Expr)
 
