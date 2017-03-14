@@ -61,14 +61,12 @@ object RascalWrapper {
       FailExpr.right
     } else if (stmt.isFor) {
       ???
-    } else if (stmt.isIfThen) {
-      ???
-    } else if (stmt.isIfThenElse) {
+    } else if (stmt.isIfThen || stmt.isIfThenElse) {
       ???
     } else if (stmt.isNonEmptyBlock) {
-      ???
+      translateStatements(stmt.getStatements.asScala.toList)
     } else if (stmt.isReturn) {
-      ???
+      translateStatement(stmt.getStatement).map(ReturnExpr)
     } else if (stmt.isSolve) {
       ???
     } else if (stmt.isSwitch) {
@@ -77,7 +75,7 @@ object RascalWrapper {
       ???
     } else if (stmt.isTry) {
       ???
-    } else if (stmt.isTryFinally) {
+    } else if (stmt.isTryFinally) { // Should finally, rethrow exceptions?
       ???
     } else if (stmt.isVisit) {
       ???
