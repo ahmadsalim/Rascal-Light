@@ -24,6 +24,8 @@ import scalaz.syntax.foldable._
 import scalaz.syntax.monadPlus._
 
 object RascalWrapper {
+  var varCounter = 0
+
   def parseRascal(path: String): Module = {
     val parser = new RascalParser()
     val file = new File(path)
@@ -33,9 +35,11 @@ object RascalWrapper {
     astbuilder.buildModule(parsed)
   }
 
+  def translatePattern(pattern: Expression): String \/ Patt = ???
+
   def translateStatement(stmt: Statement): String \/ Expr = {
     if (stmt.isAssert || stmt.isAssertWithMessage) {
-      val texpr = translateExpr(stmt.getExpression)
+      val texpr = translateExpression(stmt.getExpression)
       texpr.map(AssertExpr)
     } else if (stmt.isAssignment) {
       val assgnop = stmt.getOperator
@@ -56,13 +60,20 @@ object RascalWrapper {
     } else if (stmt.isEmptyStatement) {
       LocalBlockExpr(Seq(), Seq()).right
     } else if (stmt.isExpression) {
-      translateExpr(stmt.getExpression)
+      translateExpression(stmt.getExpression)
     } else if (stmt.isFail)  {
       FailExpr.right
     } else if (stmt.isFor) {
       ???
     } else if (stmt.isIfThen || stmt.isIfThenElse) {
-      ???
+      if (stmt.getConditions.size != 1) s"Only one condition supported in if loop: $stmt".left
+      else {
+        val tcondr = translateExpression(stmt.getConditions.get(0))
+        val thenbr = translateStatement(stmt.getThenStatement)
+        val elsebr = if (stmt.hasElseStatement) translateStatement(stmt.getStatement)
+                     else LocalBlockExpr(Seq(), Seq()).right
+        tcondr.flatMap(cond => thenbr.flatMap(thenb => elsebr.map(elseb => IfExpr(cond, thenb, elseb))))
+      }
     } else if (stmt.isNonEmptyBlock) {
       translateStatements(stmt.getStatements.asScala.toList)
     } else if (stmt.isReturn) {
@@ -73,14 +84,36 @@ object RascalWrapper {
       ???
     } else if (stmt.isThrow) {
       ???
-    } else if (stmt.isTry) {
-      ???
-    } else if (stmt.isTryFinally) { // Should finally, rethrow exceptions?
-      ???
+    } else if (stmt.isTry || stmt.isTryFinally) {
+      val trybodyr = translateStatement(stmt.getBody)
+      // TO DO binding handlers seem to not return any value unlike semantics?
+      val handlers = stmt.getHandlers.asScala.toList
+      val defaultHandler = handlers.find(_.isDefault)
+      val bindingHandlers = handlers.filter(_.isBinding)
+      val catchVar = s"catch$$$varCounter"
+      val defaultVar = s"default$$$varCounter"
+      varCounter += 1
+      val handlingCases = bindingHandlers.traverseU { ch =>
+        val pattr = translatePattern(ch.getPattern)
+        val bodyr = translateStatement(ch.getBody)
+        pattr.flatMap(patt => bodyr.map(body => syntax.Case(patt, body)))
+      }
+      val defaultBody = defaultHandler.fold[String \/ Expr](ThrowExpr(VarExpr(catchVar)).right)(ch => translateStatement(ch.getBody))
+      val allCases = handlingCases.flatMap(cs => defaultBody.map(body => cs ++ List(syntax.Case(VarPatt(defaultVar), body))))
+      val trycatch = trybodyr.flatMap(trybody => allCases.map(cs => TryCatchExpr(trybody, catchVar, SwitchExpr(VarExpr(catchVar), cs))))
+      if (stmt.hasFinallyBody) {
+        val finallybodyr = translateStatement(stmt.getFinallyBody)
+        trycatch.flatMap(tc => finallybodyr.map(fb => TryFinallyExpr(tc, fb)))
+      } else trycatch
     } else if (stmt.isVisit) {
       ???
     } else if (stmt.isWhile) {
-      ???
+      if (stmt.getConditions.size != 1) s"Only one condition supported in while loop: $stmt".left
+      else {
+        val tcondr = translateExpression(stmt.getConditions.get(0))
+        val tbodyr = translateStatement(stmt.getBody)
+        tcondr.flatMap(cond => tbodyr.map(body => WhileExpr(cond, body)))
+      }
     } else s"Unsupported statement: $stmt".left
   }
 
@@ -99,7 +132,7 @@ object RascalWrapper {
           val vrname = vr.getName.asInstanceOf[Lexical].getString
           val initvalr =
             if (vr.hasInitial) {
-              translateExpr(vr.getInitial).map(e => Some(AssignExpr(vrname, e)))
+              translateExpression(vr.getInitial).map(e => Some(AssignExpr(vrname, e)))
             } else None.right
           initvalr.map(initval => (Parameter(varsty, vrname), initval))
         }
@@ -192,7 +225,7 @@ object RascalWrapper {
     } else s"Unsupported type: $ty".left
   }
 
-  def translateExpr(expr: Expression): String \/ syntax.Expr = ???
+  def translateExpression(expr: Expression): String \/ syntax.Expr = ???
 
   def translateGlobalVariable(variable: Variable): String \/ List[syntax.GlobalVarDef] = {
     val vartyr = translateType(variable.getType)
@@ -200,7 +233,7 @@ object RascalWrapper {
     vartyr.flatMap(varty =>
       vars.traverseU(vr =>
         if (vr.hasInitial) {
-          val exprr = translateExpr(vr.getInitial)
+          val exprr = translateExpression(vr.getInitial)
           exprr.map(expr => GlobalVarDef(varty, vr.getName.asInstanceOf[Lexical].getString, expr))
         } else s"${vr.getName} has no initial value".left)
     )
