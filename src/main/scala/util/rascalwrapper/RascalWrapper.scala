@@ -1,30 +1,50 @@
 package util.rascalwrapper
 
-import scala.collection.JavaConverters._
 import java.io.File
 import java.nio.file.Files
 
+import org.bitbucket.inkytonik.kiama.rewriting.Rewriter
 import org.rascalmpl.ast.Declaration.{Data, Function, Variable}
 import org.rascalmpl.ast.Expression.TypedVariable
-import org.rascalmpl.ast.Name.Lexical
 import org.rascalmpl.ast.Statement.VariableDeclaration
 import org.rascalmpl.ast.{BasicType, _}
 import org.rascalmpl.library.lang.rascal.syntax.RascalParser
-import org.rascalmpl.parser.{ASTBuilder, Parser}
 import org.rascalmpl.parser.gtd.result.out.DefaultNodeFlattener
 import org.rascalmpl.parser.uptr.UPTRNodeFactory
+import org.rascalmpl.parser.{ASTBuilder, Parser}
 import syntax.{BasicType => _, Module => _, Type => _, _}
 
+import scala.collection.JavaConverters._
 import scalaz.\/
-import scalaz.syntax.either._
 import scalaz.std.list._
 import scalaz.std.option._
-import scalaz.syntax.traverse._
-import scalaz.syntax.foldable._
+import scalaz.syntax.either._
 import scalaz.syntax.monadPlus._
+import scalaz.syntax.traverse._
 
 object RascalWrapper {
   var varCounter = 0
+
+  private
+  def literalToString(stringConstant: StringConstant): String = {
+    stringConstant match {
+      case lexical: StringConstant.Lexical => lexical.getString
+    }
+  }
+
+  private
+  def literalToInteger(decimalIntegerLiteral: DecimalIntegerLiteral): Int = {
+    decimalIntegerLiteral match {
+      case lexical: DecimalIntegerLiteral.Lexical => lexical.getString.toInt
+    }
+  }
+
+  private
+  def nameToString(name: org.rascalmpl.ast.Name): String = {
+    name match {
+      case lexical: Name.Lexical => lexical.getString
+    }
+  }
 
   def parseRascal(path: String): Module = {
     val parser = new RascalParser()
@@ -35,7 +55,27 @@ object RascalWrapper {
     astbuilder.buildModule(parsed)
   }
 
-  def translatePattern(pattern: Expression): String \/ Patt = ???
+
+  def translatePattern(pattern: Expression): String \/ Patt = {
+    if (pattern.isCallOrTree) {
+      val caller = pattern.getExpression
+      val args = pattern.getArguments.asScala.toList
+      val subpatterns = args.traverseU(translatePattern)
+      val consName = nameToString(caller.getName)
+      subpatterns.map(ConstructorPatt(consName,_))
+    } else if (pattern.isLiteral) {
+      val lit = pattern.getLiteral
+      if (lit.isInteger) {
+        BasicPatt(IntLit(literalToInteger(lit.getIntegerLiteral.getDecimal))).right
+      } else if (lit.isString && lit.getStringLiteral.isNonInterpolated) {
+        BasicPatt(StringLit(literalToString(lit.getStringLiteral.getConstant))).right
+      } else {
+        s"Unsupported literal: $lit".left
+      }
+    } else {
+      ???
+    }
+  }
 
   def translateStatement(stmt: Statement): String \/ Expr = {
     if (stmt.isAssert || stmt.isAssertWithMessage) {
@@ -46,7 +86,7 @@ object RascalWrapper {
       if (assgnop.isDefault) {
         val assignable = stmt.getAssignable
         if (assignable.isVariable) {
-          val varName = assignable.getName.asInstanceOf[Lexical].getString
+          val varName = nameToString(assignable.getName)
           val tvarVal = translateStatement(stmt.getStatement)
           tvarVal.map(e => AssignExpr(varName, e))
         }
@@ -129,7 +169,7 @@ object RascalWrapper {
       val varstysr = translateType(locvardecl.getType)
       val parsinit = varstysr.flatMap(varsty =>
         locvardecl.getVariables.asScala.toList.traverseU { vr =>
-          val vrname = vr.getName.asInstanceOf[Lexical].getString
+          val vrname = nameToString(vr.getName)
           val initvalr =
             if (vr.hasInitial) {
               translateExpression(vr.getInitial).map(e => Some(AssignExpr(vrname, e)))
@@ -150,12 +190,12 @@ object RascalWrapper {
     val funsig = fundecl.getSignature
     val funrety = funsig.getType
     val tfunrety = translateType(funrety)
-    val funname = funsig.getName.asInstanceOf[Lexical].getString
+    val funname = nameToString(funsig.getName)
     val funpars = funsig.getParameters.getFormals.getFormals.asScala.toList
     val tfunpars = funpars.traverseU {
       case tvar: TypedVariable =>
         val varTyr = translateType(tvar.getType)
-        val varNm = tvar.getName.asInstanceOf[Lexical].getString
+        val varNm = nameToString(tvar.getName)
         varTyr.map(varTy => Parameter(varTy, varNm))
       case e => s"Function parameter unsupported: $e".left
     }
@@ -167,14 +207,14 @@ object RascalWrapper {
   def translateData(data: Data): String \/ syntax.DataDef = {
     val dataty = data.getUser
     if (!dataty.hasParameters) {
-      val datanm = dataty.getName.getNames.asScala.map(_.asInstanceOf[Lexical].getString).mkString(".")
+      val datanm = dataty.getName.getNames.asScala.map(nameToString).mkString(".")
       val variants = data.getVariants
       val tvariants = variants.asScala.toList.traverseU { variant =>
-        val variantName = variant.getName.asInstanceOf[Lexical].toString
+        val variantName = nameToString(variant.getName)
         val variantArgs = variant.getArguments
         val tvariantArgs = variantArgs.asScala.toList.traverseU { tyarg =>
           val targtyr = translateType(tyarg.getType)
-          val targnm = tyarg.getName.asInstanceOf[Lexical].getString
+          val targnm = nameToString(tyarg.getName)
           targtyr.map(targty => Parameter(targty, targnm))
         }
         tvariantArgs.map(targs => ConstructorDef(variantName, targs))
@@ -218,7 +258,7 @@ object RascalWrapper {
     else if (ty.isUser) {
       val user = ty.getUser
       val names = user.getName.getNames.asScala.toList
-      val name = names.map(_.asInstanceOf[Lexical].getString).mkString(".")
+      val name = names.map(nameToString).mkString(".")
       if (user.hasParameters && user.getParameters.size > 0)
         s"Unsupported data-type with parameters: $name".left
       else DataType(name).right
@@ -234,7 +274,7 @@ object RascalWrapper {
       vars.traverseU(vr =>
         if (vr.hasInitial) {
           val exprr = translateExpression(vr.getInitial)
-          exprr.map(expr => GlobalVarDef(varty, vr.getName.asInstanceOf[Lexical].getString, expr))
+          exprr.map(expr => GlobalVarDef(varty, nameToString(vr.getName), expr))
         } else s"${vr.getName} has no initial value".left)
     )
   }
@@ -246,6 +286,17 @@ object RascalWrapper {
     else s"Unsupported declaration: $decl".left
   }
 
+  def resolveConstructorCalls(consNames: Set[ConsName], df: Def): Def = {
+    val rewriteConsNames = Rewriter.rule[Expr] {
+      case FunCallExpr(functionName, args) if consNames.contains(functionName) =>
+        ConstructorExpr(functionName, args)
+      case FunCallExpr(functionName, args) =>
+        FunCallExpr(functionName, args)
+      case e => e
+    }
+    rewriteConsNames(df).get.asInstanceOf[Def]
+  }
+
   def translateModule(module: Module): String \/ syntax.Module = {
     // TODO Deal with imports
 
@@ -253,7 +304,14 @@ object RascalWrapper {
       val toplevels = module.getBody.getToplevels.asScala.toList
       val defs =
         toplevels.traverseU(toplevel => translateDecl(toplevel.getDeclaration))
-      defs.map(_.flatten).map(syntax.Module(_))
+      val tmodr = defs.map(_.flatten).map(syntax.Module(_))
+      tmodr.map { tmod =>
+        val constructorNames = tmod.defs.flatMap {
+          case dd: DataDef => dd.constructors.map(_.name)
+          case _ => Seq()
+        }.toSet
+        syntax.Module(tmod.defs.map(df => resolveConstructorCalls(constructorNames, df)))
+      }
     } else {
       s"${module.getHeader.getName} does not have any definitions".left
     }
