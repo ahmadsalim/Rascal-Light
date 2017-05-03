@@ -294,7 +294,44 @@ object RascalWrapper {
     } else s"Unsupported type: $ty".left
   }
 
-  def translateExpression(expr: Expression): String \/ syntax.Expr = ???
+  def translateExpression(expr: Expression): String \/ syntax.Expr = {
+    if (expr.isQualifiedName) {
+      val varName = qualifiedNameToString(expr.getQualifiedName)
+      VarExpr(varName).right
+    } else if (expr.isLiteral) {
+      val lit = expr.getLiteral
+      if (lit.isInteger) {
+        ???
+      } else if (lit.isString) {
+        ???
+      } else {
+        ???
+      }
+    } else if (expr.isCallOrTree) {
+      ???
+    } else if (expr.isNegation || expr.isNegative) {
+      ???
+    } else if (expr.isAddition) {
+      ???
+    } else if(expr.isAnd || expr.isOr ||
+              expr.isEquals || expr.isNonEquals ||
+              expr.isImplication || expr.isEquivalence || expr.isIn ||
+              expr.isLessThan || expr.isGreaterThan ||
+              expr.isGreaterThanOrEq || expr.isLessThanOrEq ||
+              expr.isDivision  || expr.isSubtraction || expr.isModulo || expr.isProduct) {
+      ???
+    } else if (expr.isList) {
+      ???
+    } else if (expr.isSet) {
+      ???
+    } else if (expr.isMap) {
+      ???
+    } else if (expr.isSubscript) {
+      ???
+    } else {
+      ???
+    }
+  }
 
   def translateGlobalVariable(variable: Variable): String \/ List[syntax.GlobalVarDef] = {
     val vartyr = translateType(variable.getType)
