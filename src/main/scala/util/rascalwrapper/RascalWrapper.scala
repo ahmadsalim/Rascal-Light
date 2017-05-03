@@ -26,6 +26,9 @@ object RascalWrapper {
   var varCounter = 0
 
   private
+  def qualifiedNameToString(qn: QualifiedName) = qn.getNames.asScala.map(nameToString).mkString(".")
+
+  private
   def literalToString(stringConstant: StringConstant): String = {
     stringConstant match {
       case lexical: StringConstant.Lexical => lexical.getString
@@ -56,6 +59,8 @@ object RascalWrapper {
   }
 
 
+  def translateStarPattern(pattern: Expression): String \/ StarPatt = ???
+
   def translatePattern(pattern: Expression): String \/ Patt = {
     if (pattern.isCallOrTree) {
       val caller = pattern.getExpression
@@ -72,9 +77,19 @@ object RascalWrapper {
       } else {
         s"Unsupported literal: $lit".left
       }
-    } else {
-      ???
-    }
+    } else if (pattern.isQualifiedName) {
+      val varName = qualifiedNameToString(pattern.getQualifiedName)
+      VarPatt(varName).right
+    } else if (pattern.isDescendant) {
+      val innerPatt = translatePattern(pattern.getPattern)
+      innerPatt.map(DescendantPatt)
+    } else if (pattern.isList) {
+      val innerPats = pattern.getElements0.asScala.toList
+      innerPats.traverseU(translateStarPattern).map(ListPatt)
+    } else if (pattern.isSet) {
+      val innerPats = pattern.getElements0.asScala.toList
+      innerPats.traverseU(translateStarPattern).map(SetPatt)
+    } else ???
   }
 
   def translateStatement(stmt: Statement): String \/ Expr = {
@@ -207,7 +222,7 @@ object RascalWrapper {
   def translateData(data: Data): String \/ syntax.DataDef = {
     val dataty = data.getUser
     if (!dataty.hasParameters) {
-      val datanm = dataty.getName.getNames.asScala.map(nameToString).mkString(".")
+      val datanm = qualifiedNameToString(dataty.getName)
       val variants = data.getVariants
       val tvariants = variants.asScala.toList.traverseU { variant =>
         val variantName = nameToString(variant.getName)
