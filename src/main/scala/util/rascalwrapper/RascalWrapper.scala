@@ -59,7 +59,14 @@ object RascalWrapper {
   }
 
 
-  def translateStarPattern(pattern: Expression): String \/ StarPatt = ???
+  def translateStarPattern(pattern: Expression): String \/ StarPatt = {
+    if (pattern.isMultiVariable) {
+      val varName = qualifiedNameToString(pattern.getQualifiedName)
+      ArbitraryPatt(varName).right
+    } else {
+      translatePattern(pattern).map(OrdinaryPatt)
+    }
+  }
 
   def translatePattern(pattern: Expression): String \/ Patt = {
     if (pattern.isCallOrTree) {
@@ -89,7 +96,14 @@ object RascalWrapper {
     } else if (pattern.isSet) {
       val innerPats = pattern.getElements0.asScala.toList
       innerPats.traverseU(translateStarPattern).map(SetPatt)
-    } else ???
+    } else if (pattern.isVariableBecomes || pattern.isTypedVariable || pattern.isTypedVariableBecomes) {
+      val varName = nameToString(pattern.getName)
+      val varType = if (pattern.hasType) translateType(pattern.getType) else ValueType.right
+      val varExpr = if (pattern.hasExpression) translatePattern(pattern.getExpression) else VarPatt(varName).right
+      varType.flatMap(ty => varExpr.map(patt => LabelledTypedPatt(ty, varName, patt)))
+    } else {
+      s"Unsupported pattern: $pattern".left
+    }
   }
 
   def translateStatement(stmt: Statement): String \/ Expr = {
