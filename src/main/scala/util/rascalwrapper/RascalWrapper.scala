@@ -7,7 +7,7 @@ import org.bitbucket.inkytonik.kiama.rewriting.Rewriter
 import org.rascalmpl.ast.Declaration.{Data, Function, Variable}
 import org.rascalmpl.ast.Expression.TypedVariable
 import org.rascalmpl.ast.Statement.VariableDeclaration
-import org.rascalmpl.ast.{BasicType, _}
+import org.rascalmpl.ast.{BasicType, Case, _}
 import org.rascalmpl.library.lang.rascal.syntax.RascalParser
 import org.rascalmpl.parser.gtd.result.out.DefaultNodeFlattener
 import org.rascalmpl.parser.uptr.UPTRNodeFactory
@@ -36,9 +36,19 @@ object RascalWrapper {
   }
 
   private
-  def literalToInteger(decimalIntegerLiteral: DecimalIntegerLiteral): Int = {
-    decimalIntegerLiteral match {
-      case lexical: DecimalIntegerLiteral.Lexical => lexical.getString.toInt
+  def literalToInteger(integerLiteral: IntegerLiteral): Int = {
+    if (integerLiteral.isDecimalIntegerLiteral) {
+      integerLiteral.getDecimal match {
+        case lexical: DecimalIntegerLiteral.Lexical => lexical.getString.toInt
+      }
+    } else if (integerLiteral.isHexIntegerLiteral) {
+      integerLiteral.getHex match {
+        case lexical: HexIntegerLiteral.Lexical => lexical.getString.toInt
+      }
+    } else {
+      integerLiteral.getOctal match {
+        case lexical: OctalIntegerLiteral.Lexical => lexical.getString.toInt
+      }
     }
   }
 
@@ -78,7 +88,7 @@ object RascalWrapper {
     } else if (pattern.isLiteral) {
       val lit = pattern.getLiteral
       if (lit.isInteger) {
-        BasicPatt(IntLit(literalToInteger(lit.getIntegerLiteral.getDecimal))).right
+        BasicPatt(IntLit(literalToInteger(lit.getIntegerLiteral))).right
       } else if (lit.isString && lit.getStringLiteral.isNonInterpolated) {
         BasicPatt(StringLit(literalToString(lit.getStringLiteral.getConstant))).right
       } else {
@@ -103,6 +113,44 @@ object RascalWrapper {
       varType.flatMap(ty => varExpr.map(patt => LabelledTypedPatt(ty, varName, patt)))
     } else {
       s"Unsupported pattern: $pattern".left
+    }
+  }
+
+  def translateEnum(enum: Expression): String \/ Enum = {
+    if (enum.isMatch) {
+      translatePattern(enum.getPattern).flatMap(patt =>
+        translateExpression(enum.getExpression).map(MatchAssign(patt, _)))
+    } else if (enum.isEnumerator) {
+      val pattern = enum.getPattern
+      val expr = enum.getExpression
+      if (pattern.isQualifiedName) {
+        val name = qualifiedNameToString(pattern.getQualifiedName)
+        translateExpression(expr).map(EnumAssign(name, _))
+      } else s"Unsupported pattern in enumeration: $pattern".left
+    } else {
+      s"Unsupported enumeration expression: $enum".left
+    }
+  }
+
+  def translateCases(cases: List[Case]): String \/ List[syntax.Case] = {
+    cases.traverseU { cas =>
+      (if (cas.isPatternWithAction) {
+        val patternWithAction = cas.getPatternWithAction
+        val pattern = patternWithAction.getPattern
+        if (patternWithAction.isArbitrary) {
+          s"Unsupported non-replacement pattern with action: $pattern".left
+        } else {
+          val replacing = patternWithAction.getReplacement
+          if (replacing.hasConditions) {
+            s"Unsupported conditioned replacement pattern with action: $replacing".left
+          } else {
+            translatePattern(pattern).flatMap(patt =>
+              translateExpression(replacing.getReplacementExpression).map(syntax.Case(patt, _)))
+          }
+        }
+      } else {
+        translateStatement(cas.getStatement).map(syntax.Case(IgnorePatt, _))
+      }) : String \/ syntax.Case
     }
   }
 
@@ -133,26 +181,40 @@ object RascalWrapper {
     } else if (stmt.isFail)  {
       FailExpr.right
     } else if (stmt.isFor) {
-      ???
+      val gens = stmt.getGenerators
+      val body = stmt.getBody
+      if (gens.size == 1) {
+        translateEnum(gens.get(0)).flatMap(enum => translateStatement(body).map(ForExpr(enum, _)))
+      } else { s"Unsupported multiple-generator for-loop: $gens".left }
     } else if (stmt.isIfThen || stmt.isIfThenElse) {
-      if (stmt.getConditions.size != 1) s"Only one condition supported in if loop: $stmt".left
-      else {
+      if (stmt.getConditions.size == 1) {
         val tcondr = translateExpression(stmt.getConditions.get(0))
         val thenbr = translateStatement(stmt.getThenStatement)
         val elsebr = if (stmt.hasElseStatement) translateStatement(stmt.getStatement)
-                     else LocalBlockExpr(Seq(), Seq()).right
+        else LocalBlockExpr(Seq(), Seq()).right
         tcondr.flatMap(cond => thenbr.flatMap(thenb => elsebr.map(elseb => IfExpr(cond, thenb, elseb))))
+      } else {
+        s"Only one condition supported in if loop: $stmt".left
       }
     } else if (stmt.isNonEmptyBlock) {
       translateStatements(stmt.getStatements.asScala.toList)
     } else if (stmt.isReturn) {
       translateStatement(stmt.getStatement).map(ReturnExpr)
     } else if (stmt.isSolve) {
-      ???
+      if (stmt.getBound.isEmpty) {
+        val vars = stmt.getVariables.asScala.toList.map(qualifiedNameToString)
+        val body = stmt.getBody
+        translateStatement(body).map(SolveExpr(vars, _))
+      } else {
+       s"Unsupported bounded solve-statement: $stmt".left
+      }
     } else if (stmt.isSwitch) {
-      ???
+      val subject = stmt.getExpression
+      val cases = stmt.getCases.asScala.toList
+      translateExpression(subject).flatMap(subj => translateCases(cases).map(SwitchExpr(subj, _)))
     } else if (stmt.isThrow) {
-      ???
+      val valu = stmt.getStatement
+      translateStatement(valu).map(ThrowExpr)
     } else if (stmt.isTry || stmt.isTryFinally) {
       val trybodyr = translateStatement(stmt.getBody)
       // TO DO binding handlers seem to not return any value unlike semantics?
@@ -175,7 +237,25 @@ object RascalWrapper {
         trycatch.flatMap(tc => finallybodyr.map(fb => TryFinallyExpr(tc, fb)))
       } else trycatch
     } else if (stmt.isVisit) {
-      ???
+      val visit = stmt.getVisit
+      if (visit.isGivenStrategy) {
+        val strategy = visit.getStrategy
+        val strat = {
+          if (strategy.isBottomUp) BottomUp
+          else if (strategy.isBottomUpBreak) BottomUpBreak
+          else if (strategy.isInnermost) Innermost
+          else if (strategy.isTopDown) TopDown
+          else if (strategy.isTopDownBreak) TopDownBreak
+          else /* strategy.isOutermost */ Outermost
+        }
+        val subject = visit.getSubject
+        val cases = visit.getCases.asScala.toList
+        translateExpression(subject).flatMap(subj =>
+          translateCases(cases).map(cs => VisitExpr(strat, subj, cs))
+        )
+      } else {
+        s"Unsupported visit without strategy: $visit".left
+      }
     } else if (stmt.isWhile) {
       if (stmt.getConditions.size != 1) s"Only one condition supported in while loop: $stmt".left
       else {
@@ -301,35 +381,88 @@ object RascalWrapper {
     } else if (expr.isLiteral) {
       val lit = expr.getLiteral
       if (lit.isInteger) {
-        ???
+        val intlit = lit.getIntegerLiteral
+        BasicExpr(IntLit(literalToInteger(intlit))).right
       } else if (lit.isString) {
-        ???
+        BasicExpr(StringLit(literalToString(lit.getStringLiteral.getConstant))).right
       } else {
-        ???
+        s"Unsupported literal: $lit".left
       }
     } else if (expr.isCallOrTree) {
-      ???
+      val caller = expr.getExpression
+      val args = expr.getArguments.asScala.toList
+      val subexpressions = args.traverseU(translateExpression)
+      subexpressions.map(FunCallExpr(nameToString(caller.getName), _))
     } else if (expr.isNegation || expr.isNegative) {
-      ???
+      val inner = expr.getArgument
+      val opName = if (expr.isNegation) "!" else /* expr.isNegative */ "-"
+      translateExpression(inner).map(UnaryExpr(opName,_))
     } else if (expr.isAddition) {
-      ???
+      val lhs = expr.getLhs
+      val rhs = expr.getRhs
+      if (rhs.isMap) {
+        val mappings = rhs.getMappings.asScala.toList
+        if (mappings.size == 1) {
+          val upd = mappings.head
+          val key = upd.getFrom
+          val valu = upd.getTo
+          translateExpression(lhs).flatMap(map =>
+            translateExpression(key).flatMap(k => translateExpression(valu).map(v => UpdateExpr(map, k, v))
+          ))
+        } else {
+          s"Unsupported update with multiple keys: $mappings".left
+        }
+      } else {
+        translateExpression(lhs).flatMap(l => translateExpression(rhs).map(r => BinaryExpr(l, "+", r)))
+      }
     } else if(expr.isAnd || expr.isOr ||
               expr.isEquals || expr.isNonEquals ||
               expr.isImplication || expr.isEquivalence || expr.isIn ||
               expr.isLessThan || expr.isGreaterThan ||
               expr.isGreaterThanOrEq || expr.isLessThanOrEq ||
               expr.isDivision  || expr.isSubtraction || expr.isModulo || expr.isProduct) {
-      ???
+      val lhs = expr.getLhs
+      val rhs = expr.getRhs
+      val opName = {
+        if (expr.isAnd) "&&"
+        else if (expr.isOr) "||"
+        else if (expr.isEquals) "=="
+        else if (expr.isNonEquals) "!="
+        else if (expr.isImplication) "==>"
+        else if (expr.isEquivalence) "<==>"
+        else if (expr.isIn) "in"
+        else if (expr.isLessThan) "<"
+        else if (expr.isGreaterThan) ">"
+        else if (expr.isLessThanOrEq) "<="
+        else if (expr.isGreaterThanOrEq) ">="
+        else if (expr.isDivision) "/"
+        else if (expr.isSubtraction) "-"
+        else if (expr.isModulo) "%"
+        else /* expr.isProduct */ "*"
+      }
+      translateExpression(lhs).flatMap(l => translateExpression(rhs).map(r => BinaryExpr(l, opName, r)))
     } else if (expr.isList) {
-      ???
+      val elems = expr.getElements0.asScala.toList
+      elems.traverseU(translateExpression).map(ListExpr)
     } else if (expr.isSet) {
-      ???
+      val elems = expr.getElements0.asScala.toList
+      elems.traverseU(translateExpression).map(SetExpr)
     } else if (expr.isMap) {
-      ???
+      val mappings = expr.getMappings.asScala.toList.map(mp => mp.getFrom -> mp.getTo)
+      mappings.traverseU {
+        case (e1, e2) => translateExpression(e1).flatMap(e1 => translateExpression(e2).map(e1 -> _))
+      }.map(MapExpr)
     } else if (expr.isSubscript) {
-      ???
+      val target = expr.getExpression
+      val subscrs = expr.getSubscripts
+      if (subscrs.size == 1) {
+        val subscr = subscrs.get(0)
+        translateExpression(target).flatMap(t =>
+          translateExpression(subscr).map(sub => LookupExpr(t, sub))
+        )
+      } else { s"Unsupported multiple subscripts: $subscrs".left }
     } else {
-      ???
+      s"Unsupported expression $expr".left
     }
   }
 

@@ -62,6 +62,7 @@ case object Outermost extends Strategy
 
 sealed trait Patt
 case class BasicPatt(b: Basic) extends Patt
+case object IgnorePatt extends Patt
 case class VarPatt(name: VarName) extends Patt
 case class ConstructorPatt(name: ConsName, pats: Seq[Patt]) extends Patt
 case class LabelledTypedPatt(typ: Type, labelVar: VarName, patt: Patt) extends Patt

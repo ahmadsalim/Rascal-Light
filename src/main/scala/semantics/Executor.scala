@@ -102,6 +102,7 @@ object Executor {
         }
     }
     patt match {
+      case IgnorePatt => Stream(Map())
       case BasicPatt(b) => tval match {
         case BasicValue(bv) if b == bv => Stream(Map())
         case _ => Stream()
