@@ -5,8 +5,8 @@ resolvers ++= Seq(
   Resolver.sonatypeRepo("snapshots")
 )
 
-name := "Maverick"
-description := "A tool for analyzing core-Rascal programs"
+name := "Rascal Light"
+description := "Implementation and analyses for a subset of Rascal"
 version := "0.1"
 startYear := Some(2017)
 licenses += (LicenseInfo.BSD2.name, url(LicenseInfo.BSD2.url))
