@@ -308,9 +308,17 @@ object RascalWrapper {
         varTyr.map(varTy => Parameter(varTy, varNm))
       case e => s"Function parameter unsupported: $e".left
     }
-    val funbody = fundecl.getBody
-    val tfunbody = translateStatements(funbody.getStatements.asScala.toList)
-    tfunrety.flatMap(rety => tfunpars.flatMap(fps => tfunbody.map(body => FunDef(rety, funname, fps, body))))
+    if (fundecl.isDefault) {
+      val funbody = fundecl.getBody
+      val tfunbody = translateStatements(funbody.getStatements.asScala.toList)
+      tfunrety.flatMap(rety => tfunpars.flatMap(fps => tfunbody.map(body => FunDef(rety, funname, fps, body))))
+    } else if (fundecl.isExpression) {
+      val funexpr = fundecl.getExpression
+      val tfunexpr = translateExpression(funexpr)
+      tfunrety.flatMap(rety => tfunpars.flatMap(fps => tfunexpr.map(body => FunDef(rety, funname, fps, body))))
+    } else {
+      s"Unsupported function declaration: $fundecl".left
+    }
   }
 
   def translateData(data: Data): String \/ syntax.DataDef = {

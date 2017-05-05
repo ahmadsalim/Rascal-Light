@@ -1,0 +1,10 @@
+module Expr
+
+data Expr = var(str nm) | cst(int vl) | mult(Expr el, Expr er);
+
+Expr simplify(Expr expr) = bottom-up visit (expr) { 
+	case mult(cst(0), y) => cst(0)
+	case mult(x, cst(0)) => cst(0)
+	case mult(cst(1), y) => y
+	case mult(x, cst(1)) => x
+};
