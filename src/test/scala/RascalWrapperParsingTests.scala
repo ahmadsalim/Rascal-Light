@@ -2,7 +2,6 @@ import org.scalatest.{FlatSpec, Matchers}
 import syntax._
 import util.rascalwrapper.RascalWrapper
 
-import scala.io.Source
 import scalaz.\/-
 
 /**
@@ -25,4 +24,37 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                     Case(ConstructorPatt("mult", List(VarPatt("x"), ConstructorPatt("cst", List(BasicPatt(IntLit(1)))))), VarExpr("x")))))))
     translated should matchPattern { case \/-(`expected`) => }
   }
+
+  it should "parse NNF.rscli correctly" in {
+    val resource = getClass.getResource("NNF.rscli")
+    val parsed = RascalWrapper.parseRascal(resource.getFile)
+    val translated = RascalWrapper.translateModule(parsed)
+    val expected = ()
+    translated should matchPattern { case \/-(ex) => }
+  }
+
+  it should "parse RenameField.rscli correctly" in {
+    val resource = getClass.getResource("RenameField.rscli")
+    val parsed = RascalWrapper.parseRascal(resource.getFile)
+    val translated = RascalWrapper.translateModule(parsed)
+    val expected = ()
+    translated should matchPattern { case \/-(ex) => }
+  }
+
+  it should "parse ExtractSuperclass.rscli correctly" in {
+    val resource = getClass.getResource("ExtractSuperclass.rscli")
+    val parsed = RascalWrapper.parseRascal(resource.getFile)
+    val translated = RascalWrapper.translateModule(parsed)
+    val expected = ()
+    translated should matchPattern { case \/-(ex) => }
+  }
+
+  it should "parse ReplaceDelegation.rscli correctly" in {
+    val resource = getClass.getResource("ReplaceDelegation.rscli")
+    val parsed = RascalWrapper.parseRascal(resource.getFile)
+    val translated = RascalWrapper.translateModule(parsed)
+    val expected = ()
+    translated should matchPattern { case \/-(ex) => }
+  }
+
 }

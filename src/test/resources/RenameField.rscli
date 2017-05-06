@@ -1,0 +1,31 @@
+module RenameField
+
+data Package = package(map[str, Class] classes);
+data Maybestr = nothing() | just(str val) ;
+data Class = class(str name, map[str, Field] fields, map[str, Method] methods, Maybestr super);
+data Field = field(str name, str typ);
+data Method = method(str name, str return_typ, list[Parameter] parameters, Stmt body);
+data Parameter = parameter(str typ, str name);
+data Stmt = ifstmt(Expr cond, Stmt thenb, Stmt elseb)
+          | returnstmt(Expr val)
+          | assignstmt(Expr lhs, Expr rhs)
+          | block(list[Stmt] stmts)
+          ;
+data Expr = fieldaccessexpr(str typ, Expr target, str fieldname)
+          | var(str typ, str name)
+          | methodcallexpr(str typ, Expr target, str methodname, list[Expr] args)
+          ;
+
+Package renameField(Package pkg, str cl, str oldFieldName, str newFieldName) {
+	assert (cl in pkg.classes) && 
+	       (oldFieldName in pkg.classes[cl].fields) && 
+	       (newFieldName notin pkg.classes[cl].fields);
+	Field fieldDef = pkg.classes[cl].fields[oldFieldName]; 
+	fieldDef.name = newFieldName;
+	pkg.classes[cl].fields = delete(pkg.classes[cl].fields, oldFieldName) + (newFieldName: fieldDef);
+	return top-down visit(pkg) {
+		case fae : fieldaccessexpr(faty, target, oldFieldName) =>
+			{ if (target.typ == cl) fieldaccessexpr(faty, target, newFieldName); else fae; }
+	};
+}
+

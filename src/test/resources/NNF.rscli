@@ -1,0 +1,14 @@
+module NNF
+
+data Formula = atom(str nm)
+             | and(Formula l, Formula r)
+             | or(Formula l, Formula r)
+             | imp(Formula l, Formula r)
+             | neg(Formula f);
+
+Formula nnf(Formula phi) = top-down visit(phi) {
+	case neg(or(l,r)) => and(neg(l), neg(r))
+	case neg(and(l,r)) => or(neg(l), neg(r))
+	case neg(imp(l,r)) => and(l, neg(r))
+	case neg(neg(f)) => nnf(f)
+};
