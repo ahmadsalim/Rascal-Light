@@ -23,7 +23,6 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                     Case(ConstructorPatt("mult", List(VarPatt("x"), ConstructorPatt("cst", List(BasicPatt(IntLit(0)))))), ConstructorExpr("cst", List(BasicExpr(IntLit(0))))),
                     Case(ConstructorPatt("mult", List(ConstructorPatt("cst", List(BasicPatt(IntLit(1)))), VarPatt("y"))), VarExpr("y")),
                     Case(ConstructorPatt("mult", List(VarPatt("x"), ConstructorPatt("cst", List(BasicPatt(IntLit(1)))))), VarExpr("x")))))))
-    println(translated)
-    translated shouldBe a [\/-[_]]
+    translated should matchPattern { case \/-(`expected`) => }
   }
 }
