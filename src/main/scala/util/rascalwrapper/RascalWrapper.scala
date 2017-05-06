@@ -64,7 +64,7 @@ object RascalWrapper {
     val file = new File(path)
     val input = new String(Files.readAllBytes(file.toPath))
     val astbuilder = new ASTBuilder()
-    val parsed = parser.parse(Parser.START_MODULE, file.toURI, input.toCharArray, new DefaultNodeFlattener(), new UPTRNodeFactory())
+    val parsed = parser.parse(Parser.START_MODULE, file.toURI, input.toCharArray, new DefaultNodeFlattener(), new UPTRNodeFactory(false))
     astbuilder.buildModule(parsed)
   }
 
@@ -83,7 +83,7 @@ object RascalWrapper {
       val caller = pattern.getExpression
       val args = pattern.getArguments.asScala.toList
       val subpatterns = args.traverseU(translatePattern)
-      val consName = nameToString(caller.getName)
+      val consName = qualifiedNameToString(caller.getQualifiedName)
       subpatterns.map(ConstructorPatt(consName,_))
     } else if (pattern.isLiteral) {
       val lit = pattern.getLiteral
@@ -238,24 +238,7 @@ object RascalWrapper {
       } else trycatch
     } else if (stmt.isVisit) {
       val visit = stmt.getVisit
-      if (visit.isGivenStrategy) {
-        val strategy = visit.getStrategy
-        val strat = {
-          if (strategy.isBottomUp) BottomUp
-          else if (strategy.isBottomUpBreak) BottomUpBreak
-          else if (strategy.isInnermost) Innermost
-          else if (strategy.isTopDown) TopDown
-          else if (strategy.isTopDownBreak) TopDownBreak
-          else /* strategy.isOutermost */ Outermost
-        }
-        val subject = visit.getSubject
-        val cases = visit.getCases.asScala.toList
-        translateExpression(subject).flatMap(subj =>
-          translateCases(cases).map(cs => VisitExpr(strat, subj, cs))
-        )
-      } else {
-        s"Unsupported visit without strategy: $visit".left
-      }
+      translateVisit(visit)
     } else if (stmt.isWhile) {
       if (stmt.getConditions.size != 1) s"Only one condition supported in while loop: $stmt".left
       else {
@@ -264,6 +247,27 @@ object RascalWrapper {
         tcondr.flatMap(cond => tbodyr.map(body => WhileExpr(cond, body)))
       }
     } else s"Unsupported statement: $stmt".left
+  }
+
+  private def translateVisit(visit: Visit): String \/ Expr = {
+    if (visit.isGivenStrategy) {
+      val strategy = visit.getStrategy
+      val strat = {
+        if (strategy.isBottomUp) BottomUp
+        else if (strategy.isBottomUpBreak) BottomUpBreak
+        else if (strategy.isInnermost) Innermost
+        else if (strategy.isTopDown) TopDown
+        else if (strategy.isTopDownBreak) TopDownBreak
+        else /* strategy.isOutermost */ Outermost
+      }
+      val subject = visit.getSubject
+      val cases = visit.getCases.asScala.toList
+      translateExpression(subject).flatMap(subj =>
+        translateCases(cases).map(cs => VisitExpr(strat, subj, cs))
+      )
+    } else {
+      s"Unsupported visit without strategy: $visit".left
+    }
   }
 
   def translateStatements(stmts: List[Statement]): String \/ syntax.Expr = {
@@ -400,7 +404,7 @@ object RascalWrapper {
       val caller = expr.getExpression
       val args = expr.getArguments.asScala.toList
       val subexpressions = args.traverseU(translateExpression)
-      subexpressions.map(FunCallExpr(nameToString(caller.getName), _))
+      subexpressions.map(FunCallExpr(qualifiedNameToString(caller.getQualifiedName), _))
     } else if (expr.isNegation || expr.isNegative) {
       val inner = expr.getArgument
       val opName = if (expr.isNegation) "!" else /* expr.isNegative */ "-"
@@ -469,6 +473,8 @@ object RascalWrapper {
           translateExpression(subscr).map(sub => LookupExpr(t, sub))
         )
       } else { s"Unsupported multiple subscripts: $subscrs".left }
+    } else if (expr.isVisit) {
+      translateVisit(expr.getVisit)
     } else {
       s"Unsupported expression $expr".left
     }
@@ -497,11 +503,8 @@ object RascalWrapper {
     val rewriteConsNames = Rewriter.rule[Expr] {
       case FunCallExpr(functionName, args) if consNames.contains(functionName) =>
         ConstructorExpr(functionName, args)
-      case FunCallExpr(functionName, args) =>
-        FunCallExpr(functionName, args)
-      case e => e
     }
-    rewriteConsNames(df).get.asInstanceOf[Def]
+    Rewriter.rewrite(rewriteConsNames)(df)
   }
 
   def translateModule(module: Module): String \/ syntax.Module = {
