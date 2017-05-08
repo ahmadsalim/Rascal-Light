@@ -22,8 +22,10 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                List(Case(ConstructorPatt("mult", List(ConstructorPatt("cst", List(BasicPatt(IntLit(0)))), VarPatt("y"))), ConstructorExpr("cst", List(BasicExpr(IntLit(0))))),
                     Case(ConstructorPatt("mult", List(VarPatt("x"), ConstructorPatt("cst", List(BasicPatt(IntLit(0)))))), ConstructorExpr("cst", List(BasicExpr(IntLit(0))))),
                     Case(ConstructorPatt("mult", List(ConstructorPatt("cst", List(BasicPatt(IntLit(1)))), VarPatt("y"))), VarExpr("y")),
-                    Case(ConstructorPatt("mult", List(VarPatt("x"), ConstructorPatt("cst", List(BasicPatt(IntLit(1)))))), VarExpr("x")))))))
-    translated should matchPattern { case \/-(`expected`) => }
+                    Case(ConstructorPatt("mult", List(VarPatt("x"), ConstructorPatt("cst", List(BasicPatt(IntLit(1)))))), VarExpr("x")))))
+      ))
+    translated should matchPattern { case \/-(res) => }
+    translated.map(m => m.withoutTests shouldBe expected)
   }
 
   it should "parse NNF.rscli correctly" in {

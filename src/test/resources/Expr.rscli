@@ -8,3 +8,22 @@ Expr simplify(Expr expr) = bottom-up visit (expr) {
 	case mult(cst(1), y) => y
 	case mult(x, cst(1)) => x
 };
+
+test bool simplify_test1() = {
+  Expr input = mult(mult(var("x"), cst(0)), mult(var("y"), cst(3)));
+  Expr expected = cst(0);
+  return simplify(input) == expected;
+};
+
+test bool simplify_test2() = {
+  Expr input = mult(mult(var("x"), cst(1)), mult(cst(1), mult(var("y"), cst(3))));
+  Expr expected = mult(var("x"), mult(var("y"), cst(3)));
+  return simplify(input) == expected;
+};
+
+test bool simplify_test3() = {
+  Expr input = mult(mult(var("x"), cst(1)), mult(var("z"), mult(var("y"), cst(3))));
+  Expr expected = mult(var("x"), mult(var("z"), mult(var("y"), cst(3))));
+  println(simplify(input));
+  return simplify(input) == expected;
+};

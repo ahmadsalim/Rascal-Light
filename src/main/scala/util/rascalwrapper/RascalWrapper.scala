@@ -321,7 +321,7 @@ object RascalWrapper {
     }
   }
 
-  def translateFunction(function: Function): String \/ syntax.FunDef = {
+  def translateFunction(function: Function): String \/ syntax.Def = {
     val fundecl = function.getFunctionDeclaration
     val funsig = fundecl.getSignature
     val funrety = funsig.getType
@@ -338,11 +338,19 @@ object RascalWrapper {
     if (fundecl.isDefault) {
       val funbody = fundecl.getBody
       val tfunbody = translateStatements(funbody.getStatements.asScala.toList)
-      tfunrety.flatMap(rety => tfunpars.flatMap(fps => tfunbody.map(body => FunDef(rety, funname, fps, body))))
+      if (funsig.hasModifiers && funsig.getModifiers.getModifiers.asScala.exists(_.isTest)) {
+        tfunbody.map(body => TestDef(funname, body))
+      } else {
+        tfunrety.flatMap(rety => tfunpars.flatMap(fps => tfunbody.map(body => FunDef(rety, funname, fps, body))))
+      }
     } else if (fundecl.isExpression) {
       val funexpr = fundecl.getExpression
       val tfunexpr = translateExpression(funexpr)
-      tfunrety.flatMap(rety => tfunpars.flatMap(fps => tfunexpr.map(body => FunDef(rety, funname, fps, body))))
+      if (funsig.hasModifiers && funsig.getModifiers.getModifiers.asScala.exists(_.isTest)) {
+        tfunexpr.map(body => TestDef(funname, body))
+      } else {
+        tfunrety.flatMap(rety => tfunpars.flatMap(fps => tfunexpr.map(body => FunDef(rety, funname, fps, body))))
+      }
     } else {
       s"Unsupported function declaration: $fundecl".left
     }

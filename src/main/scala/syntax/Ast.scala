@@ -1,12 +1,17 @@
 package syntax
 
 
-case class Module(defs: Seq[Def])
+case class Module(defs: Seq[Def]) {
+  def withoutTests: Module = {
+    Module(defs.filterNot(_.isInstanceOf[TestDef]))
+  }
+}
 
 sealed trait Def
 case class GlobalVarDef(typ: Type, name: VarName, initialValue: Expr) extends Def
 case class FunDef(returntype: Type, name: VarName, parameters: Seq[Parameter], body: Expr) extends Def
 case class DataDef(name: TypeName, constructors: Seq[ConstructorDef]) extends Def
+case class TestDef(name: VarName, body: Expr) extends Def
 
 case class ConstructorDef(name: ConsName, parameters: Seq[Parameter])
 

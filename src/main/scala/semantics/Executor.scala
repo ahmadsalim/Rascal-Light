@@ -712,24 +712,24 @@ object Executor {
     evalLocal(Map.empty, store, expr)
   }
 
-  def execute(module: syntax.Module): String \/ (Store, Module) = {
+  def execute(module: syntax.Module): String \/ ExecutionResult = {
     def alreadyDefined(name: Name, outmod: Module): Boolean = {
       outmod.funs.contains(name) || outmod.globalVars.contains(name) ||
         outmod.datatypes.contains(name) || outmod.constructors.contains(name)
     }
     def alreadyDefinedErrMsg(name: Name) = s"duplicate definition in module of name: $name"
     def constructorTypeSameNameErrMsg(name: Name) = s"constructor $name has the same name as the data type"
-    val transr = module.defs.toList.foldLeftM[String \/ ?, (List[(VarName, Expr)], Module)](
-      (List.empty, Domains.prelude)) { (st, df) =>
-        val (unevalglobvars, outmod) = st
+    val transr = module.defs.toList.foldLeftM[String \/ ?, (List[(VarName, Expr)], List[TestDef], Module)](
+      (List.empty, List.empty, Domains.prelude)) { (st, df) =>
+        val (unevalglobvars, tests, outmod) = st
         df match {
           case GlobalVarDef(typ, name, initialValue) =>
             if (alreadyDefined(name, outmod)) alreadyDefinedErrMsg(name).left
-            else ((name, initialValue) :: unevalglobvars,
+            else ((name, initialValue) :: unevalglobvars, tests,
                     outmod.copy(globalVars = outmod.globalVars.updated(name, typ))).right
           case FunDef(returntype, name, parameters, body) =>
             if (alreadyDefined(name, outmod)) alreadyDefinedErrMsg(name).left
-            else (unevalglobvars,
+            else (unevalglobvars, tests,
                      outmod.copy(funs = outmod.funs.updated(name, (returntype, parameters.toList, body)))).right
           case DataDef(tyname, constructors) =>
             if (alreadyDefined(tyname, outmod)) alreadyDefinedErrMsg(tyname).left
@@ -741,13 +741,14 @@ object Executor {
                   else if (cdf.name == tyname) constructorTypeSameNameErrMsg(cdf.name).left
                   else consmap.updated(cdf.name, (tyname, cdf.parameters.toList)).right
               }
-              consmapr.map { consmap => (unevalglobvars,
+              consmapr.map { consmap => (unevalglobvars, tests,
                   outmod.copy(datatypes = outmod.datatypes.updated(tyname, constructors.map(_.name).toList),
                               constructors = outmod.constructors ++ consmap)) }
             }
+          case td : TestDef => (unevalglobvars, tests :+ td, outmod).right
         }
     }
-    transr.flatMap { case (unevalglobvars, semmod) =>
+    transr.flatMap { case (unevalglobvars, tests, semmod) =>
         unevalglobvars.reverse.foldLeftM[String \/ ?, Store](Store(unevalglobvars.toMap.mapValues(_ => BottomValue))) {
           (store, unevalglobvar) =>
             val (varname, varexpr) = unevalglobvar
@@ -756,7 +757,16 @@ object Executor {
               case ExceptionalResult(exres) => s"Evaluation of left-hand side for variable $varname failed with $exres".left
               case SuccessResult(value) => store_.copy(map = store_.map.updated(varname, value)).right
             }
-        }.map(store => (store, semmod))
+        }.flatMap { store =>
+          tests.foldLeftM[String \/ ?, (Store, List[VarName])]((store, List())) { case ((nstore, failed), test) =>
+              val (res, store_) = eval(semmod, nstore, test.body)
+              res match {
+                case SuccessResult(ConstructorValue("true", Seq())) => (store_, failed).right
+                case SuccessResult(_) => (store_, failed :+ test.name).right
+                case ExceptionalResult(exres) => s"Evaluation of test ${test.name} failed with $exres".left
+              }
+          }
+        }.map { case (store, failed) => ExecutionResult(store, semmod, failed) }
     }
   }
 }

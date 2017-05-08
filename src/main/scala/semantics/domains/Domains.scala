@@ -18,6 +18,8 @@ case object BottomValue extends Value { override val children: List[Value] = Lis
 
 case class Store(map: Map[VarName, Value])
 
+case class ExecutionResult(store: Store, module: Module, failingTests: List[VarName])
+
 sealed trait Result[+T]
 case class SuccessResult[T](t: T) extends Result[T]
 case class ExceptionalResult[T](exres: Exceptional) extends Result[T]
