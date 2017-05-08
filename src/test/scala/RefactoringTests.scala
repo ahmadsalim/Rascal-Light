@@ -51,7 +51,6 @@ class RefactoringTests extends FlatSpec with Matchers {
       pkg :+
       GlobalVarDef(ValueType, "_", FunCallExpr("renameField", Seq(VarExpr("inpkg"), BasicExpr(StringLit("H")), BasicExpr(StringLit("f")), BasicExpr(StringLit("g"))))))
     val actual = Executor.execute(inputModule)
-    actual shouldBe a [\/-[_]]
-    actual.map(_._1).toOption.get should equal (resultStore)
+    actual should matchPattern { case \/-((`resultStore`, _)) => }
   }
 }

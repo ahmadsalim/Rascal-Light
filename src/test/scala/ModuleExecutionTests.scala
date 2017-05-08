@@ -14,8 +14,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
     val emptyModule = syntax.Module(Seq())
     val expected = (Store(Map()), Domains.prelude)
     val actual = Executor.execute(emptyModule)
-    actual shouldBe a [\/-[_]]
-    actual.toOption.get should equal (expected)
+    actual should matchPattern { case \/-(`expected`) => }
   }
 
   "The module with definition `value _ = 2 + 3`" should "produce a store with `_` mapped to `5` and a module with `value _`" in {
@@ -24,8 +23,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
     val expected = (Store(Map("_" -> BasicValue(IntLit(5)))),
                         Domains.prelude.copy(globalVars = Domains.prelude.globalVars.updated("_", ValueType)))
     val actual = Executor.execute(valModule)
-    actual shouldBe a [\/-[_]]
-    actual.toOption.get should equal (expected)
+    actual should matchPattern { case \/-(`expected`) => }
   }
 
   "The module with definition `int double(int x) = x * x`" should "produce an empty store and a module with the function definition" in {
@@ -36,8 +34,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
         Domains.prelude.funs.updated("double",
           (BaseType(IntType), List(Parameter(BaseType(IntType), "x")), BinaryExpr(VarExpr("x"), "*", VarExpr("x"))))))
     val actual = Executor.execute(funModule)
-    actual shouldBe a [\/-[_]]
-    actual.toOption.get should equal (expected)
+    actual should matchPattern { case \/-(`expected`) => }
   }
 
   "The module with `definition data Nat = zero() | succ(n: Nat)`" should "produce an empty store and a module with the data type definition" in {
@@ -49,8 +46,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
                                                  .updated("succ", ("Nat", List(Parameter(DataType("Nat"), "n"))))))
 
     val actual = Executor.execute(dataModule)
-    actual shouldBe a [\/-[_]]
-    actual.toOption.get should equal (expected)
+    actual should matchPattern { case \/-(`expected`) => }
   }
 
 
@@ -64,7 +60,6 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
         funs = Domains.prelude.funs.updated("double",
           (BaseType(IntType), List(Parameter(BaseType(IntType), "x")), BinaryExpr(VarExpr("x"), "*", VarExpr("x"))))))
     val actual = Executor.execute(module)
-    actual shouldBe a [\/-[_]]
-    actual.toOption.get should equal (expected)
+    actual should matchPattern { case \/-(`expected`) => }
   }
 }
