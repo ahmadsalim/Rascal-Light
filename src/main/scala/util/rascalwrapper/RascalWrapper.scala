@@ -7,14 +7,16 @@ import org.bitbucket.inkytonik.kiama.rewriting.Rewriter
 import org.rascalmpl.ast.Declaration.{Data, Function, Variable}
 import org.rascalmpl.ast.Expression.TypedVariable
 import org.rascalmpl.ast.Statement.VariableDeclaration
-import org.rascalmpl.ast.{BasicType, Case, _}
+import org.rascalmpl.ast.{Assignable, BasicType, Case, _}
 import org.rascalmpl.library.lang.rascal.syntax.RascalParser
+import org.rascalmpl.parser.gtd.exception.ParseError
 import org.rascalmpl.parser.gtd.result.out.DefaultNodeFlattener
 import org.rascalmpl.parser.uptr.UPTRNodeFactory
 import org.rascalmpl.parser.{ASTBuilder, Parser}
 import syntax.{BasicType => _, Module => _, Type => _, _}
 
 import scala.collection.JavaConverters._
+import scala.util.Try
 import scalaz.\/
 import scalaz.std.list._
 import scalaz.std.option._
@@ -22,6 +24,7 @@ import scalaz.syntax.either._
 import scalaz.syntax.monadPlus._
 import scalaz.syntax.traverse._
 
+// TODO Consider using pickling if parsing and translation is a bit slow
 object RascalWrapper {
   var varCounter = 0
 
@@ -59,13 +62,18 @@ object RascalWrapper {
     }
   }
 
-  def parseRascal(path: String): Module = {
+  def parseRascal(path: String): String \/ Module = {
     val parser = new RascalParser()
     val file = new File(path)
     val input = new String(Files.readAllBytes(file.toPath))
     val astbuilder = new ASTBuilder()
-    val parsed = parser.parse(Parser.START_MODULE, file.toURI, input.toCharArray, new DefaultNodeFlattener(), new UPTRNodeFactory(false))
-    astbuilder.buildModule(parsed)
+    val parsed = \/.fromTryCatchNonFatal {
+      parser.parse(Parser.START_MODULE, file.toURI, input.toCharArray, new DefaultNodeFlattener(), new UPTRNodeFactory(false))
+    }
+    parsed.leftMap {
+      case parseErr : ParseError => parseErr.toString
+      case err => err.getMessage
+    }.map(astbuilder.buildModule)
   }
 
 
@@ -160,14 +168,11 @@ object RascalWrapper {
       texpr.map(AssertExpr)
     } else if (stmt.isAssignment) {
       val assgnop = stmt.getOperator
-      if (assgnop.isDefault) {
+      val tvarVal = translateStatement(stmt.getStatement)
+     if (assgnop.isDefault) {
         val assignable = stmt.getAssignable
-        if (assignable.isVariable) {
-          val varName = nameToString(assignable.getName)
-          val tvarVal = translateStatement(stmt.getStatement)
-          tvarVal.map(e => AssignExpr(varName, e))
-        }
-        else s"Unsupported assignable: $assignable".left
+        val target = translateAssignable(assignable)
+        tvarVal.flatMap(e => target.map(t =>  AssignExpr(t, e)))
       }
       else s"Unsupported assignment operator: $assgnop".left
     } else if (stmt.isBreak) {
@@ -190,8 +195,7 @@ object RascalWrapper {
       if (stmt.getConditions.size == 1) {
         val tcondr = translateExpression(stmt.getConditions.get(0))
         val thenbr = translateStatement(stmt.getThenStatement)
-        val elsebr = if (stmt.hasElseStatement) translateStatement(stmt.getStatement)
-        else LocalBlockExpr(Seq(), Seq()).right
+        val elsebr = if (stmt.hasElseStatement) translateStatement(stmt.getElseStatement) else LocalBlockExpr(Seq(), Seq()).right
         tcondr.flatMap(cond => thenbr.flatMap(thenb => elsebr.map(elseb => IfExpr(cond, thenb, elseb))))
       } else {
         s"Only one condition supported in if loop: $stmt".left
@@ -249,6 +253,25 @@ object RascalWrapper {
     } else s"Unsupported statement: $stmt".left
   }
 
+  private def translateAssignable(assignable: Assignable): String \/ syntax.Assignable = {
+    if (assignable.isVariable) {
+      val varName = qualifiedNameToString(assignable.getQualifiedName)
+      VarAssgn(varName).right
+    } else if (assignable.isFieldAccess) {
+      val target = assignable.getReceiver
+      val fieldName = nameToString(assignable.getField)
+      translateAssignable(target).map(FieldAccAssgn(_, fieldName))
+    } else if (assignable.isSubscript) {
+      val target = assignable.getReceiver
+      val ekey = assignable.getSubscript
+      translateAssignable(target).flatMap(t => translateExpression(ekey).map(MapUpdAssgn(t, _)))
+    } else if (assignable.isBracket) {
+      translateAssignable(assignable.getArg)
+    } else {
+      s"Unsupported assignable: $assignable".left
+    }
+  }
+
   private def translateVisit(visit: Visit): String \/ Expr = {
     if (visit.isGivenStrategy) {
       val strategy = visit.getStrategy
@@ -276,7 +299,7 @@ object RascalWrapper {
     val restbeforeblock = reststmts.takeWhile(!_.isInstanceOf[VariableDeclaration])
     val restblock = reststmts.drop(restbeforeblock.length)
     val tstmtsr = restbeforeblock.traverseU(translateStatement).flatMap(es =>
-      translateStatements(restblock).map(re => es :+ re))
+      if (restblock.isEmpty) es.right else translateStatements(restblock).map(re => es :+ re))
     val tvardeclsinit = vardecls.map(_.asInstanceOf[VariableDeclaration]).traverseU { vdec =>
       val locvardecl = vdec.getDeclaration.getDeclarator
       val varstysr = translateType(locvardecl.getType)
@@ -285,7 +308,7 @@ object RascalWrapper {
           val vrname = nameToString(vr.getName)
           val initvalr =
             if (vr.hasInitial) {
-              translateExpression(vr.getInitial).map(e => Some(AssignExpr(vrname, e)))
+              translateExpression(vr.getInitial).map(e => Some(AssignExpr(VarAssgn(vrname), e)))
             } else None.right
           initvalr.map(initval => (Parameter(varsty, vrname), initval))
         }
@@ -419,7 +442,7 @@ object RascalWrapper {
           val key = upd.getFrom
           val valu = upd.getTo
           translateExpression(lhs).flatMap(map =>
-            translateExpression(key).flatMap(k => translateExpression(valu).map(v => UpdateExpr(map, k, v))
+            translateExpression(key).flatMap(k => translateExpression(valu).map(v => MapUpdExpr(map, k, v))
           ))
         } else {
           s"Unsupported update with multiple keys: $mappings".left
@@ -429,7 +452,7 @@ object RascalWrapper {
       }
     } else if(expr.isAnd || expr.isOr ||
               expr.isEquals || expr.isNonEquals ||
-              expr.isImplication || expr.isEquivalence || expr.isIn ||
+              expr.isImplication || expr.isEquivalence || expr.isIn || expr.isNotIn ||
               expr.isLessThan || expr.isGreaterThan ||
               expr.isGreaterThanOrEq || expr.isLessThanOrEq ||
               expr.isDivision  || expr.isSubtraction || expr.isModulo || expr.isProduct) {
@@ -443,6 +466,7 @@ object RascalWrapper {
         else if (expr.isImplication) "==>"
         else if (expr.isEquivalence) "<==>"
         else if (expr.isIn) "in"
+        else if (expr.isNotIn) "notin"
         else if (expr.isLessThan) "<"
         else if (expr.isGreaterThan) ">"
         else if (expr.isLessThanOrEq) "<="
@@ -470,11 +494,19 @@ object RascalWrapper {
       if (subscrs.size == 1) {
         val subscr = subscrs.get(0)
         translateExpression(target).flatMap(t =>
-          translateExpression(subscr).map(sub => LookupExpr(t, sub))
+          translateExpression(subscr).map(sub => MapLookupExpr(t, sub))
         )
       } else { s"Unsupported multiple subscripts: $subscrs".left }
     } else if (expr.isVisit) {
       translateVisit(expr.getVisit)
+    } else if (expr.isNonEmptyBlock) {
+      translateStatements(expr.getStatements.asScala.toList)
+    } else if (expr.isBracket) {
+      translateExpression(expr.getExpression)
+    } else if (expr.isFieldAccess) {
+      val target = expr.getExpression
+      val fieldName = nameToString(expr.getField)
+      translateExpression(target).map(FieldAccExpr(_, fieldName))
     } else {
       s"Unsupported expression $expr".left
     }

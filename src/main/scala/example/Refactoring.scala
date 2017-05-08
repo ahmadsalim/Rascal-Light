@@ -13,28 +13,28 @@ object Refactoring {
           Parameter(BaseType(StringType), "oldFieldName"),
           Parameter(BaseType(StringType), "newFieldName")),
       LocalBlockExpr(Seq(Parameter(DataType("Field"), "fieldDef")), Seq(
-        AssignExpr("fieldDef",
+        AssignExpr(VarAssgn("fieldDef"),
           SwitchExpr(VarExpr("pkg"),
             Seq(Case(ConstructorPatt("package", Seq(VarPatt("pkg_classes"))),
-              SwitchExpr(LookupExpr(VarExpr("pkg_classes"), VarExpr("cl")),
+              SwitchExpr(MapLookupExpr(VarExpr("pkg_classes"), VarExpr("cl")),
                 Seq(Case(ConstructorPatt("class", Seq(VarPatt("cl.name"), VarPatt("cl.fields"), VarPatt("cl.methods"), VarPatt("cl.super"))),
-                  LookupExpr(VarExpr("cl.fields"), VarExpr("oldFieldName")))))
+                  MapLookupExpr(VarExpr("cl.fields"), VarExpr("oldFieldName")))))
             )))
         ),
-        AssignExpr("fieldDef",
+        AssignExpr(VarAssgn("fieldDef"),
           SwitchExpr(VarExpr("fieldDef"),
             Seq(Case(ConstructorPatt("field", Seq(VarPatt("fieldDef.name"), VarPatt("fieldDef.typ"))),
               ConstructorExpr("field", Seq(VarExpr("newFieldName"), VarExpr("fieldDef.typ"))))))
           ),
-        AssignExpr("pkg",
+        AssignExpr(VarAssgn("pkg"),
           SwitchExpr(VarExpr("pkg"),
             Seq(Case(ConstructorPatt("package", Seq(VarPatt("pkg_classes"))),
               ConstructorExpr("package",
-                Seq(SwitchExpr(LookupExpr(VarExpr("pkg_classes"), VarExpr("cl")),
+                Seq(SwitchExpr(MapLookupExpr(VarExpr("pkg_classes"), VarExpr("cl")),
                   Seq(Case(ConstructorPatt("class", Seq(VarPatt("cl.name"), VarPatt("cl.fields"), VarPatt("cl.methods"), VarPatt("cl.super"))),
-                     UpdateExpr(VarExpr("pkg_classes"), VarExpr("cl"),
+                     MapUpdExpr(VarExpr("pkg_classes"), VarExpr("cl"),
                        ConstructorExpr("class", Seq(VarExpr("cl.name"),
-                         UpdateExpr(BinaryExpr(VarExpr("cl.fields"), "delete", VarExpr("oldFieldName")), VarExpr("newFieldName"), VarExpr("fieldDef")), VarExpr("cl.methods"), VarExpr("cl.super"))))
+                         MapUpdExpr(BinaryExpr(VarExpr("cl.fields"), "delete", VarExpr("oldFieldName")), VarExpr("newFieldName"), VarExpr("fieldDef")), VarExpr("cl.methods"), VarExpr("cl.super"))))
                   ))))
               ))))
         ),

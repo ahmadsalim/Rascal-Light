@@ -16,20 +16,28 @@ sealed trait Basic
 case class IntLit(i: Int) extends Basic
 case class StringLit(s: String) extends Basic
 
+// Not strictly necessary part of semantics, but convenient
+// and makes it easier to part programs without much rewriting involved
+sealed trait Assignable
+case class VarAssgn(name: VarName) extends Assignable
+case class FieldAccAssgn(target: Assignable, fieldName: FieldName) extends Assignable
+case class MapUpdAssgn(target: Assignable, ekey: Expr) extends Assignable
+
 sealed trait Expr
 case class BasicExpr(b: Basic) extends Expr
 case class VarExpr(name: VarName) extends Expr
+case class FieldAccExpr(target: Expr, fieldName: FieldName) extends Expr
 case class UnaryExpr(name: OpName, operand : Expr) extends Expr
 case class BinaryExpr(left: Expr, name: OpName, right: Expr) extends Expr
 case class ConstructorExpr(name: ConsName, args: Seq[Expr]) extends Expr
 case class ListExpr(elements: Seq[Expr]) extends Expr
 case class SetExpr(elements: Seq[Expr]) extends Expr
 case class MapExpr(keyvalues: Seq[(Expr, Expr)]) extends Expr
-case class LookupExpr(emap: Expr, ekey: Expr) extends Expr
-case class UpdateExpr(emap: Expr, ekey: Expr, eval: Expr) extends Expr
+case class MapLookupExpr(emap: Expr, ekey: Expr) extends Expr
+case class MapUpdExpr(emap: Expr, ekey: Expr, eval: Expr) extends Expr
 case class FunCallExpr(functionName: VarName, args: Seq[Expr]) extends Expr
 case class ReturnExpr(result: Expr) extends Expr
-case class AssignExpr(name: VarName, expr : Expr) extends Expr
+case class AssignExpr(assgn: Assignable, expr : Expr) extends Expr
 case class IfExpr(cond: Expr, thenB: Expr, elseB: Expr) extends Expr
 case class SwitchExpr(scrutinee: Expr, cases: Seq[Case]) extends Expr
 case class VisitExpr(strategy: Strategy, scrutinee: Expr, cases: Seq[Case]) extends Expr

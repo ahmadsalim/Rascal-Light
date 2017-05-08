@@ -25,23 +25,26 @@ Package replaceDelegationWithInheritance(Package pkg, str clname, str fname) {
 	Field f = cl.fields[fname];
 	Class ftyp = pkg.classes[f.typ];
 	// Delete purely delegating methods
-	for (ftmname <- ftyp.methods, cmname <- cl.methods) {
-		if (cmname in cl.methods) { // Might be deleted by previous iteration
-			Method ftm = ftyp.methods[ftmname];
-			Method cm = cl.methods[cmname];
-			if (ftm.name == cm.name) {
-				switch (cm.body) {
-					case returnstmt(methodcallexpr(_, 
-					  fieldaccessexpr(_, var(_, "this"), fname), ftmname, _)): 
-					    cl.methods = delete(cl.methods, cmname);
-					default: {
-					     cm.body = top-down visit(cm.body) { 
-					   	    case fieldaccessexpr(_, var(_, "this"), fname) => var(f.typ, "super")
-					     }
-					     cl.methods[cmname] = cm; 
-					   }
-				};
-			};
+	for (ftmname <- ftyp.methods) {
+	    for (cmname <- cl.methods) {
+            if (cmname in cl.methods) { // Might be deleted by previous iteration
+                Method ftm = ftyp.methods[ftmname];
+                Method cm = cl.methods[cmname];
+                if (ftm.name == cm.name) {
+                    switch (cm.body) {
+                        case s : returnstmt(methodcallexpr(_,
+                          fieldaccessexpr(_, var(_, "this"), fname), ftmname, _)) =>
+                            ({ cl.methods = delete(cl.methods, cmname); s; })
+                        case e => ({
+                             cm.body = top-down visit(cm.body) {
+                                case fieldaccessexpr(_, var(_, "this"), fname) => var(f.typ, "super")
+                             }
+                             cl.methods[cmname] = cm;
+                             e;
+                           })
+                    };
+                };
+            };
 		};
 	};
 	cl.fields = delete(cl.fields, fname);

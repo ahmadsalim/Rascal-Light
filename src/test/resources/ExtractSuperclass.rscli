@@ -36,14 +36,14 @@ Package extractSuperclass(Package pkg, str cl1name, str cl2name, str clsupername
 				if (cl1f.name == cl2f.name && cl1f.typ == cl2f.typ) {
 					cl1.fields = delete(cl1.fields, cl1fname);
 					cl2.fields = delete(cl2.fields, cl2fname);
-					clsuper.fields += (cl1fname: cl1f);
+					clsuper.fields = clsuper.fields + (cl1fname: cl1f);
 				};
 			};
 		};
 	};
 	pkg.classes[cl1name] = cl1;
 	pkg.classes[cl2name] = cl2;
-	pkg.classes += (clsupername: clsuper);
+	pkg.classes = pkg.classes + (clsupername: clsuper);
 	return pkg;
 }
 

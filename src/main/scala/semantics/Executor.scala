@@ -391,7 +391,7 @@ object Executor {
               }
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
-        case LookupExpr(emap, ekey) =>
+        case MapLookupExpr(emap, ekey) =>
           val (mapres, store__) = evalLocal(localVars, store, emap)
           mapres match {
             case SuccessResult(mapv) =>
@@ -408,7 +408,7 @@ object Executor {
               }
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
-        case UpdateExpr(emap, ekey, evl) =>
+        case MapUpdExpr(emap, ekey, evl) =>
           val (mapres, store___) = evalLocal(localVars, store, emap)
           mapres match {
             case SuccessResult(mapv) =>
@@ -464,7 +464,7 @@ object Executor {
             case SuccessResult(vl) => (ExceptionalResult(Return(vl)), store_)
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
           }
-        case AssignExpr(name, targetexpr) =>
+        case AssignExpr(VarAssgn(name), targetexpr) =>
           val (res, store_) = evalLocal(localVars, store, targetexpr)
           res match {
             case SuccessResult(vl) =>
