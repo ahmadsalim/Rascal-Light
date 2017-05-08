@@ -165,6 +165,47 @@ object Executor {
   def eval(module: Module, store: Store, expr: Expr) = {
     val typing = Typing(module)
 
+    def accessField(tv: Value, fieldName: FieldName): Result[Value] = tv match {
+      case ConstructorValue(name, vals) =>
+        val (_, pars) = module.constructors(name)
+        val index = pars.indexWhere(_.name == fieldName)
+        if (index < 0) { ExceptionalResult(Error(FieldError(tv, fieldName))) } else vals(index).point[Result]
+      case _ => ExceptionalResult(Error(FieldError(tv, fieldName)))
+    }
+
+    def updatePath(ovl: Value, paths: List[AccessPath], tvl: Value): Result[Value] = paths match {
+      case Nil => tvl.point[Result]
+      case path :: rpaths =>
+        path match {
+          case MapAccessPath(kvl) =>
+            ovl match {
+              case MapValue(vals) =>
+                if (vals.contains(kvl)) {
+                  updatePath(vals(kvl), rpaths, tvl).map(nvl => MapValue(vals.updated(kvl, nvl)))
+                }
+                else ExceptionalResult(Throw(ConstructorValue("nokey", Seq(kvl))))
+              case _ => ExceptionalResult(Error(TypeError(ovl, MapType(typing.inferType(kvl).get, typing.inferType(tvl).get))))
+            }
+          case FieldAccessPath(fieldName) =>
+            ovl match {
+              case ConstructorValue(name, vals) =>
+                val (_, pars) = module.constructors(name)
+                val index = pars.indexWhere(_.name == fieldName)
+                if (index < 0) { ExceptionalResult(Error(FieldError(ovl, fieldName))) }
+                else {
+                  updatePath(vals(index), rpaths, tvl).flatMap { nvl =>
+                    if (typing.checkType(nvl, pars(index).typ)) {
+                      ConstructorValue(name, vals.updated(index, nvl)).point[Result]
+                    } else {
+                      ExceptionalResult(Error(TypeError(nvl, pars(index).typ)))
+                    }
+                  }
+                }
+              case _ => ExceptionalResult(Error(OtherError)) // TODO Should be type error, but of which type?
+            }
+        }
+    }
+
     def reconstruct(vl: Value, cvs: List[Value]): Result[Value] = {
       vl match {
         case BasicValue(b) =>
@@ -338,12 +379,37 @@ object Executor {
           }
       }
 
+    def evalAssignable(localVars: Map[VarName, Type], store: Store, assgn: Assignable): (Result[DataPath], Store) = {
+      assgn match {
+        case VarAssgn(name) => (DataPath(name, List()).point[Result], store)
+        case FieldAccAssgn(target, fieldName) =>
+          val (targetres, store_) = evalAssignable(localVars, store, target)
+          (targetres.map {
+            case DataPath(vn, accessPaths) => DataPath(vn, accessPaths :+ FieldAccessPath(fieldName))
+          }, store_)
+        case MapUpdAssgn(target, ekey) =>
+          val (targetres, store__) = evalAssignable(localVars, store, target)
+          targetres match {
+            case SuccessResult(DataPath(vn, accessPaths)) =>
+              val (keyres, store_) = evalLocal(localVars, store, ekey)
+              (keyres.map(keyv => DataPath(vn, accessPaths :+ MapAccessPath(keyv))), store_)
+            case ExceptionalResult(exres) => (targetres, store__)
+          }
+      }
+    }
+
     def evalLocal(localVars: Map[VarName, Type], store: Store, expr: Expr): (Result[Value], Store) =
       expr match {
         case BasicExpr(b) => (BasicValue(b).pure[Result], store)
         case VarExpr(x) =>
           if (store.map.contains(x)) (store.map(x).pure[Result], store)
           else (ExceptionalResult(Error(UnassignedVarError(x))), store)
+        case FieldAccExpr(target, fieldName) =>
+          val (targetres, store_) = evalLocal(localVars, store, target)
+          targetres match {
+            case SuccessResult(tv) => (accessField(tv, fieldName), store_)
+            case _ => (targetres, store_)
+          }
         case UnaryExpr(op, operand) =>
           val (res, store_) = evalLocal(localVars, store, operand)
           (res.flatMap(vl => evalUnary(op, vl)), store_)
@@ -464,14 +530,30 @@ object Executor {
             case SuccessResult(vl) => (ExceptionalResult(Return(vl)), store_)
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
           }
-        case AssignExpr(VarAssgn(name), targetexpr) =>
-          val (res, store_) = evalLocal(localVars, store, targetexpr)
-          res match {
-            case SuccessResult(vl) =>
-              val varty = if (localVars.contains(name)) localVars(name) else module.globalVars(name)
-              if (typing.checkType(vl, varty)) (vl.pure[Result], store_.copy(map = store_.map.updated(name, vl)))
-              else (ExceptionalResult(Error(TypeError(vl, varty))), store_)
-            case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+        case AssignExpr(assgn, targetexpr) =>
+          val (assgnres, store__) = evalAssignable(localVars, store, assgn)
+          assgnres match {
+            case SuccessResult(path) =>
+              val (targetres, store_) = evalLocal(localVars, store__, targetexpr)
+              targetres match {
+                case SuccessResult(vl) =>
+                  val newValue =
+                    if (path.accessPaths.isEmpty) {
+                      vl.point[Result]
+                    } else {
+                      store_.map.get(path.varName).fold[Result[Value]](ExceptionalResult(Error(UnassignedVarError(path.varName)))) {
+                        ovl => updatePath(ovl, path.accessPaths, vl) }
+                    }
+                  newValue match {
+                    case SuccessResult(nvl) =>
+                      val varty = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
+                      if (typing.checkType(vl, varty)) (vl.pure[Result], store_.copy(map = store_.map.updated(path.varName, nvl)))
+                      else (ExceptionalResult(Error(TypeError(vl, varty))), store_)
+                    case _ => (newValue, store_)
+                  }
+                case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+              }
+            case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
         case IfExpr(cond, thenB, elseB) =>
           val (condres, store__) = evalLocal(localVars, store, cond)

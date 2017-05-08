@@ -32,6 +32,7 @@ case class Error(kind: ErrorKind) extends Exceptional
 
 sealed trait ErrorKind
 case class TypeError(value: Value, typ: Type) extends ErrorKind
+case class FieldError(value: Value, fieldName: FieldName) extends ErrorKind
 case class ReconstructError(value: Value, newchildren: List[Value]) extends ErrorKind
 case class UnassignedVarError(varname: VarName) extends ErrorKind
 case class NotEnumerableError(value: Value) extends ErrorKind
@@ -40,6 +41,11 @@ case class SignatureMismatch(fun: Name, vals: List[Value], typ: List[Type]) exte
 case object EscapedControlOperator extends ErrorKind
 case class AssertionError(cond: Expr) extends ErrorKind
 case object OtherError extends ErrorKind
+
+case class DataPath(varName: VarName, accessPaths: List[AccessPath])
+sealed trait AccessPath
+case class MapAccessPath(value: Value) extends AccessPath
+case class FieldAccessPath(fieldName: FieldName) extends AccessPath
 
 object Domains {
   val prelude = Module(Map.empty, Map.empty,
