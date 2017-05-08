@@ -535,7 +535,7 @@ object RascalWrapper {
     val rewriteConsNames = Rewriter.rule[Expr] {
       case e@FunCallExpr(functionName, args) if consNames.contains(functionName) => ConstructorExpr(functionName, args)
     }
-    Rewriter.rewrite(Rewriter.alltd("Rewrite Constructors", rewriteConsNames))(df)
+    Rewriter.rewrite(Rewriter.outermost("Rewrite Constructors", rewriteConsNames))(df)
   }
 
   def translateModule(module: Module): String \/ syntax.Module = {
