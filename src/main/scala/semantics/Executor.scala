@@ -273,15 +273,20 @@ object Executor {
         case SuccessResult(cvls) =>
           if (break && allfailed) evalCases(localVars, store__, scrutineeval, cases)
           else reconstruct(scrutineeval, cvls) match {
-            case SuccessResult(newval) => evalCases(localVars, store__, newval, cases)
+            case SuccessResult(newval) =>
+              val (selfres, store_) =  evalCases(localVars, store__, newval, cases)
+              selfres match {
+                case ExceptionalResult(Fail) => (SuccessResult(newval), store_)
+                case _ => (selfres, store_)
+              }
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
         case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
       }
     }
 
-    def evalVisit(strategy: Strategy, localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) =
-      strategy match {
+    def evalVisit(strategy: Strategy, localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) = {
+      val (res, store_) = strategy match {
         case TopDown => evalTD(localVars, store, scrutineeval, cases, break = false)
         case TopDownBreak => evalTD(localVars, store, scrutineeval, cases, break = true)
         case BottomUp => evalBU(localVars, store, scrutineeval, cases, break = false)
@@ -303,6 +308,11 @@ object Executor {
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
           }
       }
+      res match {
+        case ExceptionalResult(Fail) => (SuccessResult(scrutineeval), store_)
+        case _ => (res, store_)
+      }
+    }
 
     def evalCases(localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) = {
       def evalCase(store: Store, action: Expr, envs: Stream[Pure, Map[VarName, Value]]): (Result[Value], Store) =
@@ -505,7 +515,7 @@ object Executor {
                 val callstore = Store(module.globalVars.map { case (x, _) => (x, store__.map(x)) } ++
                   funpars.map(_.name).zip(argvals).toMap)
                 val (res, resstore) = evalLocal(funpars.map(par => par.name -> par.typ).toMap, callstore, funbody)
-                val store_ = Store(module.globalVars.map { case (x, _) => (x, resstore.map(x)) })
+                val store_ = Store(store__.map ++ module.globalVars.map { case (x, _) => (x, resstore.map(x)) })
                 def funcallsuccess(resval: Value): (Result[Value], Store) = {
                   if (typing.checkType(resval, funresty)) (resval.point[Result], store_)
                   else (ExceptionalResult(Error(TypeError(resval, funresty))), store_)
@@ -547,7 +557,10 @@ object Executor {
                   newValue match {
                     case SuccessResult(nvl) =>
                       val varty = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
-                      if (typing.checkType(vl, varty)) (vl.pure[Result], store_.copy(map = store_.map.updated(path.varName, nvl)))
+                      if (typing.checkType(vl, varty)) {
+                        val res = (vl.pure[Result], store_.copy(map = store_.map.updated(path.varName, nvl)))
+                        res
+                      }
                       else (ExceptionalResult(Error(TypeError(vl, varty))), store_)
                     case _ => (newValue, store_)
                   }
@@ -758,14 +771,16 @@ object Executor {
               case SuccessResult(value) => store_.copy(map = store_.map.updated(varname, value)).right
             }
         }.flatMap { store =>
-          tests.foldLeftM[String \/ ?, (Store, List[VarName])]((store, List())) { case ((nstore, failed), test) =>
-              val (res, store_) = eval(semmod, nstore, test.body)
+          tests.foldLeftM[String \/ ?, List[VarName]](List()) { (failed, test) =>
+              val (res, store_) = eval(semmod, store, test.body)
               res match {
-                case SuccessResult(ConstructorValue("true", Seq())) => (store_, failed).right
-                case SuccessResult(_) => (store_, failed :+ test.name).right
+                case SuccessResult(ConstructorValue("true", Seq()))
+                       | ExceptionalResult(Return(ConstructorValue("true", Seq()))) => failed.right
+                case SuccessResult(_)
+                       | ExceptionalResult(Return(_)) => (failed :+ test.name).right
                 case ExceptionalResult(exres) => s"Evaluation of test ${test.name} failed with $exres".left
               }
-          }
+          }.map(failed => (store, failed))
         }.map { case (store, failed) => ExecutionResult(store, semmod, failed) }
     }
   }

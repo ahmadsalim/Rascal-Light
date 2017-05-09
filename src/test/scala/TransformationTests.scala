@@ -3,13 +3,23 @@ import org.scalatest.{FlatSpec, Matchers}
 import semantics.Executor
 import semantics.domains._
 import syntax._
+import util.rascalwrapper.RascalWrapper
 
 import scalaz.\/-
 
 /**
   * Created by asal on 01/03/2017.
   */
-class RefactoringTests extends FlatSpec with Matchers {
+class TransformationTests extends FlatSpec with Matchers {
+  "The expression simplification procedure in Expr.rscli" should "pass all its tests correctly" in {
+    val modExprO = RascalWrapper.loadModuleFromFile(getClass.getResource("Expr.rscli").getFile)
+    val modExprExecRes = modExprO.flatMap(Executor.execute)
+    modExprExecRes shouldBe a [\/-[_]]
+    modExprExecRes.foreach { exres =>
+      exres.failingTests shouldBe empty
+    }
+  }
+
   "The rename field refactoring" should "rename field in class correctly, including all field access expressions" in {
     val pkg = GlobalVarDef(DataType("Package"), "inpkg",
       ConstructorExpr("package", Seq(MapExpr(Seq(

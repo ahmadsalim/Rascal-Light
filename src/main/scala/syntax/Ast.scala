@@ -18,8 +18,12 @@ case class ConstructorDef(name: ConsName, parameters: Seq[Parameter])
 case class Parameter(typ: Type, name: VarName)
 
 sealed trait Basic
-case class IntLit(i: Int) extends Basic
-case class StringLit(s: String) extends Basic
+case class IntLit(i: Int) extends Basic {
+  override val toString = s"$i"
+}
+case class StringLit(s: String) extends Basic {
+  override val toString = s""""$s""""
+}
 
 // Not strictly necessary part of semantics, but convenient
 // and makes it easier to part programs without much rewriting involved

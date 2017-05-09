@@ -24,6 +24,5 @@ test bool simplify_test2() = {
 test bool simplify_test3() = {
   Expr input = mult(mult(var("x"), cst(1)), mult(var("z"), mult(var("y"), cst(3))));
   Expr expected = mult(var("x"), mult(var("z"), mult(var("y"), cst(3))));
-  println(simplify(input));
   return simplify(input) == expected;
 };

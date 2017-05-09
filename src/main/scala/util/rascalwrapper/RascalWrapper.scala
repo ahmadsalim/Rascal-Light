@@ -26,6 +26,7 @@ import scalaz.syntax.traverse._
 
 // TODO Consider using pickling if parsing and translation is a bit slow
 object RascalWrapper {
+  private
   var varCounter = 0
 
   private
@@ -77,6 +78,7 @@ object RascalWrapper {
   }
 
 
+  private
   def translateStarPattern(pattern: Expression): String \/ StarPatt = {
     if (pattern.isMultiVariable) {
       val varName = qualifiedNameToString(pattern.getQualifiedName)
@@ -86,6 +88,7 @@ object RascalWrapper {
     }
   }
 
+  private
   def translatePattern(pattern: Expression): String \/ Patt = {
     if (pattern.isCallOrTree) {
       val caller = pattern.getExpression
@@ -124,6 +127,7 @@ object RascalWrapper {
     }
   }
 
+  private
   def translateEnum(enum: Expression): String \/ Enum = {
     if (enum.isMatch) {
       translatePattern(enum.getPattern).flatMap(patt =>
@@ -140,6 +144,7 @@ object RascalWrapper {
     }
   }
 
+  private
   def translateCases(cases: List[Case]): String \/ List[syntax.Case] = {
     cases.traverseU { cas =>
       (if (cas.isPatternWithAction) {
@@ -162,6 +167,7 @@ object RascalWrapper {
     }
   }
 
+  private
   def translateStatement(stmt: Statement): String \/ Expr = {
     if (stmt.isAssert || stmt.isAssertWithMessage) {
       val texpr = translateExpression(stmt.getExpression)
@@ -253,7 +259,8 @@ object RascalWrapper {
     } else s"Unsupported statement: $stmt".left
   }
 
-  private def translateAssignable(assignable: Assignable): String \/ syntax.Assignable = {
+  private
+  def translateAssignable(assignable: Assignable): String \/ syntax.Assignable = {
     if (assignable.isVariable) {
       val varName = qualifiedNameToString(assignable.getQualifiedName)
       VarAssgn(varName).right
@@ -272,7 +279,8 @@ object RascalWrapper {
     }
   }
 
-  private def translateVisit(visit: Visit): String \/ Expr = {
+  private
+  def translateVisit(visit: Visit): String \/ Expr = {
     if (visit.isGivenStrategy) {
       val strategy = visit.getStrategy
       val strat = {
@@ -293,6 +301,7 @@ object RascalWrapper {
     }
   }
 
+  private
   def translateStatements(stmts: List[Statement]): String \/ syntax.Expr = {
     val vardecls = stmts.takeWhile(_.isInstanceOf[VariableDeclaration])
     val reststmts = stmts.drop(vardecls.length)
@@ -321,6 +330,7 @@ object RascalWrapper {
     }
   }
 
+  private
   def translateFunction(function: Function): String \/ syntax.Def = {
     val fundecl = function.getFunctionDeclaration
     val funsig = fundecl.getSignature
@@ -356,6 +366,7 @@ object RascalWrapper {
     }
   }
 
+  private
   def translateData(data: Data): String \/ syntax.DataDef = {
     val dataty = data.getUser
     if (!dataty.hasParameters) {
@@ -375,6 +386,7 @@ object RascalWrapper {
     } else s"Unsupported parameterized data type: $data".left
   }
 
+  private
   def translateBasicType(basicTy: BasicType): String \/ syntax.Type = {
     if (basicTy.isVoid) VoidType.right
     else if (basicTy.isValue) ValueType.right
@@ -384,6 +396,7 @@ object RascalWrapper {
     else s"Unsupported basic type: $basicTy".left
   }
 
+  private
   def translateStructured(structuredTy: StructuredType): String \/ syntax.Type =  {
     val args = structuredTy.getArguments
     val basicTy = structuredTy.getBasicType
@@ -404,6 +417,7 @@ object RascalWrapper {
     } else s"Unsupported collection type: $structuredTy".left
   }
 
+  private
   def translateType(ty: Type): String \/ syntax.Type = {
     if (ty.isBasic) translateBasicType(ty.getBasic)
     else if (ty.isStructured) translateStructured(ty.getStructured)
@@ -417,6 +431,7 @@ object RascalWrapper {
     } else s"Unsupported type: $ty".left
   }
 
+  private
   def translateExpression(expr: Expression): String \/ syntax.Expr = {
     if (expr.isQualifiedName) {
       val varName = qualifiedNameToString(expr.getQualifiedName)
@@ -520,6 +535,7 @@ object RascalWrapper {
     }
   }
 
+  private
   def translateGlobalVariable(variable: Variable): String \/ List[syntax.GlobalVarDef] = {
     val vartyr = translateType(variable.getType)
     val vars = variable.getVariables.asScala.toList
@@ -532,6 +548,7 @@ object RascalWrapper {
     )
   }
 
+  private
   def translateDecl(decl: Declaration): String \/ List[syntax.Def] = {
     if (decl.isFunction) translateFunction(decl.asInstanceOf[Function]).map(_.point[List])
     else if (decl.isData) translateData(decl.asInstanceOf[Data]).map(_.point[List])
@@ -539,6 +556,7 @@ object RascalWrapper {
     else s"Unsupported declaration: $decl".left
   }
 
+  private
   def resolveConstructorCalls(consNames: Set[ConsName], df: Def): Def = {
     val rewriteConsNames = Rewriter.rule[Expr] {
       case e@FunCallExpr(functionName, args) if consNames.contains(functionName) => ConstructorExpr(functionName, args)
@@ -564,5 +582,9 @@ object RascalWrapper {
     } else {
       s"${module.getHeader.getName} does not have any definitions".left
     }
+  }
+
+  def loadModuleFromFile(path: String): String \/ syntax.Module = {
+    parseRascal(path).flatMap(translateModule)
   }
 }
