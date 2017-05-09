@@ -29,3 +29,26 @@ Package renameField(Package pkg, str cl, str oldFieldName, str newFieldName) {
 	};
 }
 
+test bool renames_field_accessexpr_correctly() {
+  Package inpkg =
+  	package(("H" : class("H", ("f": field("f", "H")),
+  	("m": method("m", "H", [], returnstmt(fieldaccessexpr("H", var("H", "x"), "f")))),
+  	nothing())));
+  Package outpkg =
+  	package(("H": class("H", ("g": field("g", "H")),
+  	("m": method("m", "H", [], returnstmt(fieldaccessexpr("H", var("H", "x"), "g")))),
+  	nothing())));
+  return renameField(inpkg, "H", "f", "g") ==  outpkg;
+}
+
+test bool does_not_rename_fieldaccessexpr_with_same_name_but_other_type() {
+  Package inpkg =
+  	package(("H" : class("H", ("f": field("f", "H")),
+  	("m": method("m", "H", [], returnstmt(fieldaccessexpr("H", var("G", "x"), "f")))),
+  	nothing()), "G" : class("G", ("f": field("f", "G")), (), nothing())));
+  Package outpkg =
+  	package(("H" : class("H", ("g": field("g", "H")),
+  	("m": method("m", "H", [], returnstmt(fieldaccessexpr("H", var("G", "x"), "f")))),
+  	nothing()), "G": class("G", ("f": field("f", "G")), (), nothing())));
+  return renameField(inpkg, "H", "f", "g") == outpkg;
+}

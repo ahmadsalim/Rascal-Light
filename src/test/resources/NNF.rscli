@@ -12,3 +12,32 @@ Formula nnf(Formula phi) = top-down visit(phi) {
 	case neg(imp(l,r)) => and(l, neg(r))
 	case neg(neg(f)) => nnf(f)
 };
+
+test bool test1() {
+	Formula phi_in = neg(and(or(atom("a"), atom("b")), atom("c")));
+	Formula phi_out = or(and(neg(atom("a")), neg(atom("b"))), neg(atom("c")));
+	return nnf(phi_in) == phi_out;
+}
+
+test bool test2() {
+	Formula phi = imp(neg(atom("a")), neg(atom("a")));
+	return nnf(phi) == phi;
+}
+
+test bool test3() {
+	Formula phi_in = neg(imp(atom("a"), atom("a")));
+	Formula phi_out = and(atom("a"), neg(atom("a")));
+	return nnf(phi_in) == phi_out;
+}
+
+test bool test4() {
+	Formula phi_in = neg(neg(atom("a")));
+	Formula phi_out = atom("a");
+	return nnf(phi_in) == phi_out;
+}
+
+test bool test5() {
+	Formula phi_in = neg(neg(neg(neg(atom("a")))));
+	Formula phi_out = atom("a");
+	return nnf(phi_in) == phi_out;
+}

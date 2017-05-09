@@ -56,3 +56,47 @@ Package replaceDelegationWithInheritance(Package pkg, str clname, str fname) {
 	};
 }
 
+test bool does_not_replace_call_to_unrelated_function() {
+	Package inpkg =
+	  	package(("C" : class("C", ("f": field("f", "G")),
+	  	                          ("m": method("m", "G", [],
+	  	                                   returnstmt(
+	  	                                      methodcallexpr("G",
+	  	                                          fieldaccessexpr("G", var("C", "this"), "f"), "m", []))),
+	  	                           "n": method("n", "G", [parameter("d","D")], assignstmt(var("void", "x"),
+	  	                                         methodcallexpr("void", fieldaccessexpr("D", var("D", "d"), "f"), "m", [])))), nothing()),
+	  	         "G" : class("G", (), ("m": method("m", "G", [],
+	  	                                   returnstmt(var("G", "this")))), nothing()),
+	  	         "D" : class("D", ("f": field("f", "D")), ("m": method("m", "void", [], block([]))), nothing())));
+	Package outpkg =
+	  	package(("C" : class("C", (),
+		  	                          ("n": method("n", "G", [parameter("d","D")], assignstmt(var("void", "x"),
+		  	                             methodcallexpr("void", fieldaccessexpr("D", var("D", "d"), "f"), "m", [])))), just("G")),
+		  	         "G" : class("G", (), ("m": method("m", "G", [],
+		  	                                   returnstmt(var("G", "this")))), nothing()),
+		  	         "D" : class("D", ("f": field("f", "D")), ("m": method("m", "void", [], block([]))), nothing())));
+	return replaceDelegationWithInheritance(inpkg, "C", "f") == outpkg;
+}
+
+test bool does_not_replace_non_purely_delegating_methods() {
+	Package inpkg =
+	  	package(("C" : class("C", ("f": field("f", "G")),
+	  	                          ("m": method("m", "G", [],
+	  	                                   block([assignstmt(var("G", "x"), fieldaccessexpr("G", var("C", "this"), "f")) ,returnstmt(
+	  	                                      methodcallexpr("G",
+	  	                                          fieldaccessexpr("G", var("C", "this"), "f"), "m", []))])),
+	  	                           "n": method("n", "G", [parameter("c","C")], assignstmt(var("G", "x"),
+	  	                                         methodcallexpr("G", fieldaccessexpr("G", var("C", "c"), "f"), "m", [])))), nothing()),
+	  	         "G" : class("G", (), ("m": method("m", "G", [],
+	  	                                   returnstmt(var("G", "this")))), nothing())));
+	Package outpkg =
+	  	package(("C" : class("C", (),
+	  	                          ("m": method("m", "G", [],
+	  	                                   block([assignstmt(var("G", "x"), var("G", "super")) ,returnstmt(
+	  	                                      methodcallexpr("G", var("G", "super"), "m", []))])),
+	  	                           "n": method("n", "G", [parameter("c","C")], assignstmt(var("G", "x"),
+	  	                                         methodcallexpr("G", var("C", "c"), "m", [])))), just("G")),
+	  	         "G" : class("G", (), ("m": method("m", "G", [],
+	  	                                   returnstmt(var("G", "this")))), nothing())));
+	return replaceDelegationWithInheritance(inpkg, "C", "f") == outpkg;
+}

@@ -24,7 +24,7 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                     Case(ConstructorPatt("mult", List(ConstructorPatt("cst", List(BasicPatt(IntLit(1)))), VarPatt("y"))), VarExpr("y")),
                     Case(ConstructorPatt("mult", List(VarPatt("x"), ConstructorPatt("cst", List(BasicPatt(IntLit(1)))))), VarExpr("x")))))
       ))
-    translated should matchPattern { case \/-(res) => }
+    translated shouldBe a [\/-[_]]
     translated.map(m => m.withoutTests shouldBe expected)
   }
 
@@ -48,7 +48,8 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                     Case(ConstructorPatt("neg",List(ConstructorPatt("imp",List(VarPatt("l"), VarPatt("r"))))),
                       ConstructorExpr("and",List(VarExpr("l"), ConstructorExpr("neg",List(VarExpr("r")))))),
                  Case(ConstructorPatt("neg",List(ConstructorPatt("neg",List(VarPatt("f"))))),FunCallExpr("nnf",List(VarExpr("f")))))))))
-    translated should matchPattern { case \/-(`expected`) => }
+    translated shouldBe a [\/-[_]]
+    translated.map(m => m.withoutTests shouldBe expected)
   }
 
   it should "parse RenameField.rscli correctly" in {
@@ -108,7 +109,8 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                                                                ConstructorExpr("fieldaccessexpr",List(VarExpr("faty"), VarExpr("target"), VarExpr("newFieldName"))),
                                                                VarExpr("fae")))))))),
                                                                LocalBlockExpr(List(),List()))))))))
-    translated should matchPattern { case \/-(`expected`) => }
+    translated shouldBe a [\/-[_]]
+    translated.map(m => m.withoutTests shouldBe expected)
   }
 
   it should "parse and translate ExtractSuperclass.rscli without any error" in {

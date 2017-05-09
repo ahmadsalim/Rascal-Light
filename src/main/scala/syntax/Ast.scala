@@ -22,7 +22,7 @@ case class IntLit(i: Int) extends Basic {
   override val toString = s"$i"
 }
 case class StringLit(s: String) extends Basic {
-  override val toString = s""""$s""""
+  override val toString = s
 }
 
 // Not strictly necessary part of semantics, but convenient

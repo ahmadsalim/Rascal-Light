@@ -515,7 +515,7 @@ object Executor {
                 val callstore = Store(module.globalVars.map { case (x, _) => (x, store__.map(x)) } ++
                   funpars.map(_.name).zip(argvals).toMap)
                 val (res, resstore) = evalLocal(funpars.map(par => par.name -> par.typ).toMap, callstore, funbody)
-                val store_ = Store(store__.map ++ module.globalVars.map { case (x, _) => (x, resstore.map(x)) })
+                val store_ = Store(module.globalVars.map { case (x, _) => (x, resstore.map(x)) } ++ store__.map)
                 def funcallsuccess(resval: Value): (Result[Value], Store) = {
                   if (typing.checkType(resval, funresty)) (resval.point[Result], store_)
                   else (ExceptionalResult(Error(TypeError(resval, funresty))), store_)
