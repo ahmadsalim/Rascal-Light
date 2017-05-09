@@ -31,7 +31,7 @@ case class SetValue(vals: Set[Value]) extends Value {
 }
 case class MapValue(vals: Map[Value, Value]) extends Value {
   override val children: List[Value] = vals.keys.toList ++ vals.values.toList
-  override val toString: TypeName = s"(${vals.map(v => s"${v._1} -> ${v._2}").mkString(",")})"
+  override val toString: TypeName = s"(${vals.map(v => s"${v._1}: ${v._2}").mkString(",")})"
 }
 case object BottomValue extends Value {
   override val children: List[Value] = List()
