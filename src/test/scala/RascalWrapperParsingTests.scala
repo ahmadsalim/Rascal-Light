@@ -103,7 +103,7 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                                      AssignExpr(FieldAccAssgn(MapUpdAssgn(FieldAccAssgn(VarAssgn("pkg"),"classes"),VarExpr("cl")),"fields"),
                                           MapUpdExpr(FunCallExpr("delete",List(FieldAccExpr(MapLookupExpr(FieldAccExpr(VarExpr("pkg"),"classes"),VarExpr("cl")),"fields"), VarExpr("oldFieldName"))),VarExpr("newFieldName"),VarExpr("fieldDef"))),
                                      ReturnExpr(VisitExpr(TopDown,VarExpr("pkg"),
-                                       List(Case(LabelledTypedPatt(ValueType,"fae",VarPatt("fae")),
+                                       List(Case(LabelledTypedPatt(ValueType,"fae", ConstructorPatt("fieldaccessexpr", List(VarPatt("faty"), VarPatt("target"), VarPatt("oldFieldName")))),
                                          LocalBlockExpr(List(),
                                                         List(IfExpr(BinaryExpr(FieldAccExpr(VarExpr("target"),"typ"),"==",VarExpr("cl")),
                                                                ConstructorExpr("fieldaccessexpr",List(VarExpr("faty"), VarExpr("target"), VarExpr("newFieldName"))),

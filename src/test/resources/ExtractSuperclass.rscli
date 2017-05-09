@@ -31,8 +31,8 @@ Package extractSuperclass(Package pkg, str cl1name, str cl2name, str clsupername
 		for (cl2fname <- cl2.fields) {
 		// fields might have been deleted by previous iteration
 			if (cl1fname in cl1.fields && cl2fname in cl2.fields) {
-				cl1f = cl1.fields[cl1fname];
-				cl2f = cl2.fields[cl2fname];
+				Field cl1f = cl1.fields[cl1fname];
+				Field cl2f = cl2.fields[cl2fname];
 				if (cl1f.name == cl2f.name && cl1f.typ == cl2f.typ) {
 					cl1.fields = delete(cl1.fields, cl1fname);
 					cl2.fields = delete(cl2.fields, cl2fname);

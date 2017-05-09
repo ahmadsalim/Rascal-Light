@@ -120,7 +120,7 @@ object RascalWrapper {
     } else if (pattern.isVariableBecomes || pattern.isTypedVariable || pattern.isTypedVariableBecomes) {
       val varName = nameToString(pattern.getName)
       val varType = if (pattern.hasType) translateType(pattern.getType) else ValueType.right
-      val varExpr = if (pattern.hasExpression) translatePattern(pattern.getExpression) else VarPatt(varName).right
+      val varExpr = if (pattern.hasPattern) translatePattern(pattern.getPattern) else VarPatt(varName).right
       varType.flatMap(ty => varExpr.map(patt => LabelledTypedPatt(ty, varName, patt)))
     } else {
       s"Unsupported pattern: $pattern".left

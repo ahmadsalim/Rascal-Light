@@ -61,15 +61,17 @@ object Executor {
 
   def matchPatt(module: Module, store : Store, tval: Value, patt: Patt): Stream[Pure, Map[VarName, Value]] = {
     val typing = Typing(module)
-    def mergePairs(pairs: Stream[Pure, (Map[VarName, Value], Map[VarName, Value])]): Stream[Pure, Map[VarName, Value]] =
+    def mergePairs(pairs: Stream[Pure, (Map[VarName, Value], Map[VarName, Value])]): Stream[Pure, Map[VarName, Value]] = {
       pairs.map { case (env1, env2) =>
         if (env1.keySet.intersect(env2.keySet).forall(x => env1(x) == env2(x))) Some(env1 ++ env2)
         else None
       }.filter(_.isDefined).map(_.get)
-    def merge(envss: List[Stream[Pure, Map[VarName, Value]]]): Stream[Pure, Map[VarName, Value]] =
+    }
+    def merge(envss: List[Stream[Pure, Map[VarName, Value]]]): Stream[Pure, Map[VarName, Value]] = {
       envss.foldLeft(Stream(Map[VarName, Value]())) { (envs, merged) =>
         mergePairs(envs.flatMap(env => merged.map(menv => (env, menv))))
       }
+    }
     def matchPattAll(module: Module, store: Store, vals: List[Value], spatts: List[StarPatt],
                      extract: Value => Option[List[Value]],
                      construct: List[Value] => Value,
@@ -119,8 +121,10 @@ object Executor {
           case _ => Stream()
         }
       case LabelledTypedPatt(typ, labelVar, inpatt) =>
-        if (typing.checkType(tval, typ)) merge(List(Stream(Map(labelVar -> tval)), matchPatt(module, store, tval, inpatt)))
-        else Stream()
+        if (typing.checkType(tval, typ)) {
+          val inmatch = matchPatt(module, store, tval, inpatt)
+          merge(List(Stream(Map(labelVar -> tval)), inmatch))
+        } else Stream()
       case ListPatt(spatts) =>
         def extractList(v: Value): Option[List[Value]] = v match {
           case ListValue(vals) => Some(vals)
@@ -571,11 +575,11 @@ object Executor {
                   newValue match {
                     case SuccessResult(nvl) =>
                       val varty = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
-                      if (typing.checkType(vl, varty)) {
-                        val res = (vl.pure[Result], store_.copy(map = store_.map.updated(path.varName, nvl)))
+                      if (typing.checkType(nvl, varty)) {
+                        val res = (nvl.pure[Result], store_.copy(map = store_.map.updated(path.varName, nvl)))
                         res
                       }
-                      else (ExceptionalResult(Error(TypeError(vl, varty))), store_)
+                      else (ExceptionalResult(Error(TypeError(nvl, varty))), store_)
                     case _ => (newValue, store_)
                   }
                 case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
