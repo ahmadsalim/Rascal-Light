@@ -2,8 +2,12 @@ package semantics.domains
 
 import syntax.{Module => _, _}
 
+sealed trait FunBody
+case class ExprFunBody(expr: Expr) extends FunBody
+case object PrimitiveFunBody extends FunBody
+
 case class Module( globalVars: Map[VarName, Type]
-                 , funs: Map[VarName, (Type, List[Parameter], Expr)]
+                 , funs: Map[VarName, (Type, List[Parameter], FunBody)]
                  , datatypes: Map[TypeName, List[ConsName]]
                  , constructors: Map[ConsName, (TypeName, List[Parameter])]
                  )
@@ -68,7 +72,10 @@ case class MapAccessPath(value: Value) extends AccessPath
 case class FieldAccessPath(fieldName: FieldName) extends AccessPath
 
 object Domains {
-  val prelude = Module(Map.empty, Map.empty,
+  val prelude = Module(Map.empty,
+    Map("delete" -> (MapType(ValueType, ValueType),
+      List(Parameter(MapType(ValueType, ValueType),"emap"),
+           Parameter(ValueType,"ekey")), PrimitiveFunBody)),
     Map("Bool" -> List("true", "false"), "NoKey" -> List("nokey"), "Pair" -> List("pair")),
     Map("true" -> ("Bool", List()),
         "false" -> ("Bool", List()),

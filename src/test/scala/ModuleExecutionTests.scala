@@ -1,5 +1,5 @@
 import org.scalatest.{FlatSpec, Matchers}
-import semantics.domains.{BasicValue, Domains, ExecutionResult, Store}
+import semantics.domains._
 import semantics.Executor
 import syntax._
 
@@ -31,7 +31,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
     val expected = ExecutionResult(Store(Map()),
       Domains.prelude.copy(funs =
         Domains.prelude.funs.updated("double",
-          (BaseType(IntType), List(Parameter(BaseType(IntType), "x")), BinaryExpr(VarExpr("x"), "*", VarExpr("x"))))), List())
+          (BaseType(IntType), List(Parameter(BaseType(IntType), "x")), ExprFunBody(BinaryExpr(VarExpr("x"), "*", VarExpr("x")))))), List())
     val actual = Executor.execute(funModule)
     actual should matchPattern { case \/-(`expected`) => }
   }
@@ -57,7 +57,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
     val expected = ExecutionResult(Store(Map("y" -> BasicValue(IntLit(25)))),
       Domains.prelude.copy(globalVars = Domains.prelude.globalVars.updated("y", BaseType(IntType)),
         funs = Domains.prelude.funs.updated("double",
-          (BaseType(IntType), List(Parameter(BaseType(IntType), "x")), BinaryExpr(VarExpr("x"), "*", VarExpr("x"))))), List())
+          (BaseType(IntType), List(Parameter(BaseType(IntType), "x")), ExprFunBody(BinaryExpr(VarExpr("x"), "*", VarExpr("x")))))), List())
     val actual = Executor.execute(module)
     actual should matchPattern { case \/-(`expected`) => }
   }

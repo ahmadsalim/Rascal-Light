@@ -514,7 +514,21 @@ object Executor {
                     argpartyps.forall((typing.checkType _).tupled)) {
                 val callstore = Store(module.globalVars.map { case (x, _) => (x, store__.map(x)) } ++
                   funpars.map(_.name).zip(argvals).toMap)
-                val (res, resstore) = evalLocal(funpars.map(par => par.name -> par.typ).toMap, callstore, funbody)
+                val (res, resstore) = funbody match {
+                  case ExprFunBody(exprfunbody) =>
+                    evalLocal(funpars.map(par => par.name -> par.typ).toMap, callstore, exprfunbody)
+                  case PrimitiveFunBody =>
+                    functionName match {
+                      case "delete" =>
+                        val map = callstore.map("emap")
+                        val key = callstore.map("ekey")
+                        map match {
+                          case MapValue(vals) => (SuccessResult(MapValue(vals - key)), callstore)
+                          case _ => (ExceptionalResult(Error(OtherError)), callstore)
+                        }
+                      case _ => (ExceptionalResult(Error(OtherError)), callstore)
+                    }
+                }
                 val store_ = Store(module.globalVars.map { case (x, _) => (x, resstore.map(x)) } ++ store__.map)
                 def funcallsuccess(resval: Value): (Result[Value], Store) = {
                   if (typing.checkType(resval, funresty)) (resval.point[Result], store_)
@@ -743,7 +757,7 @@ object Executor {
           case FunDef(returntype, name, parameters, body) =>
             if (alreadyDefined(name, outmod)) alreadyDefinedErrMsg(name).left
             else (unevalglobvars, tests,
-                     outmod.copy(funs = outmod.funs.updated(name, (returntype, parameters.toList, body)))).right
+                     outmod.copy(funs = outmod.funs.updated(name, (returntype, parameters.toList, ExprFunBody(body))))).right
           case DataDef(tyname, constructors) =>
             if (alreadyDefined(tyname, outmod)) alreadyDefinedErrMsg(tyname).left
             else {
