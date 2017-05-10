@@ -107,7 +107,7 @@ object RascalWrapper {
       }
     } else if (pattern.isQualifiedName) {
       val varName = qualifiedNameToString(pattern.getQualifiedName)
-      VarPatt(varName).right
+      if (varName == "_") IgnorePatt.right else VarPatt(varName).right
     } else if (pattern.isDescendant) {
       val innerPatt = translatePattern(pattern.getPattern)
       innerPatt.map(DescendantPatt)

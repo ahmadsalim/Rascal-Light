@@ -46,10 +46,10 @@ class TransformationTests extends FlatSpec with Matchers {
   }
 
   "The replace delegation with inheritance refactoring in ReplaceDelegation.rscli" should "pass all its tests correctly" in {
-    val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("ReplaceDelegation.rscli").getFile)
-    val modESExecRes = modESO.flatMap(Executor.execute)
-    modESExecRes shouldBe a [\/-[_]]
-    modESExecRes.foreach { execres =>
+    val modRDO = RascalWrapper.loadModuleFromFile(getClass.getResource("ReplaceDelegation.rscli").getFile)
+    val modRDExecRes = modRDO.flatMap(Executor.execute)
+    modRDExecRes shouldBe a [\/-[_]]
+    modRDExecRes.foreach { execres =>
       execres.failingTests shouldBe empty
     }
   }

@@ -32,15 +32,14 @@ Package replaceDelegationWithInheritance(Package pkg, str clname, str fname) {
                 Method cm = cl.methods[cmname];
                 if (ftm.name == cm.name) {
                     switch (cm.body) {
-                        case s : returnstmt(methodcallexpr(_,
+                        case returnstmt(methodcallexpr(_,
                           fieldaccessexpr(_, var(_, "this"), fname), ftmname, _)) =>
-                            ({ cl.methods = delete(cl.methods, cmname); s; })
-                        case e => ({
+                            ({ cl.methods = delete(cl.methods, cmname); })
+                        case _ => ({
                              cm.body = top-down visit(cm.body) {
                                 case fieldaccessexpr(_, var(_, "this"), fname) => var(f.typ, "super")
                              }
                              cl.methods[cmname] = cm;
-                             e;
                            })
                     };
                 };

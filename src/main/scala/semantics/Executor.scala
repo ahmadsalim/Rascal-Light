@@ -99,7 +99,7 @@ object Executor {
             }
             else
               allPartitions(vals).flatMap(part =>
-                matchPattAll(module, store.copy(store.map.updated(sx, construct(part))),
+                matchPattAll(module, Store(store.map.updated(sx, construct(part))),
                   restPartition(part, vals).get, sps, extract, construct, allPartitions, restPartition))
         }
     }
@@ -323,10 +323,10 @@ object Executor {
         envs.head.toList match {
           case Nil => (ExceptionalResult(Fail), store)
           case env :: _ =>
-            val (actres, store_) = evalLocal(localVars, store.copy(store.map ++ env), action)
+            val (actres, store_) = evalLocal(localVars, Store(store.map ++ env), action)
             actres match {
               case ExceptionalResult(Fail) => evalCase(store, action, envs.tail)
-              case _ => (actres, store_.copy(store.map -- env.keySet))
+              case _ => (actres, Store(store_.map -- env.keySet))
             }
         }
       cases match {
@@ -345,7 +345,7 @@ object Executor {
       envs.head.toList match {
           case Nil => (().point[Result], store)
           case env :: _ =>
-            val (bodyres, store_) = evalLocal(localVars, store.copy(store.map ++ env), body)
+            val (bodyres, store_) = evalLocal(localVars, Store(store.map ++ env), body)
             bodyres match {
               case SuccessResult(vl) =>
                 evalEach(localVars, store_, envs.tail, body)
@@ -412,7 +412,7 @@ object Executor {
       }
     }
 
-    def evalLocal(localVars: Map[VarName, Type], store: Store, expr: Expr): (Result[Value], Store) =
+    def evalLocal(localVars: Map[VarName, Type], store: Store, expr: Expr): (Result[Value], Store) = {
       expr match {
         case BasicExpr(b) => (BasicValue(b).pure[Result], store)
         case VarExpr(x) =>
@@ -569,15 +569,15 @@ object Executor {
                     if (path.accessPaths.isEmpty) {
                       vl.point[Result]
                     } else {
-                      store_.map.get(path.varName).fold[Result[Value]](ExceptionalResult(Error(UnassignedVarError(path.varName)))) {
+                      val res = store_.map.get(path.varName).fold[Result[Value]](ExceptionalResult(Error(UnassignedVarError(path.varName)))) {
                         ovl => updatePath(ovl, path.accessPaths, vl) }
+                      res
                     }
                   newValue match {
                     case SuccessResult(nvl) =>
                       val varty = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
                       if (typing.checkType(nvl, varty)) {
-                        val res = (nvl.pure[Result], store_.copy(map = store_.map.updated(path.varName, nvl)))
-                        res
+                        (nvl.pure[Result], Store(store_.map.updated(path.varName, nvl)))
                       }
                       else (ExceptionalResult(Error(TypeError(nvl, varty))), store_)
                     case _ => (newValue, store_)
@@ -603,7 +603,8 @@ object Executor {
             case SuccessResult(scrval) =>
               val (caseres, store_) = evalCases(localVars, store__, scrval, cases.toList)
               caseres match {
-                case SuccessResult(caseval) => (caseval.point[Result], store_)
+                case SuccessResult(caseval) =>
+                  (caseval.point[Result], store_)
                 case ExceptionalResult(exres) =>
                   exres match {
                     case Fail => (BottomValue.point[Result], store_)
@@ -635,7 +636,7 @@ object Executor {
             lvs.updated(vdef.name, vdef.typ)
           }
           val (res, store__) = evalLocalAll(localVars_, store, exprs)
-          val store_ = store__.copy(store__.map -- vardefs.map(_.name))
+          val store_ = Store(store__.map -- vardefs.map(_.name))
           res match {
             case SuccessResult(vals) => (vals.lastOption.getOrElse(BottomValue).pure[Result], store_)
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
@@ -698,7 +699,7 @@ object Executor {
             case SuccessResult(tryval) => (tryval.point[Result], store__)
             case ExceptionalResult(exres) =>
               exres match {
-                case Throw(value) => evalLocal(localVars, store__.copy(store__.map.updated(catchVar,value)), catchB)
+                case Throw(value) => evalLocal(localVars, Store(store__.map.updated(catchVar,value)), catchB)
                 case _ => (ExceptionalResult(exres), store__)
               }
           }
@@ -725,7 +726,7 @@ object Executor {
             case SuccessResult(envs) =>
               val env = envs.head.toList
               if (env.isEmpty) (ConstructorValue("false", Seq.empty).point[Result], store_)
-              else (ConstructorValue("true", Seq.empty).point[Result], store_.copy(store_.map ++ env.head))
+              else (ConstructorValue("true", Seq.empty).point[Result], Store(store_.map ++ env.head))
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
           }
         case AssertExpr(cond) =>
@@ -740,6 +741,7 @@ object Executor {
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
           }
       }
+    }
     evalLocal(Map.empty, store, expr)
   }
 
@@ -786,7 +788,7 @@ object Executor {
             val (res, store_) = eval(semmod, store, varexpr)
             res match {
               case ExceptionalResult(exres) => s"Evaluation of left-hand side for variable $varname failed with $exres".left
-              case SuccessResult(value) => store_.copy(map = store_.map.updated(varname, value)).right
+              case SuccessResult(value) => Store(map = store_.map.updated(varname, value)).right
             }
         }.flatMap { store =>
           tests.foldLeftM[String \/ ?, List[VarName]](List()) { (failed, test) =>
