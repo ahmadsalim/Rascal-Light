@@ -74,8 +74,9 @@ case class FieldAccessPath(fieldName: FieldName) extends AccessPath
 object Domains {
   val prelude = Module(Map.empty,
     Map("delete" -> (MapType(ValueType, ValueType),
-      List(Parameter(MapType(ValueType, ValueType),"emap"),
-           Parameter(ValueType,"ekey")), PrimitiveFunBody)),
+         List(Parameter(MapType(ValueType, ValueType),"emap"),
+             Parameter(ValueType,"ekey")), PrimitiveFunBody)
+       ,"toString" -> (BaseType(StringType), List(Parameter(ValueType, "earg")), PrimitiveFunBody)),
     Map("Bool" -> List("true", "false"), "NoKey" -> List("nokey"), "Pair" -> List("pair")),
     Map("true" -> ("Bool", List()),
         "false" -> ("Bool", List()),

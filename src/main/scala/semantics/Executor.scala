@@ -530,6 +530,9 @@ object Executor {
                           case MapValue(vals) => (SuccessResult(MapValue(vals - key)), callstore)
                           case _ => (ExceptionalResult(Error(OtherError)), callstore)
                         }
+                      case "toString" =>
+                        val arg = callstore.map("earg")
+                        (SuccessResult(BasicValue(StringLit(arg.toString))), callstore) // TO DO - Use pretty printing instead
                       case _ => (ExceptionalResult(Error(OtherError)), callstore)
                     }
                 }
