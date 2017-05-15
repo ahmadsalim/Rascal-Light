@@ -125,43 +125,52 @@ public Module liftLets(Module m) {
 	return m;
 }
 
-public Module desugarBooleans(Module m) {
 
-	Statement while2let(s:whileDo(c, b)) {
-		x = uniqueName(s);
-		return let([varDecl([x], user(id("BOOLEAN")))], [assign(x, [], c),
-			whileDo(lookup(x, []), [b, assign(x, [], c)])]);
+Statement while2let(Statement s) {
+	switch(s) {
+		case whileDo(c, b): {
+			x = uniqueName(s);
+			return let([varDecl([x], user(id("BOOLEAN")))], [assign(x, [], c),
+				whileDo(lookup(x, []), [b, assign(x, [], c)])]);
+		}
 	}
-	
-	Statement assignCompareToIf(assign(n,sels,compare)) {
-		return ifThen(compare, [assign(n, sels, \true())], [], [assign(n, sels, \false())]);
+}
+
+
+Statement assignCompareToIf(Statement s) {
+	switch(s) {
+		case assign(n,sels,compare):
+			return ifThen(compare, [assign(n, sels, \true())], [], [assign(n, sels, \false())]);
 	}
+}
+
+public Module desugarBooleans(Module m) {
 	return innermost visit (m) {
 		case assign(n, sels, not(exp)) =>
 			ifThen(exp, [assign(n, sels, \false())], [], [assign(n, sels, \true())])
-			
+
 		case assign(n, sels, amp(lhs, rhs)) =>
-			ifThen(lhs, 
-				[ifThen(rhs, 
-					[assign(n, sels, \true())], [], 
+			ifThen(lhs,
+				[ifThen(rhs,
+					[assign(n, sels, \true())], [],
 					[assign(n, sels, \false())]
 				)], [],
 				[assign(n, sels, \false())])
-				
+
 		case assign(n, sels, or(lhs, rhs)) =>
-			ifThen(lhs, 
-				[assign(n, sels, \true())], [], 
-				[ifThen(rhs, 
-					[assign(n, sels, \true())], [], 
+			ifThen(lhs,
+				[assign(n, sels, \true())], [],
+				[ifThen(rhs,
+					[assign(n, sels, \true())], [],
 					[assign(n, sels, \false())])])
-					
+
 		case s:assign(n, sels, eq(lhs,rhs)) => assignCompareToIf(s)
 		case s:assign(n, sels, neq(lhs,rhs)) => assignCompareToIf(s)
 		case s:assign(n, sels, lt(lhs,rhs)) => assignCompareToIf(s)
 		case s:assign(n, sels, gt(lhs,rhs)) => assignCompareToIf(s)
-		case s:assign(n, sels, geq(lhs,rhs)) => assignCompareToIf(s)		
+		case s:assign(n, sels, geq(lhs,rhs)) => assignCompareToIf(s)
 		case s:assign(n, sels, leq(lhs,rhs)) => assignCompareToIf(s)
-			
+
 		case ifThen(not(c), b, [], es) =>
 			ifThen(c, es, [], b)
 
@@ -175,22 +184,27 @@ public Module desugarBooleans(Module m) {
 		case ifThen(\false(), b, [], es) => begin(es)
 
 		case whileDo(\false(),_) => begin([])
-		case s:whileDo(lookup(_,_),_) => s		
+		case s:whileDo(lookup(_,_),_) => s
 		case s:whileDo(cond, _) => while2let(s)
-		
-		// Normalize elsifs					
-		case ifThen(c, b, [<ec, eb>, eis*], es) =>
+
+		// Normalize elsifs
+		case ifThen(c, b, [elseif(ec, eb), eis*], es) =>
 				ifThen(c, b, [], [ifThen(ec, eb, [eis], es)]) 
 	}	
 }
 
-
 public Ident uniqueName(Statement s) {
 	vars = {};
-	for (/lookup(n, _) <- s)
-		vars = vars + n.name;
-	for (/assign(n, _, _) <- s)
-		vars = vars + n.name;
+	visit (s) {
+		case s2 : lookup(n, _) => {
+			vars = vars + n.name;
+			s2;
+		}
+		case s2 : assign(n, _, _) => {
+			vars = vars + n.name;
+			s2;
+		}
+	}
 	return id("_" + intercalate("_", toList(vars)));
 }
 
@@ -199,12 +213,12 @@ data LiftRes = liftRes(map[Ident, Ident] subs, Declarations decls, int cnt);
 LiftRes lift(list[VarDecl] vds, Declarations decls, int cnt) {
 	LiftRes res = liftRes((), decls, cnt);
 	res.subs = ();
-	decls.vars += ({
+	decls.vars = decls.vars + ({
 		list[VarDecl] varDecls;
 		for (v <- vds) {
 			for (n <- v.names) {
 				nn = id(n.name + "_" + "<cnt>"); // _ prevents nameclashes
-				res.cnt += 1;
+				res.cnt = res.cnt + 1;
 				res.subs[n] = nn;
 				varDecls = varDecls + varDecl([nn], v.\type);
 			}

@@ -12,7 +12,6 @@ Glagol Abstract Syntax
 
 data Expression
     = integer(int intValue)
-    | float(real floatValue)
     | string(str strValue)
     | boolean(bool boolValue)
     | \list(list[Expression] values)
@@ -177,7 +176,6 @@ public data PhpScalar
     | phpNamespaceConstant()
     | phpTraitConstant()
     | phpNull()
-    | phpFloat(real realVal)
     | phpInteger(int intVal)
     | phpString(str strVal)
     | phpBoolean(bool boolVal)
@@ -271,7 +269,6 @@ public data PhpAnnotation
     | phpAnnotationVal(map[str k, PhpAnnotation v])
     | phpAnnotationVal(str string)
     | phpAnnotationVal(int integer)
-    | phpAnnotationVal(real float)
     | phpAnnotationVal(bool boolean)
     | phpAnnotationVal(list[PhpAnnotation] items)
     | phpAnnotationVal(PhpAnnotation v)
@@ -288,7 +285,6 @@ PhpExpr toPhpExpr(Expression expr) {
 		
 		// literals
 		case integer(int i): return phpScalar(phpInteger(i));
-		case float(real r): return phpScalar(phpFloat(r)); 
 		case string(str s): return phpScalar(phpString(s));
 		case boolean(bool b): return phpScalar(phpBoolean(b));
 		

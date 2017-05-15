@@ -56,14 +56,14 @@ Tableau simplify(Tableau tbl) {
 		case seq({Tableau u}): return u;
 		case seq({u1*, alt(set[Tableau] us), u2*}): {
 		    set[Tableau] seqs = {};
-			for (Tableau u <- us)
+			for (u <- us)
 				seqs = seqs + {seq(u1 + {u} + u2)};
 			return simplify(alt(seqs));
 		}
-		case seq({add(Var a, Var b, RExpr r), del(a, b, r), *us}):
+		case seq({add(Var a, Var b, RExpr r), del(a, b, r), us*}): // In Rascal Light we treat us* instead of *us as splicing
 			return simplify(alt({}));
-		case alt({add(Var a, Var b, RExpr r), del(a, b, r), *us}):
-			return simplify(alt({seq({}), *us}));
+		case alt({add(Var a, Var b, RExpr r), del(a, b, r), us*}): // In Rascal Light we treat us* instead of *us as splicing
+			return simplify(alt({seq({})} + us));
 		default: return tbl;
 	};
 }

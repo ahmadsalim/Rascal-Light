@@ -79,10 +79,14 @@ public Module eliminateConstants(Module m) {
     return m;
 }
 
-map[Ident,int] getConstants(list[ConstDecl] constants, map[Ident,int] constantMap){ 
-	for(constDecl(name,exp) <- constants){
-		if (nat(i) := evaluate(constantMap,exp)) {
-			constantMap[name]=i;
+map[Ident,int] getConstants(list[ConstDecl] constants, map[Ident,int] constantMap){
+	for(cst <- constants){
+		switch(cst) {
+			case constDecl(name,exp):
+				switch(evaluate(constantMap,exp)) {
+					case nat(i):
+						constantMap[name]=i;
+				}
 		}
  	}
 	return constantMap;

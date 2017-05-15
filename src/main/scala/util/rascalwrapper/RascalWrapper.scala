@@ -145,13 +145,18 @@ object RascalWrapper {
   }
 
   private
-  def translateCases(cases: List[Case]): String \/ List[syntax.Case] = {
+  def translateCases(cases: List[Case], inSwitch: Boolean): String \/ List[syntax.Case] = {
     cases.traverseU { cas =>
       (if (cas.isPatternWithAction) {
         val patternWithAction = cas.getPatternWithAction
         val pattern = patternWithAction.getPattern
         if (patternWithAction.isArbitrary) {
-          s"Unsupported non-replacement pattern with action: $pattern".left
+          if (inSwitch) {
+            val statement = patternWithAction.getStatement
+            translatePattern(pattern).flatMap(patt => translateStatement(statement).map(syntax.Case(patt, _)))
+          } else {
+            s"Unsupported non-replacement pattern with action in visit: $pattern".left
+          }
         } else {
           val replacing = patternWithAction.getReplacement
           if (replacing.hasConditions) {
@@ -221,7 +226,7 @@ object RascalWrapper {
     } else if (stmt.isSwitch) {
       val subject = stmt.getExpression
       val cases = stmt.getCases.asScala.toList
-      translateExpression(subject).flatMap(subj => translateCases(cases).map(SwitchExpr(subj, _)))
+      translateExpression(subject).flatMap(subj => translateCases(cases, inSwitch = true).map(SwitchExpr(subj, _)))
     } else if (stmt.isThrow) {
       val valu = stmt.getStatement
       translateStatement(valu).map(ThrowExpr)
@@ -281,24 +286,21 @@ object RascalWrapper {
 
   private
   def translateVisit(visit: Visit): String \/ Expr = {
-    if (visit.isGivenStrategy) {
-      val strategy = visit.getStrategy
       val strat = {
-        if (strategy.isBottomUp) BottomUp
-        else if (strategy.isBottomUpBreak) BottomUpBreak
-        else if (strategy.isInnermost) Innermost
-        else if (strategy.isTopDown) TopDown
-        else if (strategy.isTopDownBreak) TopDownBreak
-        else /* strategy.isOutermost */ Outermost
+        if (visit.isGivenStrategy) {
+          val strategy = visit.getStrategy
+          if (strategy.isBottomUp) BottomUp
+          else if (strategy.isBottomUpBreak) BottomUpBreak
+          else if (strategy.isInnermost) Innermost
+          else if (strategy.isTopDown) TopDown
+          else if (strategy.isTopDownBreak) TopDownBreak
+          else /* strategy.isOutermost */ Outermost
+        } else TopDown
       }
       val subject = visit.getSubject
       val cases = visit.getCases.asScala.toList
       translateExpression(subject).flatMap(subj =>
-        translateCases(cases).map(cs => VisitExpr(strat, subj, cs))
-      )
-    } else {
-      s"Unsupported visit without strategy: $visit".left
-    }
+        translateCases(cases, inSwitch = false).map(cs => VisitExpr(strat, subj, cs)))
   }
 
   private
@@ -375,9 +377,9 @@ object RascalWrapper {
       val tvariants = variants.asScala.toList.traverseU { variant =>
         val variantName = nameToString(variant.getName)
         val variantArgs = variant.getArguments
-        val tvariantArgs = variantArgs.asScala.toList.traverseU { tyarg =>
+        val tvariantArgs = variantArgs.asScala.toList.zipWithIndex.traverseU { case (tyarg, idx) =>
           val targtyr = translateType(tyarg.getType)
-          val targnm = nameToString(tyarg.getName)
+          val targnm = if (tyarg.hasName) nameToString(tyarg.getName) else s"arg$idx"
           targtyr.map(targty => Parameter(targty, targnm))
         }
         tvariantArgs.map(targs => ConstructorDef(variantName, targs))
@@ -431,6 +433,17 @@ object RascalWrapper {
     } else s"Unsupported type: $ty".left
   }
 
+  def literalToBool(boolLit: BooleanLiteral): syntax.Expr = {
+    boolLit match {
+      case lexical : BooleanLiteral.Lexical =>
+        val lexicalString = lexical.getString
+        lexicalString match {
+          case "true" => ConstructorExpr("true", List())
+          case "false" => ConstructorExpr("false", List())
+        }
+    }
+  }
+
   private
   def translateExpression(expr: Expression): String \/ syntax.Expr = {
     if (expr.isQualifiedName) {
@@ -442,7 +455,17 @@ object RascalWrapper {
         val intlit = lit.getIntegerLiteral
         BasicExpr(IntLit(literalToInteger(intlit))).right
       } else if (lit.isString) {
-        BasicExpr(StringLit(literalToString(lit.getStringLiteral.getConstant))).right
+        val stringLit = lit.getStringLiteral
+        if (stringLit.isInterpolated) {
+          translateExpression(stringLit.getExpression).map(e => FunCallExpr("toString", List(e)))
+        } else if (stringLit.isNonInterpolated) {
+          BasicExpr(StringLit(literalToString(stringLit.getConstant))).right
+        } else {
+          s"Unsupported string literal: $stringLit".left
+        }
+      } else if (lit.isBoolean) {
+        val boolLit = lit.getBooleanLiteral
+        literalToBool(boolLit).right
       } else {
         s"Unsupported literal: $lit".left
       }
@@ -478,7 +501,8 @@ object RascalWrapper {
               expr.isImplication || expr.isEquivalence || expr.isIn || expr.isNotIn ||
               expr.isLessThan || expr.isGreaterThan ||
               expr.isGreaterThanOrEq || expr.isLessThanOrEq ||
-              expr.isDivision  || expr.isSubtraction || expr.isModulo || expr.isProduct) {
+              expr.isDivision  || expr.isSubtraction || expr.isProduct
+              || expr.isRemainder) {
       val lhs = expr.getLhs
       val rhs = expr.getRhs
       val opName = {
@@ -496,7 +520,7 @@ object RascalWrapper {
         else if (expr.isGreaterThanOrEq) ">="
         else if (expr.isDivision) "/"
         else if (expr.isSubtraction) "-"
-        else if (expr.isModulo) "%"
+        else if (expr.isRemainder) "%"
         else /* expr.isProduct */ "*"
       }
       translateExpression(lhs).flatMap(l => translateExpression(rhs).map(r => BinaryExpr(l, opName, r)))
@@ -530,6 +554,13 @@ object RascalWrapper {
       val target = expr.getExpression
       val fieldName = nameToString(expr.getField)
       translateExpression(target).map(FieldAccExpr(_, fieldName))
+    } else if (expr.isIfThenElse) {
+      val cond = expr.getCondition
+      val thenB = expr.getThenExp
+      val elseB = expr.getElseExp
+      translateExpression(cond).flatMap(c =>
+        translateExpression(thenB).flatMap(th => translateExpression(elseB).map(IfExpr(c, th, _)))
+      )
     } else {
       s"Unsupported expression $expr".left
     }
