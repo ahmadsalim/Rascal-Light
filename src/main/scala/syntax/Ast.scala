@@ -1,9 +1,8 @@
 package syntax
 
-
-case class Module(defs: Seq[Def]) {
-  def withoutTests: Module = {
-    Module(defs.filterNot(_.isInstanceOf[TestDef]))
+case class ModuleDef(defs: Seq[Def]) {
+  def withoutTests: ModuleDef = {
+    ModuleDef(defs.filterNot(_.isInstanceOf[TestDef]))
   }
 }
 
@@ -19,10 +18,10 @@ case class Parameter(typ: Type, name: VarName)
 
 sealed trait Basic
 case class IntLit(i: Int) extends Basic {
-  override val toString = s"$i"
+  override val toString: String = s"$i"
 }
 case class StringLit(s: String) extends Basic {
-  override val toString = s
+  override val toString: String = s
 }
 
 // Not strictly necessary part of semantics, but convenient

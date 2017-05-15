@@ -1,4 +1,4 @@
-import semantics.domains.{ExceptionalResult, Result, SuccessResult}
+import semantics.domains.concrete.{ExceptionalResult, Result, SuccessResult}
 
 import scalaz.Monad
 

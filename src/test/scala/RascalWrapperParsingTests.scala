@@ -29,7 +29,7 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
   }
 
   "The wrapped parser" should "parse Expr.rscli correctly" in {
-    val expected = Module(
+    val expected = ModuleDef(
       List(DataDef("Expr", List(ConstructorDef("var", List(Parameter(BaseType(StringType), "nm"))),
                                 ConstructorDef("cst", List(Parameter(BaseType(IntType), "vl"))),
                                 ConstructorDef("mult", List(Parameter(DataType("Expr"), "el"), Parameter(DataType("Expr"), "er"))))),
@@ -44,7 +44,7 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
   }
 
   it should "parse NNF.rscli correctly" in {
-    val expected = Module(
+    val expected = ModuleDef(
       List(DataDef("Formula",List(ConstructorDef("atom",List(Parameter(BaseType(StringType),"nm"))),
                                   ConstructorDef("and",List(Parameter(DataType("Formula"),"l"), Parameter(DataType("Formula"),"r"))),
                                   ConstructorDef("or",List(Parameter(DataType("Formula"),"l"), Parameter(DataType("Formula"),"r"))),
@@ -63,7 +63,7 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
   }
 
   it should "parse RenameField.rscli correctly" in {
-    val expected = Module(
+    val expected = ModuleDef(
       List(DataDef("Package", List(ConstructorDef("package",List(Parameter(MapType(BaseType(StringType),DataType("Class")), "classes"))))),
            DataDef("Maybestr",List(ConstructorDef("nothing",List()),
                                    ConstructorDef("just",List(Parameter(BaseType(StringType), "val"))))),

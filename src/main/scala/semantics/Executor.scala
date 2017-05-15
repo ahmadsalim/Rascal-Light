@@ -1,6 +1,6 @@
 package semantics
 
-import syntax.{Module => _, _}
+import syntax.{ModuleDef => _, _}
 
 import scala.collection.immutable.{::, Nil}
 import scalaz.\/
@@ -10,6 +10,7 @@ import scalaz.syntax.foldable._
 import scalaz.syntax.monadPlus._
 import fs2.{Pure, Stream}
 import semantics.domains._
+import semantics.domains.concrete._
 
 object Executor {
 
@@ -748,7 +749,7 @@ object Executor {
     evalLocal(Map.empty, store, expr)
   }
 
-  def execute(module: syntax.Module): String \/ ExecutionResult = {
+  def execute(module: syntax.ModuleDef): String \/ ExecutionResult = {
     def alreadyDefined(name: Name, outmod: Module): Boolean = {
       outmod.funs.contains(name) || outmod.globalVars.contains(name) ||
         outmod.datatypes.contains(name) || outmod.constructors.contains(name)

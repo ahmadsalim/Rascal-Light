@@ -13,7 +13,7 @@ import org.rascalmpl.parser.gtd.exception.ParseError
 import org.rascalmpl.parser.gtd.result.out.DefaultNodeFlattener
 import org.rascalmpl.parser.uptr.UPTRNodeFactory
 import org.rascalmpl.parser.{ASTBuilder, Parser}
-import syntax.{BasicType => _, Module => _, Type => _, _}
+import syntax.{BasicType => _, ModuleDef => _, Type => _, _}
 
 import scala.collection.JavaConverters._
 import scala.util.Try
@@ -595,27 +595,27 @@ object RascalWrapper {
     Rewriter.rewrite(Rewriter.outermost("Rewrite Constructors", rewriteConsNames))(df)
   }
 
-  def translateModule(module: Module): String \/ syntax.Module = {
+  def translateModule(module: Module): String \/ syntax.ModuleDef = {
     // TODO Deal with imports
 
     if (module.getBody.hasToplevels) {
       val toplevels = module.getBody.getToplevels.asScala.toList
       val defs =
         toplevels.traverseU(toplevel => translateDecl(toplevel.getDeclaration))
-      val tmodr = defs.map(_.flatten).map(syntax.Module(_))
+      val tmodr = defs.map(_.flatten).map(syntax.ModuleDef(_))
       tmodr.map { tmod =>
         val constructorNames = tmod.defs.flatMap {
           case dd: DataDef => dd.constructors.map(_.name)
           case _ => Seq()
         }.toSet
-        syntax.Module(tmod.defs.map(df => resolveConstructorCalls(constructorNames, df)))
+        syntax.ModuleDef(tmod.defs.map(df => resolveConstructorCalls(constructorNames, df)))
       }
     } else {
       s"${module.getHeader.getName} does not have any definitions".left
     }
   }
 
-  def loadModuleFromFile(path: String): String \/ syntax.Module = {
+  def loadModuleFromFile(path: String): String \/ syntax.ModuleDef = {
     parseRascal(path).flatMap(translateModule)
   }
 }

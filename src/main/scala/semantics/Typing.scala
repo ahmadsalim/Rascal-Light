@@ -1,6 +1,6 @@
 package semantics
 
-import semantics.domains._
+import semantics.domains.concrete._
 import syntax._
 
 import scalaz.syntax.monad._
