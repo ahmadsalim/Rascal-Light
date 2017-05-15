@@ -1,4 +1,4 @@
-module SimplifyTableau
+module DeriveTableau
 
 /*
  Based on https://github.com/cwi-swat/et-al/blob/master/src/et_al/Tableau.rsc
@@ -149,7 +149,7 @@ private int varId = -1;
 
 Var newVar(str class) {
   varId += 1;
-  return var("x_" + varId, class);
+  return var("x_" + "<varId>", class);
 }
 
 str ran(RExpr rexpr) {
