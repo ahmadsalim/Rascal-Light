@@ -2,6 +2,8 @@ package semantics.domains.abstracting
 
 import semantics.domains._
 import semantics.domains.common.{ConcreteAbstractGalois, Lattice}
+import semantics.domains.concrete.Powerset
+import semantics.domains.concrete.Powerset.PowersetLattice
 
 sealed trait Sign
 case object SignBot extends Sign
@@ -50,7 +52,7 @@ object Sign {
 
   implicit val IntSignGalois = new ConcreteAbstractGalois[Int, Sign] {
     override def alpha(dcs: Set[Int]): Sign =
-      dcs.map(i => if (i > 0) Pos else if (i < 0) Neg else Zero).fold[Sign](SignBot)((e1, e2) => Lattice[Sign].lub(e1, e2))
+      Lattice[Sign].lub(dcs.map(i => if (i > 0) Pos else if (i < 0) Neg else Zero))
 
     override def gamma(da: Sign, bound: Int): Set[Int] = da match {
       case SignBot => Set()
@@ -59,11 +61,14 @@ object Sign {
       case Zero => Set(0)
       case NonNeg => (0 until bound).toSet
       case Pos => (1 to bound).toSet
-      case SignTop => {
+      case SignTop =>
         val boundPos = bound / 2
         val boundNeg = bound - boundPos - 1
         (-boundNeg to boundPos).toSet
-      }
     }
+
+    override def latticeC: Lattice[Set[Int]] = PowersetLattice
+
+    override def latticeA: Lattice[Sign] = SignLattice
   }
 }

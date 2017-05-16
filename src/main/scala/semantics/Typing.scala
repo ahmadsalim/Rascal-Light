@@ -1,5 +1,6 @@
 package semantics
 
+import semantics.domains.common.Module
 import semantics.domains.concrete._
 import syntax._
 
@@ -8,7 +9,7 @@ import scalaz.syntax.traverse._
 import scalaz.std.option._
 import scalaz.std.list._
 
-case class Typing(module: domains.Module) {
+case class Typing(module: Module) {
 
   private def lub(types: List[Type]): Type =
     types.fold(VoidType) { (t1, t2) =>

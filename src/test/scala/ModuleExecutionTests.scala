@@ -1,6 +1,7 @@
 import org.scalatest.{FlatSpec, Matchers}
 import semantics.domains._
 import semantics.Executor
+import semantics.domains.common.{Domains, ExprFunBody}
 import semantics.domains.concrete.{BasicValue, ExecutionResult, Store}
 import syntax._
 

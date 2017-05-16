@@ -10,6 +10,7 @@ import scalaz.syntax.foldable._
 import scalaz.syntax.monadPlus._
 import fs2.{Pure, Stream}
 import semantics.domains._
+import semantics.domains.common.{Domains, ExprFunBody, Module, PrimitiveFunBody}
 import semantics.domains.concrete._
 
 object Executor {

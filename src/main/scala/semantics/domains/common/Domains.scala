@@ -1,4 +1,4 @@
-package semantics.domains
+package semantics.domains.common
 
 import syntax._
 

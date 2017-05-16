@@ -1,6 +1,6 @@
 package semantics.domains.concrete
 
-import semantics.domains.Module
+import semantics.domains.common.Module
 import syntax._
 
 sealed trait Value { val children: List[Value] }
