@@ -1,7 +1,6 @@
 package semantics.domains.common
 
-import semantics.domains.concrete.Powerset
-import semantics.domains.concrete.Powerset._
+import Powerset._
 
 import scala.language.higherKinds
 
@@ -63,15 +62,15 @@ object Sums {
       case _ => false
     }
 
-    override def widen(a1: Sum5[E, F1, F2, F3, F4, F5], a2: Sum5[E, F1, F2, F3, F4, F5]): Sum5[E, F1, F2, F3, F4, F5] = (a1, a2) match {
+    override def widen(a1: Sum5[E, F1, F2, F3, F4, F5], a2: Sum5[E, F1, F2, F3, F4, F5], depth : Int): Sum5[E, F1, F2, F3, F4, F5] = (a1, a2) match {
       case (SumBot(), a) => a
       case (a, SumBot()) => a
       case (SumTop(), _) | (_, SumTop()) => SumTop()
-      case (Inj1(fe1), Inj1(fe2)) => Inj1(lattf1.widen(fe1, fe2))
-      case (Inj2(fe1), Inj2(fe2)) => Inj2(lattf2.widen(fe1, fe2))
-      case (Inj3(fe1), Inj3(fe2)) => Inj3(lattf3.widen(fe1, fe2))
-      case (Inj4(fe1), Inj4(fe2)) => Inj4(lattf4.widen(fe1, fe2))
-      case (Inj5(fe1), Inj5(fe2)) => Inj5(lattf5.widen(fe1, fe2))
+      case (Inj1(fe1), Inj1(fe2)) => Inj1(lattf1.widen(fe1, fe2, depth))
+      case (Inj2(fe1), Inj2(fe2)) => Inj2(lattf2.widen(fe1, fe2, depth))
+      case (Inj3(fe1), Inj3(fe2)) => Inj3(lattf3.widen(fe1, fe2, depth))
+      case (Inj4(fe1), Inj4(fe2)) => Inj4(lattf4.widen(fe1, fe2, depth))
+      case (Inj5(fe1), Inj5(fe2)) => Inj5(lattf5.widen(fe1, fe2, depth))
       case _ => SumTop()
     }
   }
@@ -103,31 +102,42 @@ object Sums {
             Lattice[Sum5[E, F1, F2, F3, F4, F5]].lub(dcs.map {
               case SumBot() => SumBot[E,F1,F2,F3,F4,F5]()
               case SumTop() => SumTop[E,F1,F2,F3,F4,F5]()
-              case Inj1(ce) => Inj1[E,F1,F2,F3,F4,F5](Galois[CF1[CE], F1[E]].alpha(Set(ce)))
-              case Inj2(ce) => Inj2[E,F1,F2,F3,F4,F5](Galois[CF2[CE], F2[E]].alpha(Set(ce)))
-              case Inj3(ce) => Inj3[E,F1,F2,F3,F4,F5](Galois[CF3[CE], F3[E]].alpha(Set(ce)))
-              case Inj4(ce) => Inj4[E,F1,F2,F3,F4,F5](Galois[CF4[CE], F4[E]].alpha(Set(ce)))
-              case Inj5(ce) => Inj5[E,F1,F2,F3,F4,F5](Galois[CF5[CE], F5[E]].alpha(Set(ce)))
+              case Inj1(ce) => Inj1[E,F1,F2,F3,F4,F5](galois[CF1[CE], F1[E]].alpha(Set(ce)))
+              case Inj2(ce) => Inj2[E,F1,F2,F3,F4,F5](galois[CF2[CE], F2[E]].alpha(Set(ce)))
+              case Inj3(ce) => Inj3[E,F1,F2,F3,F4,F5](galois[CF3[CE], F3[E]].alpha(Set(ce)))
+              case Inj4(ce) => Inj4[E,F1,F2,F3,F4,F5](galois[CF4[CE], F4[E]].alpha(Set(ce)))
+              case Inj5(ce) => Inj5[E,F1,F2,F3,F4,F5](galois[CF5[CE], F5[E]].alpha(Set(ce)))
             })
 
            override def gamma(da: Sum5[E, F1, F2, F3, F4, F5], bound: Int): Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]] = da match {
              case SumBot() => Set()
              case SumTop() =>
-               (((Galois[CF1[CE],F1[E]].gamma(Lattice[F1[E]].top, bound - 1).map(Inj1 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5]) union
-                 Galois[CF2[CE],F2[E]].gamma(Lattice[F2[E]].top, bound - 1).map(Inj2(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])) union
-                 Galois[CF3[CE],F3[E]].gamma(Lattice[F3[E]].top, bound - 1).map(Inj3(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])) union
-                 Galois[CF4[CE],F4[E]].gamma(Lattice[F4[E]].top, bound - 1).map(Inj4(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])) union
-                 Galois[CF5[CE],F5[E]].gamma(Lattice[F5[E]].top, bound - 1).map(Inj5(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+               val allInj1 =
+                 try { galois[CF1[CE], F1[E]].gamma(Lattice[F1[E]].top, bound - 1).map(Inj1(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+                 } catch { case IsEmpty => Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]() }
+               val allInj2 =
+                 try { galois[CF2[CE], F2[E]].gamma(Lattice[F2[E]].top, bound - 1).map(Inj2(_): Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+                 } catch { case IsEmpty => Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]() }
+               val allInj3 =
+                 try { galois[CF3[CE],F3[E]].gamma(Lattice[F3[E]].top, bound - 1).map(Inj3(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+                 } catch { case IsEmpty => Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]() }
+               val allInj4 =
+                 try { galois[CF4[CE],F4[E]].gamma(Lattice[F4[E]].top, bound - 1).map(Inj4(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+                 } catch { case IsEmpty => Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]() }
+               val allInj5 =
+                 try { galois[CF5[CE],F5[E]].gamma(Lattice[F5[E]].top, bound - 1).map(Inj5(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+                 } catch { case IsEmpty => Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]() }
+               allInj1.union(allInj2).union(allInj3).union(allInj4).union(allInj5)
              case Inj1(ret1) =>
-               Galois[CF1[CE],F1[E]].gamma(ret1, bound - 1).map(Inj1 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+               galois[CF1[CE],F1[E]].gamma(ret1, bound - 1).map(Inj1 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
              case Inj2(ret2) =>
-               Galois[CF2[CE],F2[E]].gamma(ret2, bound - 1).map(Inj2 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+               galois[CF2[CE],F2[E]].gamma(ret2, bound - 1).map(Inj2 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
              case Inj3(ret3) =>
-               Galois[CF3[CE],F3[E]].gamma(ret3, bound - 1).map(Inj3 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+               galois[CF3[CE],F3[E]].gamma(ret3, bound - 1).map(Inj3 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
              case Inj4(ret4) =>
-               Galois[CF4[CE],F4[E]].gamma(ret4, bound - 1).map(Inj4 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+               galois[CF4[CE],F4[E]].gamma(ret4, bound - 1).map(Inj4 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
              case Inj5(ret5) =>
-               Galois[CF5[CE],F5[E]].gamma(ret5, bound - 1).map(Inj5 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+               galois[CF5[CE],F5[E]].gamma(ret5, bound - 1).map(Inj5 (_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
            }
          }
 }

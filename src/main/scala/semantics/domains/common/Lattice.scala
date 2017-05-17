@@ -4,13 +4,17 @@ package semantics.domains.common
   * Created by asal on 15/05/2017.
   */
 
+sealed trait LatticeLimitation extends Throwable
+case object IsInfinite extends LatticeLimitation
+case object IsEmpty extends LatticeLimitation
+
 trait Lattice[A] {
   def bot : A
   def top : A
   def lub(a1 : A, a2 : A) : A
   def glb(a1 : A, a2 : A) : A
   def <=(a1 : A, a2 : A) : Boolean
-  def widen(a1 : A, a2 : A) : A
+  def widen(a1 : A, a2 : A, depth : Int) : A
 
   final def lub(as : Set[A]): A = as.fold(bot)(lub)
   final def glb(as : Set[A]): A = as.fold(top)(glb)
@@ -36,12 +40,12 @@ object latticesyntax {
     final def lub(a2 : A) : A = implicitly[Lattice[A]].lub(a1,a2)
     final def glb(a2 : A) : A = implicitly[Lattice[A]].glb(a1,a2)
     final def <=(a2 : A) : Boolean = implicitly[Lattice[A]].<=(a1,a2)
-    final def widen(a2 : A) = implicitly[Lattice[A]].widen(a1, a2)
+    final def widen(a2 : A, depth : Int = 10) = implicitly[Lattice[A]].widen(a1, a2, depth)
 
     // Unicode
     final def ⊔(a2 : A) : A = lub(a2)
     final def ⊓(a2 : A) : A = glb(a2)
     final def ⊑(a2 : A) : Boolean = <=(a2)
-    final def ∇(a2 : A) = widen(a2)
+    final def ∇(a2 : A, depth : Int = 10) = widen(a2, depth)
   }
 }

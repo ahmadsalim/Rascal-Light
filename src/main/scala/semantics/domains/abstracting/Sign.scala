@@ -1,9 +1,8 @@
 package semantics.domains.abstracting
 
 import semantics.domains._
-import semantics.domains.common.{ConcreteAbstractGalois, Lattice}
-import semantics.domains.concrete.Powerset
-import semantics.domains.concrete.Powerset.PowersetLattice
+import semantics.domains.common.Powerset.PowersetLattice
+import semantics.domains.common.{ConcreteAbstractGalois, Lattice, Powerset}
 
 sealed trait Sign
 case object SignBot extends Sign
@@ -47,7 +46,7 @@ object Sign {
       case _ => a1 == a2
     }
 
-    override def widen(a1: Sign, a2: Sign): Sign = lub(a1, a2)
+    override def widen(a1: Sign, a2: Sign, depth: Int): Sign = lub(a1, a2)
   }
 
   implicit val IntSignGalois = new ConcreteAbstractGalois[Int, Sign] {

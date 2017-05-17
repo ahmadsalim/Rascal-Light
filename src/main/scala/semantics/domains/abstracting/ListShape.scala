@@ -2,8 +2,10 @@ package semantics.domains.abstracting
 
 import scalaz.std.list._
 import scalaz.syntax.traverse._
-import semantics.domains.common.{ConcreteAbstractGalois, Galois, Lattice}
-import semantics.domains.concrete.Powerset.PowersetLattice
+import semantics.domains.common.{ConcreteAbstractGalois, galois, Lattice}
+import semantics.domains.common.Powerset.PowersetLattice
+
+import scalaz.{NaturalTransformation, ~>}
 
 sealed trait ListShape[E]
 case class ListBot[E]() extends ListShape[E]
@@ -38,11 +40,11 @@ object ListShape {
       case _ => false
     }
 
-    override def widen(a1: ListShape[E], a2: ListShape[E]): ListShape[E] = (a1, a2) match {
+    override def widen(a1: ListShape[E], a2: ListShape[E], depth : Int): ListShape[E] = (a1, a2) match {
       case (ListBot(), a) => a
       case (a, ListBot()) => a
       case (ListTop(), _) | (_, ListTop()) => ListTop()
-      case (ListElements(e1), ListElements(e2)) => listElements(Lattice[E].widen(e1, e2))
+      case (ListElements(e1), ListElements(e2)) => listElements(Lattice[E].widen(e1, e2, depth))
     }
   }
 
@@ -50,22 +52,22 @@ object ListShape {
   (implicit elemGalois: ConcreteAbstractGalois[CE, E]) = new ConcreteAbstractGalois[List[CE], ListShape[E]] {
     override def latticeC: Lattice[Set[List[CE]]] = PowersetLattice
 
-    override def latticeA: Lattice[ListShape[E]] = ListShapeLattice[E](Galois[CE, E].latticeA)
+    override def latticeA: Lattice[ListShape[E]] = ListShapeLattice[E](galois[CE, E].latticeA)
 
     override def alpha(dcs: Set[List[CE]]): ListShape[E] = {
-      implicit val latticeE = Galois[CE, E].latticeA
-      listElements(Lattice[E].lub(dcs.map(dc => Galois[CE, E].alpha(dc.toSet))))
+      implicit val latticeE = galois[CE, E].latticeA
+      listElements(Lattice[E].lub(dcs.map(dc => galois[CE, E].alpha(dc.toSet))))
     }
 
     override def gamma(da: ListShape[E], bound: Int): Set[List[CE]] = {
-      implicit val latticeE = Galois[CE, E].latticeA
+      implicit val latticeE = galois[CE, E].latticeA
 
       def concretizeElementsOf(e : E) = {
         val innerBound: Int = Math.sqrt(bound).toInt
         val outerBound: Int = if (innerBound > 0) bound / innerBound else 1
         (0 until outerBound).toSet.flatMap { (size: Int) =>
           (1 to size).toList.traverseU(_ =>
-            Galois[CE, E].gamma(e, innerBound).toList
+            galois[CE, E].gamma(e, innerBound).toList
           )
         }
       }
@@ -84,5 +86,12 @@ object ListShape {
     if (e == Lattice[E].bot) Lattice[ListShape[E]].bot
     else if (e == Lattice[E].top) Lattice[ListShape[E]].top
     else ListElements(e)
+  }
+
+  implicit def latticeNT: Lattice ~> Lambda[E => Lattice[ListShape[E]]] = new (Lattice ~> Lambda[E => Lattice[ListShape[E]]]) {
+    override def apply[E](fa: Lattice[E]): Lattice[ListShape[E]] = {
+      implicit val ifa = fa
+      ListShapeLattice
+    }
   }
 }

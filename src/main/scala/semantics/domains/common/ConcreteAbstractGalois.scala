@@ -11,7 +11,7 @@ trait ConcreteAbstractGalois[DC, DA] {
   def gamma(da: DA, bound: Int): Set[DC]
 }
 
-object Galois {
+object galois {
   def apply[DC, DA](implicit cagalois : ConcreteAbstractGalois[DC, DA]) = cagalois
 
   implicit class ConcreteAbstractGaloisAbstractOps[DC, DA](da : DA)(implicit cagalois : ConcreteAbstractGalois[DC, DA]) {
