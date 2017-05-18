@@ -1,6 +1,7 @@
 package semantics.domains.abstracting
 
 import semantics.Typing
+import semantics.domains.abstracting.ListShape.{ListListShapeGalois, ListShapeLattice}
 import semantics.domains.common.Powerset.PowersetLattice
 import semantics.domains.common.{ConcreteAbstractGalois, Lattice, Module}
 import semantics.domains.concrete.{ConstructorValue, Value}
@@ -9,6 +10,7 @@ import syntax.{ConsName, Type, TypeName}
 import scalaz.std.list._
 import scalaz.syntax.traverse._
 import scalaz.BijectionT.Bijection
+import scalaz.{~>, ~~>}
 
 
 sealed trait DataShape[E]
@@ -149,4 +151,12 @@ case class DataShapeOf(module: Module) {
     }
   }
 
+  implicit def latticeNT = new (Lattice ~> Lambda[E => Lattice[DataShape[E]]]) {
+    override def apply[E](fa: Lattice[E]): Lattice[DataShape[E]] = {
+      implicit val ifa = fa
+      DataShapeLattice
+    }
+  }
+
+  // TODO the bi natural transformation requires a bit more work on implicits
 }

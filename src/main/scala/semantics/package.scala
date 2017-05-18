@@ -1,4 +1,5 @@
-import semantics.domains.concrete.{ExceptionalResult, Result, SuccessResult}
+import semantics.domains.common.{ExceptionalResult, ResultV, SuccessResult}
+import semantics.domains.concrete.Value
 
 import scalaz.Monad
 
@@ -6,6 +7,7 @@ import scalaz.Monad
   * Created by asal on 23/02/2017.
   */
 package object semantics {
+  type Result[T] = ResultV[Value, T]
   implicit val monadResult = new Monad[Result] {
     override def point[A](a: => A): Result[A] = SuccessResult(a)
 

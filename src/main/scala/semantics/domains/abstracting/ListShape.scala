@@ -2,10 +2,10 @@ package semantics.domains.abstracting
 
 import scalaz.std.list._
 import scalaz.syntax.traverse._
-import semantics.domains.common.{ConcreteAbstractGalois, galois, Lattice}
+import semantics.domains.common.{ConcreteAbstractGalois, Lattice, galois}
 import semantics.domains.common.Powerset.PowersetLattice
 
-import scalaz.{NaturalTransformation, ~>}
+import scalaz.{NaturalTransformation, ~>, ~~>}
 
 sealed trait ListShape[E]
 case class ListBot[E]() extends ListShape[E]
@@ -88,10 +88,17 @@ object ListShape {
     else ListElements(e)
   }
 
-  implicit def latticeNT: Lattice ~> Lambda[E => Lattice[ListShape[E]]] = new (Lattice ~> Lambda[E => Lattice[ListShape[E]]]) {
+  implicit def latticeNT = new (Lattice ~> Lambda[E => Lattice[ListShape[E]]]) {
     override def apply[E](fa: Lattice[E]): Lattice[ListShape[E]] = {
       implicit val ifa = fa
       ListShapeLattice
+    }
+  }
+
+  implicit def galoisBNT = new (ConcreteAbstractGalois ~~> Lambda[(CE, E) => ConcreteAbstractGalois[List[CE], ListShape[E]]]) {
+    override def apply[CE, E](galois: ConcreteAbstractGalois[CE, E]): ConcreteAbstractGalois[List[CE], ListShape[E]] = {
+      implicit val igalois = galois
+      ListListShapeGalois
     }
   }
 }

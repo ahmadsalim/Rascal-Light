@@ -10,7 +10,7 @@ import scalaz.syntax.foldable._
 import scalaz.syntax.monadPlus._
 import fs2.{Pure, Stream}
 import semantics.domains._
-import semantics.domains.common.{Domains, ExprFunBody, Module, PrimitiveFunBody}
+import semantics.domains.common._
 import semantics.domains.concrete._
 
 object Executor {
@@ -179,7 +179,7 @@ object Executor {
       case _ => ExceptionalResult(Error(FieldError(tv, fieldName)))
     }
 
-    def updatePath(ovl: Value, paths: List[AccessPath], tvl: Value): Result[Value] = paths match {
+    def updatePath(ovl: Value, paths: List[AccessPath[Value]], tvl: Value): Result[Value] = paths match {
       case Nil => tvl.point[Result]
       case path :: rpaths =>
         path match {
@@ -395,7 +395,7 @@ object Executor {
           }
       }
 
-    def evalAssignable(localVars: Map[VarName, Type], store: Store, assgn: Assignable): (Result[DataPath], Store) = {
+    def evalAssignable(localVars: Map[VarName, Type], store: Store, assgn: Assignable): (Result[DataPath[Value]], Store) = {
       assgn match {
         case VarAssgn(name) => (DataPath(name, List()).point[Result], store)
         case FieldAccAssgn(target, fieldName) =>

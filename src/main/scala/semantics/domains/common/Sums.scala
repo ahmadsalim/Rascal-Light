@@ -75,19 +75,9 @@ object Sums {
     }
   }
 
-  implicit def SumSumGalois[CE : Lattice,CF1[_],CF2[_],CF3[_],CF4[_],CF5[_],E : Lattice,F1[_],F2[_],F3[_],F4[_],F5[_]]
+  implicit def SumSumGalois[CE,CF1[_],CF2[_],CF3[_],CF4[_],CF5[_],E : Lattice,F1[_],F2[_],F3[_],F4[_],F5[_]]
     (implicit
-      lattf1 : Lattice[F1[E]]
-    , lattf2 : Lattice[F2[E]]
-    , lattf3 : Lattice[F3[E]]
-    , lattf4 : Lattice[F4[E]]
-    , lattf5 : Lattice[F5[E]]
-    , lattcf1 : Lattice[CF1[CE]]
-    , lattcf2 : Lattice[CF2[CE]]
-    , lattcf3 : Lattice[CF3[CE]]
-    , lattcf4 : Lattice[CF4[CE]]
-    , lattcf5 : Lattice[CF5[CE]]
-    , cagalois1 : ConcreteAbstractGalois[CF1[CE], F1[E]]
+      cagalois1 : ConcreteAbstractGalois[CF1[CE], F1[E]]
     , cagalois2 : ConcreteAbstractGalois[CF2[CE], F2[E]]
     , cagalois3 : ConcreteAbstractGalois[CF3[CE], F3[E]]
     , cagalois4 : ConcreteAbstractGalois[CF4[CE], F4[E]]
@@ -96,10 +86,11 @@ object Sums {
          new ConcreteAbstractGalois[Sum5[CE,CF1,CF2,CF3,CF4,CF5], Sum5[E,F1,F2,F3,F4,F5]] {
            override def latticeC: Lattice[Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]] = PowersetLattice
 
-           override def latticeA: Lattice[Sum5[E, F1, F2, F3, F4, F5]] = Sum5Lattice
+           override def latticeA: Lattice[Sum5[E, F1, F2, F3, F4, F5]] =
+             Sum5Lattice(implicitly[Lattice[E]], cagalois1.latticeA, cagalois2.latticeA, cagalois3.latticeA, cagalois4.latticeA, cagalois5.latticeA)
 
            override def alpha(dcs: Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]): Sum5[E, F1, F2, F3, F4, F5] =
-            Lattice[Sum5[E, F1, F2, F3, F4, F5]].lub(dcs.map {
+            latticeA.lub(dcs.map {
               case SumBot() => SumBot[E,F1,F2,F3,F4,F5]()
               case SumTop() => SumTop[E,F1,F2,F3,F4,F5]()
               case Inj1(ce) => Inj1[E,F1,F2,F3,F4,F5](galois[CF1[CE], F1[E]].alpha(Set(ce)))
@@ -113,19 +104,19 @@ object Sums {
              case SumBot() => Set()
              case SumTop() =>
                val allInj1 =
-                 try { galois[CF1[CE], F1[E]].gamma(Lattice[F1[E]].top, bound - 1).map(Inj1(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+                 try { galois[CF1[CE], F1[E]].gamma(cagalois1.latticeA.top, bound - 1).map(Inj1(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
                  } catch { case IsEmpty => Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]() }
                val allInj2 =
-                 try { galois[CF2[CE], F2[E]].gamma(Lattice[F2[E]].top, bound - 1).map(Inj2(_): Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+                 try { galois[CF2[CE], F2[E]].gamma(cagalois2.latticeA.top, bound - 1).map(Inj2(_): Sum5[CE, CF1, CF2, CF3, CF4, CF5])
                  } catch { case IsEmpty => Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]() }
                val allInj3 =
-                 try { galois[CF3[CE],F3[E]].gamma(Lattice[F3[E]].top, bound - 1).map(Inj3(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+                 try { galois[CF3[CE],F3[E]].gamma(cagalois3.latticeA.top, bound - 1).map(Inj3(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
                  } catch { case IsEmpty => Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]() }
                val allInj4 =
-                 try { galois[CF4[CE],F4[E]].gamma(Lattice[F4[E]].top, bound - 1).map(Inj4(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+                 try { galois[CF4[CE],F4[E]].gamma(cagalois4.latticeA.top, bound - 1).map(Inj4(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
                  } catch { case IsEmpty => Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]() }
                val allInj5 =
-                 try { galois[CF5[CE],F5[E]].gamma(Lattice[F5[E]].top, bound - 1).map(Inj5(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
+                 try { galois[CF5[CE],F5[E]].gamma(cagalois5.latticeA.top, bound - 1).map(Inj5(_) : Sum5[CE, CF1, CF2, CF3, CF4, CF5])
                  } catch { case IsEmpty => Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]() }
                allInj1.union(allInj2).union(allInj3).union(allInj4).union(allInj5)
              case Inj1(ret1) =>
