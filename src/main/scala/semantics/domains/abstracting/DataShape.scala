@@ -70,10 +70,7 @@ case class DataShapeOf(module: Module) {
       case (DataElements(tn1, consShape1), DataElements(tn2,consShape2)) if tn1 == tn2 =>
         dataElements(tn1, (consShape1.keySet intersect consShape2.keySet).toList.map { cons =>
           val arity = allConstructors(cons).size
-          val tops = (1 to arity).toList.map(_ => Lattice[E].top)
-          val v1 = consShape1.get(cons).fold(tops)(identity)
-          val v2 = consShape2.get(cons).fold(tops)(identity)
-          cons -> v1.zip(v2).map { case (e1, e2) => Lattice[E].glb(e1, e2) }
+          cons -> consShape1(cons).zip(consShape2(cons)).map { case (e1, e2) => Lattice[E].glb(e1, e2) }
         }.toMap)
       case _ => DataBot()
     }

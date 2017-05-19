@@ -14,7 +14,7 @@ case object TrueCt extends RelCt
 case object FalseCt extends RelCt
 
 object Relational {
-  implicit def RelCtLattice = new Lattice[RelCt] {
+  implicit val RelCtLattice: Lattice[RelCt] = new Lattice[RelCt] {
     override def bot: RelCt = FalseCt
 
     override def top: RelCt = TrueCt

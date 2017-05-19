@@ -6,18 +6,20 @@ import semantics.domains.concrete._
 import Empty._
 import syntax.{IntLit, StringLit}
 import ListShape._
+import semantics.domains.abstracting.ValueShape.{CValue, PCValue, PValueShape, ValueShape}
 
 import scalaz.BijectionT.{Bijection, bijection}
-import scalaz.{BijectionT, Id, ~>, ~~>}
+import scalaz.{Id, ~>, ~~>}
 
-case class ValueShapeOf(module: Module) {
-  private
+object ValueShape {
   type PCValue[E] = Sum3[E, Lambda[E => Int], List, Lambda[E => ConstructorValue]]
-  private
   type CValue = Fix[PCValue]
 
   type PValueShape[E] = Sum3[E, Lambda[E => Sign], ListShape, DataShape]
   type ValueShape = Fix[PValueShape]
+}
+
+case class ValueShapeOf(module: Module) {
 
   private
   val DataShape = DataShapeOf(module)
@@ -86,19 +88,20 @@ case class ValueShapeOf(module: Module) {
     Fix.FixFixGalois[Bijection[?, Value], Lambda[E => DummyImplicit], PCValue, PValueShape]
   }
 
+  implicit val ValueShapeLattice: Lattice[ValueShape] = {
+    implicit val sumLatticeBNT = new (Lattice ~> Lambda[E => Lattice[Sum3[E, Lambda[E => Sign], ListShape, DataShape]]]) {
+      override def apply[E](fa: Lattice[E]): Lattice[Sum3[E, Lambda[E => Sign], ListShape, DataShape]] = {
+        implicit val ifa = fa
+        Sums.Sum5Lattice[E, Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing]
+      }
+    }
+    Fix.FixLattice[Sum3[?, Lambda[E => Sign], ListShape, DataShape]]
+  }
+
   implicit val ValueValueShapeGalois = new ConcreteAbstractGalois[Value, ValueShape] {
      override def latticeC: Lattice[Set[Value]] = PowersetLattice
 
-    override def latticeA: Lattice[ValueShape] = {
-      implicit val sumLatticeBNT : Lattice ~> Lambda[E => Lattice[Sum3[E, Lambda[E => Sign], ListShape, DataShape]]]
-        = new (Lattice ~> Lambda[E => Lattice[Sum3[E, Lambda[E => Sign], ListShape, DataShape]]]) {
-        override def apply[E](fa: Lattice[E]): Lattice[Sum3[E, Lambda[E => Sign], ListShape, DataShape]] = {
-          implicit val ifa = fa
-          Sums.Sum5Lattice[E, Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing]
-        }
-      }
-      Fix.FixLattice[Sum3[?, Lambda[E => Sign], ListShape, DataShape]]
-    }
+    override def latticeA: Lattice[ValueShape] = ValueShapeLattice
 
     override def alpha(dcs: Set[Value]): ValueShape = FValueShapeGalois.alpha(dcs.map(bijValueFValue.from))
 
