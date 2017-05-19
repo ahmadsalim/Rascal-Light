@@ -4,16 +4,18 @@ import semantics.Result
 import semantics.domains.common._
 import syntax.VarName
 import Relational._
-import semantics.domains.abstracting.Memory.{AMemory, AValue}
+import semantics.domains.abstracting.Memory.{AMemory, AResult, AValue}
 import semantics.domains.abstracting.ValueShape.ValueShape
 
 object Memory {
   type AValue = (ValueShape, Flat[VarName])
-  type AResult[T] = ResultV[Unit, T]
+  type AResult[T] = ResultV[AValue, T]
 
   type AMemory = (AResult[AValue], AStore, RelCt)
 
 }
+
+case object NonNormalFormMemories extends Exception
 
 sealed trait AStore
 case object StoreTop extends AStore
@@ -84,16 +86,194 @@ case class MemoryOf(module: Module) {
   implicit def AMemoriesLattice : Lattice[AMemories] = new Lattice[AMemories] {
     override def bot: AMemories = AMemories(Set())
 
-    override def top: AMemories =
-    ???
-      //AMemories(Set((SuccessResult((Lattice[ValueShape].top, Lattice[Flat[VarName]].top)), Lattice[AStore].top, Lattice[RelCt].top)))
+    override def top: AMemories = {
+      val vstop = Lattice[ValueShape].top
+      val symtop = Lattice[Flat[VarName]].top
+      val valtop : AValue = (vstop, symtop)
+      AMemories(Set(
+        SuccessResult(valtop)
+        , ExceptionalResult(Return(valtop))
+        , ExceptionalResult(Throw(valtop))
+        , ExceptionalResult(Break)
+        , ExceptionalResult(Continue)
+        , ExceptionalResult(Fail)
+        , ExceptionalResult(Error(OtherError))
+      ).map(res => (res, Lattice[AStore].top, Lattice[RelCt].top)))
+    }
 
-    override def lub(a1: AMemories, a2: AMemories): AMemories = ???
+    override def lub(a1: AMemories, a2: AMemories): AMemories = upperBound(a1, a2) { (v1, v2) =>
+      val (vs1, sym1) = v1
+      val (vs2, sym2) = v2
+      (Lattice[ValueShape].lub(vs1,vs2), Lattice[Flat[VarName]].lub(sym1, sym2))
+    }
 
-    override def glb(a1: AMemories, a2: AMemories): AMemories = ???
+    private def upperBound(a1: AMemories, a2: AMemories)(vlub: (AValue, AValue) => AValue) = {
+      val grouped: Map[ResultV[Unit, Unit], Set[AMemory]] = groupMemories(a1, a2)
+      AMemories(grouped.values.toSet[Set[AMemory]].flatMap[AMemory, Set[AMemory]] { ress =>
+        if (ress.size <= 1) ress
+        else if (ress.size == 2) {
+          ress.toList match {
+            case List((res1, store1, rel1), (res2, store2, rel2)) =>
+              val nres = res1 match {
+                case SuccessResult(value1) =>
+                  val SuccessResult(value2) = res2
+                  SuccessResult(vlub(value1, value2))
+                case ExceptionalResult(exres) =>
+                  exres match {
+                    case Return(value1) =>
+                      val ExceptionalResult(Return(value2)) = res2
+                      ExceptionalResult(Return(vlub(value1,value2)))
+                    case Throw(value1) =>
+                      val ExceptionalResult(Throw(value2)) = res2
+                      ExceptionalResult(Throw(vlub(value1,value2)))
+                    case Break => ExceptionalResult(Break)
+                    case Continue => ExceptionalResult(Continue)
+                    case Fail => ExceptionalResult(Fail)
+                    case Error(kind) => ExceptionalResult(Error(OtherError))
+                  }
+              }
+              val nstore = Lattice[AStore].lub(store1, store2)
+              val nrel = Lattice[RelCt].lub(rel1, rel2)
+              Set((nres, nstore, nrel))
+          }
+        }
+        else throw NonNormalFormMemories
+      })
+    }
 
-    override def <=(a1: AMemories, a2: AMemories): Boolean = ???
+    private def groupMemories(a1: AMemories, a2: AMemories) = {
+      val grouped = (a1.memories union a2.memories).groupBy[ResultV[Unit, Unit]] {
+        _._1 match {
+          case SuccessResult(t) => SuccessResult(())
+          case ExceptionalResult(exres) =>
+            ExceptionalResult(exres match {
+              case Return(_) => Return(())
+              case Throw(_) => Throw(())
+              case Break => Break
+              case Continue => Continue
+              case Fail => Fail
+              case Error(_) => Error(OtherError)
+            })
+        }
+      }
+      grouped
+    }
 
-    override def widen(a1: AMemories, a2: AMemories, depth: Int): AMemories = ???
+    override def glb(a1: AMemories, a2: AMemories): AMemories = {
+      val grouped: Map[ResultV[Unit, Unit], Set[AMemory]] = groupMemories(a1, a2)
+      AMemories(grouped.values.toSet[Set[AMemory]].flatMap[AMemory, Set[AMemory]] { ress =>
+        if (ress.size <= 1) Set()
+        else if (ress.size == 2) {
+          ress.toList match {
+            case List((res1, store1, rel1), (res2, store2, rel2)) =>
+              val nres = res1 match {
+                case SuccessResult((vs1,sym1)) =>
+                  val SuccessResult((vs2, sym2)) = res2
+                  SuccessResult((Lattice[ValueShape].glb(vs1, vs2), Lattice[Flat[VarName]].glb(sym1, sym2)))
+                case ExceptionalResult(exres) =>
+                  exres match {
+                    case Return((vs1, sym1)) =>
+                      val ExceptionalResult(Return((vs2, sym2))) = res2
+                      ExceptionalResult(Return((Lattice[ValueShape].glb(vs1, vs2), Lattice[Flat[VarName]].glb(sym1, sym2))))
+                    case Throw((vs1, sym1)) =>
+                      val ExceptionalResult(Throw((vs2, sym2))) = res2
+                      ExceptionalResult(Throw((Lattice[ValueShape].glb(vs1, vs2), Lattice[Flat[VarName]].glb(sym1, sym2))))
+                    case Break => ExceptionalResult(Break)
+                    case Continue => ExceptionalResult(Continue)
+                    case Fail => ExceptionalResult(Fail)
+                    case Error(kind) => ExceptionalResult(Error(OtherError))
+                  }
+              }
+              val nstore = Lattice[AStore].lub(store1, store2)
+              val nrel = Lattice[RelCt].lub(rel1, rel2)
+              Set((nres, nstore, nrel))
+          }
+        }
+        else throw NonNormalFormMemories
+      })
+    }
+
+    override def <=(a1: AMemories, a2: AMemories): Boolean = a1.memories.forall { case (res1, store1, rel1) =>
+        res1 match {
+          case SuccessResult((vs1, sym1)) =>
+            a2.memories.exists { case (res2, store2, rel2) =>
+              res2 match {
+                case SuccessResult((vs2, sym2)) =>
+                  Lattice[ValueShape].<=(vs1, vs2) &&
+                  Lattice[Flat[VarName]].<=(sym1, sym2) &&
+                  Lattice[AStore].<=(store1, store2) &&
+                  Lattice[RelCt].<=(rel1, rel2)
+                case _ => false
+              }
+            }
+          case ExceptionalResult(exres) =>
+            exres match {
+              case Return((vs1, sym1)) =>
+                a2.memories.exists { case (res2, store2, rel2) =>
+                  res2 match {
+                    case (ExceptionalResult(Return((vs2, sym2)))) =>
+                      Lattice[ValueShape].<=(vs1, vs2) &&
+                        Lattice[Flat[VarName]].<=(sym1, sym2) &&
+                        Lattice[AStore].<=(store1, store2) &&
+                        Lattice[RelCt].<=(rel1, rel2)
+                    case _ => false
+                  }
+                }
+              case Throw((vs1, sym1)) =>
+                a2.memories.exists { case (res2, store2, rel2) =>
+                  res2 match {
+                    case (ExceptionalResult(Throw((vs2, sym2)))) =>
+                      Lattice[ValueShape].<=(vs1, vs2) &&
+                        Lattice[Flat[VarName]].<=(sym1, sym2) &&
+                        Lattice[AStore].<=(store1, store2) &&
+                        Lattice[RelCt].<=(rel1, rel2)
+                    case _ => false
+                  }
+                }
+              case Break =>
+                a2.memories.exists { case (res2, store2, rel2) =>
+                  res2 match {
+                    case (ExceptionalResult(Break)) =>
+                        Lattice[AStore].<=(store1, store2) &&
+                        Lattice[RelCt].<=(rel1, rel2)
+                    case _ => false
+                  }
+                }
+              case Continue =>
+                a2.memories.exists { case (res2, store2, rel2) =>
+                  res2 match {
+                    case (ExceptionalResult(Continue)) =>
+                      Lattice[AStore].<=(store1, store2) &&
+                        Lattice[RelCt].<=(rel1, rel2)
+                    case _ => false
+                  }
+                }
+              case Fail =>
+                a2.memories.exists { case (res2, store2, rel2) =>
+                  res2 match {
+                    case (ExceptionalResult(Fail)) =>
+                      Lattice[AStore].<=(store1, store2) &&
+                        Lattice[RelCt].<=(rel1, rel2)
+                    case _ => false
+                  }
+                }
+              case Error(kind) =>
+                a2.memories.exists { case (res2, store2, rel2) =>
+                  res2 match {
+                    case (ExceptionalResult(Error(_))) =>
+                      Lattice[AStore].<=(store1, store2) &&
+                        Lattice[RelCt].<=(rel1, rel2)
+                    case _ => false
+                  }
+                }
+            }
+        }
+    }
+
+    override def widen(a1: AMemories, a2: AMemories, depth: Int): AMemories = upperBound(a1, a2) { (v1, v2) =>
+      val (vs1, sym1) = v1
+      val (vs2, sym2) = v2
+      (Lattice[ValueShape].widen(vs1,vs2, depth), Lattice[Flat[VarName]].widen(sym1, sym2, depth))
+    }
   }
 }

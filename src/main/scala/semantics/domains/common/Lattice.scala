@@ -4,7 +4,7 @@ package semantics.domains.common
   * Created by asal on 15/05/2017.
   */
 
-sealed trait LatticeLimitation extends Throwable
+sealed trait LatticeLimitation extends Exception
 case object IsInfinite extends LatticeLimitation
 case object IsEmpty extends LatticeLimitation
 
