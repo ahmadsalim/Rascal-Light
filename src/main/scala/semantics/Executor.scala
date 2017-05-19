@@ -15,7 +15,7 @@ import semantics.domains.concrete._
 case class Executor(module: Module) {
 
   private
-  def evalUnary(op: OpName, vl: Value): Result[Value] = (op, vl) match {
+  def evalUnaryOp(op: OpName, vl: Value): Result[Value] = (op, vl) match {
     case ("-", BasicValue(IntLit(i))) => BasicValue(IntLit(-i)).point[Result]
     case ("!", ConstructorValue("true", Seq())) => ConstructorValue("false", Seq()).point[Result]
     case ("!", ConstructorValue("false", Seq())) => ConstructorValue("true", Seq()).point[Result]
@@ -23,7 +23,7 @@ case class Executor(module: Module) {
   }
 
   private
-  def evalBinary(lhvl: Value, op: OpName, rhvl: Value): Result[Value] =
+  def evalBinaryOp(lhvl: Value, op: OpName, rhvl: Value): Result[Value] =
     (lhvl, op, rhvl) match {
       case (lhvl, "==", rhvl) =>
         (if (lhvl == rhvl) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
@@ -35,7 +35,7 @@ case class Executor(module: Module) {
         (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
       case (lhvl, "in", MapValue(vs)) =>
         (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "notin", rhvl) => evalBinary(lhvl, "in", rhvl).flatMap(v => evalUnary("!", v))
+      case (lhvl, "notin", rhvl) => evalBinaryOp(lhvl, "in", rhvl).flatMap(v => evalUnaryOp("!", v))
       case (ConstructorValue("false", Seq()), "&&", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
         ConstructorValue("false", Seq()).point[Result]
       case (ConstructorValue("true", Seq()), "&&", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
@@ -303,7 +303,7 @@ case class Executor(module: Module) {
   }
 
   private
-  def evalVisit(strategy: Strategy, localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) = {
+  def evalVisitStrategy(strategy: Strategy, localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) = {
     val (res, store_) = strategy match {
       case TopDown => evalTD(localVars, store, scrutineeval, cases, break = false)
       case TopDownBreak => evalTD(localVars, store, scrutineeval, cases, break = true)
@@ -314,7 +314,7 @@ case class Executor(module: Module) {
         res match {
           case SuccessResult(newval) =>
             if (scrutineeval == newval) (newval.point[Result], store_)
-            else evalVisit(Innermost, localVars, store_, newval, cases)
+            else evalVisitStrategy(Innermost, localVars, store_, newval, cases)
           case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
         }
       case Outermost =>
@@ -322,7 +322,7 @@ case class Executor(module: Module) {
         res match {
           case SuccessResult(newval) =>
             if (scrutineeval == newval) (newval.point[Result], store_)
-            else evalVisit(Outermost, localVars, store_, newval, cases)
+            else evalVisitStrategy(Outermost, localVars, store_, newval, cases)
           case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
         }
     }
@@ -431,338 +431,418 @@ case class Executor(module: Module) {
     }
   }
 
+  private def evalEnumExpr(localVars: Map[VarName, Type], store: Store, enum: Enum) = {
+    val (enres, store_) = evalEnum(localVars, store, enum)
+    enres match {
+      case SuccessResult(envs) =>
+        val env = envs.head.toList
+        if (env.isEmpty) (ConstructorValue("false", Seq.empty).point[Result], store_)
+        else (ConstructorValue("true", Seq.empty).point[Result], Store(store_.map ++ env.head))
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+    }
+  }
+
+  private def evalAssert(localVars: Map[VarName, Type], store: Store, cond: Expr) = {
+    val (condres, store_) = evalLocal(localVars, store, cond)
+    condres match {
+      case SuccessResult(condval) =>
+        condval match {
+          case ConstructorValue("true", Seq()) => (condres, store_)
+          case ConstructorValue("false", Seq()) => (ExceptionalResult(Error(AssertionError(cond))), store_)
+          case _ => (ExceptionalResult(Error(TypeError(condval, DataType("Bool")))), store_)
+        }
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+    }
+  }
+
+  private def evalTryFinally(localVars: Map[VarName, Type], store: Store, tryB: Expr, finallyB: Expr) = {
+    val (tryres, store__) = evalLocal(localVars, store, tryB)
+    tryres match {
+      case SuccessResult(vl) =>
+        val (finres, store_) = evalLocal(localVars, store__, finallyB)
+        finres match {
+          case SuccessResult(_) => (vl.point[Result], store_)
+          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+        }
+      case ExceptionalResult(exres) =>
+        exres match {
+          case Throw(_) =>
+            val (finres, store_) = evalLocal(localVars, store__, finallyB)
+            (finres.map(_ => BottomValue), store_)
+          case _ => (ExceptionalResult(exres), store__)
+        }
+    }
+  }
+
+  private def evalTryCatch(localVars: Map[VarName, Type], store: Store, tryB: Expr, catchVar: VarName, catchB: Expr) = {
+    val (tryres, store__) = evalLocal(localVars, store, tryB)
+    tryres match {
+      case SuccessResult(tryval) => (tryval.point[Result], store__)
+      case ExceptionalResult(exres) =>
+        exres match {
+          case Throw(value) => evalLocal(localVars, Store(store__.map.updated(catchVar, value)), catchB)
+          case _ => (ExceptionalResult(exres), store__)
+        }
+    }
+  }
+
+  private def evalThrow(localVars: Map[VarName, Type], store: Store, evl: Expr) = {
+    val (res, store_) = evalLocal(localVars, store, evl)
+    res match {
+      case SuccessResult(vl) => (ExceptionalResult(Throw(vl)), store_)
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+    }
+  }
+
+  private def evalSolve(localVars: Map[VarName, Type], store: Store, vars: Seq[VarName], body: Expr) = {
+    def loopSolve(store: Store): (Result[Value], Store) = {
+      val (bodyres, store_) = evalLocal(localVars, store, body)
+      bodyres match {
+        case SuccessResult(v) =>
+          if (vars.toList.map(store.map).zip(vars.toList.map(store_.map)).forall { case (v1, v2) => v1 == v2 })
+            (SuccessResult(v), store_)
+          else loopSolve(store_)
+        case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+      }
+    }
+
+    loopSolve(store)
+  }
+
+  private def evalWhile(localVars: Map[VarName, Type], store: Store, cond: Expr, body: Expr) = {
+    def loopWhile(store: Store): (Result[Unit], Store) = {
+      val (condres, store__) = evalLocal(localVars, store, cond)
+      condres match {
+        case SuccessResult(condval) =>
+          condval match {
+            case ConstructorValue("true", Seq()) =>
+              val (condres, store_) = evalLocal(localVars, store__, body)
+              condres match {
+                case SuccessResult(_) =>
+                  loopWhile(store_)
+                case ExceptionalResult(exres) =>
+                  exres match {
+                    case Break => (().point[Result], store_)
+                    case Continue => loopWhile(store_)
+                    case _ => (ExceptionalResult(exres), store_)
+                  }
+              }
+            case ConstructorValue("false", Seq()) => (().point[Result], store__)
+            case _ => (ExceptionalResult(Error(TypeError(condval, DataType("Bool")))), store__)
+          }
+        case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+      }
+    }
+
+    val (res, store_) = loopWhile(store)
+    (res.map(_ => BottomValue), store_)
+  }
+
+  private def evalFor(localVars: Map[VarName, Type], store: Store, enum: Enum, body: Expr) = {
+    val (enumres, store__) = evalEnum(localVars, store, enum)
+    enumres match {
+      case SuccessResult(envs) =>
+        val (bodyres, store_) = evalEach(localVars, store__, envs, body)
+        (bodyres.map { _ => BottomValue }, store_)
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+    }
+  }
+
+  private def evalBlock(localVars: Map[VarName, Type], store: Store, vardefs: Seq[Parameter], exprs: Seq[Expr]) = {
+    val localVars_ = vardefs.toList.foldLeft(localVars) { (lvs, vdef) =>
+      lvs.updated(vdef.name, vdef.typ)
+    }
+    val (res, store__) = evalLocalAll(localVars_, store, exprs)
+    val store_ = Store(store__.map -- vardefs.map(_.name))
+    res match {
+      case SuccessResult(vals) => (vals.lastOption.getOrElse(BottomValue).pure[Result], store_)
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+    }
+  }
+
+  private def evalVisit(localVars: Map[VarName, Type], store: Store, strategy: Strategy, scrutinee: Expr, cases: Seq[Case]) = {
+    val (scrres, store__) = evalLocal(localVars, store, scrutinee)
+    scrres match {
+      case SuccessResult(scrval) =>
+        val (caseres, store_) = evalVisitStrategy(strategy, localVars, store__, scrval, cases.toList)
+        caseres match {
+          case SuccessResult(caseval) => (caseval.point[Result], store_)
+          case ExceptionalResult(exres) =>
+            exres match {
+              case Fail => (BottomValue.point[Result], store_)
+              case _ => (ExceptionalResult(exres), store_)
+            }
+        }
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+    }
+  }
+
+  private def evalSwitch(localVars: Map[VarName, Type], store: Store, scrutinee: Expr, cases: Seq[Case]) = {
+    val (scrres, store__) = evalLocal(localVars, store, scrutinee)
+    scrres match {
+      case SuccessResult(scrval) =>
+        val (caseres, store_) = evalCases(localVars, store__, scrval, cases.toList)
+        caseres match {
+          case SuccessResult(caseval) =>
+            (caseval.point[Result], store_)
+          case ExceptionalResult(exres) =>
+            exres match {
+              case Fail => (BottomValue.point[Result], store_)
+              case _ => (ExceptionalResult(exres), store_)
+            }
+        }
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+    }
+  }
+
+  private def evalIf(localVars: Map[VarName, Type], store: Store, cond: Expr, thenB: Expr, elseB: Expr) = {
+    val (condres, store__) = evalLocal(localVars, store, cond)
+    condres match {
+      case SuccessResult(condv) =>
+        condv match {
+          case ConstructorValue("true", Seq()) => evalLocal(localVars, store__, thenB)
+          case ConstructorValue("false", Seq()) => evalLocal(localVars, store__, elseB)
+          case _ => (ExceptionalResult(Error(TypeError(condv, DataType("Bool")))), store__)
+        }
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+    }
+  }
+
+  private def evalAssign(localVars: Map[VarName, Type], store: Store, assgn: Assignable, targetexpr: Expr) = {
+    val (assgnres, store__) = evalAssignable(localVars, store, assgn)
+    assgnres match {
+      case SuccessResult(path) =>
+        val (targetres, store_) = evalLocal(localVars, store__, targetexpr)
+        targetres match {
+          case SuccessResult(vl) =>
+            val newValue =
+              if (path.accessPaths.isEmpty) {
+                vl.point[Result]
+              } else {
+                val res = store_.map.get(path.varName).fold[Result[Value]](ExceptionalResult(Error(UnassignedVarError(path.varName)))) {
+                  ovl => updatePath(ovl, path.accessPaths, vl)
+                }
+                res
+              }
+            newValue match {
+              case SuccessResult(nvl) =>
+                val varty = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
+                if (typing.checkType(nvl, varty)) {
+                  (nvl.pure[Result], Store(store_.map.updated(path.varName, nvl)))
+                }
+                else (ExceptionalResult(Error(TypeError(nvl, varty))), store_)
+              case _ => (newValue, store_)
+            }
+          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+        }
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+    }
+  }
+
+  private def evalReturn(localVars: Map[VarName, Type], store: Store, evl: Expr) = {
+    val (res, store_) = evalLocal(localVars, store, evl)
+    res match {
+      case SuccessResult(vl) => (ExceptionalResult(Return(vl)), store_)
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+    }
+  }
+
+  private def evalFunCall(localVars: Map[VarName, Type], store: Store, functionName: VarName, args: Seq[Expr]) = {
+    val (argres, store__) = evalLocalAll(localVars, store, args)
+    argres match {
+      case SuccessResult(argvals) =>
+        val (funresty, funpars, funbody) = module.funs(functionName)
+        val argpartyps = argvals.zip(funpars.map(_.typ))
+        if (argvals.length == funpars.length &&
+          argpartyps.forall((typing.checkType _).tupled)) {
+          val callstore = Store(module.globalVars.map { case (x, _) => (x, store__.map(x)) } ++
+            funpars.map(_.name).zip(argvals).toMap)
+          val (res, resstore) = funbody match {
+            case ExprFunBody(exprfunbody) =>
+              evalLocal(funpars.map(par => par.name -> par.typ).toMap, callstore, exprfunbody)
+            case PrimitiveFunBody =>
+              functionName match {
+                case "delete" =>
+                  val map = callstore.map("emap")
+                  val key = callstore.map("ekey")
+                  map match {
+                    case MapValue(vals) => (SuccessResult(MapValue(vals - key)), callstore)
+                    case _ => (ExceptionalResult(Error(OtherError)), callstore)
+                  }
+                case "toString" =>
+                  val arg = callstore.map("earg")
+                  (SuccessResult(BasicValue(StringLit(arg.toString))), callstore) // TO DO - Use pretty printing instead
+                case _ => (ExceptionalResult(Error(OtherError)), callstore)
+              }
+          }
+          val store_ = Store(module.globalVars.map { case (x, _) => (x, resstore.map(x)) } ++ store__.map)
+
+          def funcallsuccess(resval: Value): (Result[Value], Store) = {
+            if (typing.checkType(resval, funresty)) (resval.point[Result], store_)
+            else (ExceptionalResult(Error(TypeError(resval, funresty))), store_)
+          }
+
+          res match {
+            case SuccessResult(resval) => funcallsuccess(resval)
+            case ExceptionalResult(exres) =>
+              exres match {
+                case Return(value) => funcallsuccess(value)
+                case Throw(value) => (ExceptionalResult(Throw(value)), store_)
+                case Break | Continue | Fail => (ExceptionalResult(Error(EscapedControlOperator)), store_)
+                case _ => (ExceptionalResult(exres), store_)
+              }
+          }
+        }
+        else (ExceptionalResult(Error(SignatureMismatch(functionName, argvals, funpars.map(_.typ)))), store__)
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+    }
+  }
+
+  private def evalMapUpdate(localVars: Map[VarName, Type], store: Store, emap: Expr, ekey: Expr, evl: Expr) = {
+    val (mapres, store___) = evalLocal(localVars, store, emap)
+    mapres match {
+      case SuccessResult(mapv) =>
+        mapv match {
+          case MapValue(vals) =>
+            val (keyres, store__) = evalLocal(localVars, store___, ekey)
+            keyres match {
+              case SuccessResult(keyv) =>
+                val (valres, store_) = evalLocal(localVars, store__, evl)
+                valres match {
+                  case SuccessResult(valv) => (MapValue(vals.updated(keyv, valv)).pure[Result], store_)
+                  case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+                }
+              case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+            }
+          case _ => (ExceptionalResult(Error(TypeError(mapv, MapType(ValueType, ValueType)))), store___)
+        }
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store___)
+    }
+  }
+
+  private def evalMapLookup(localVars: Map[VarName, Type], store: Store, emap: Expr, ekey: Expr) = {
+    val (mapres, store__) = evalLocal(localVars, store, emap)
+    mapres match {
+      case SuccessResult(mapv) =>
+        mapv match {
+          case MapValue(vals) =>
+            val (keyres, store_) = evalLocal(localVars, store__, ekey)
+            keyres match {
+              case SuccessResult(keyv) =>
+                if (vals.contains(keyv)) (vals(keyv).pure[Result], store_)
+                else (ExceptionalResult(Throw(ConstructorValue("nokey", Seq(keyv)))), store_)
+              case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+            }
+          case _ => (ExceptionalResult(Error(TypeError(mapv, MapType(ValueType, ValueType)))), store__)
+        }
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+    }
+  }
+
+  private def evalMap(localVars: Map[VarName, Type], store: Store, keyvalues: Seq[(Expr, Expr)]) = {
+    val (keyres, store__) = evalLocalAll(localVars, store, keyvalues.map(_._1))
+    keyres match {
+      case SuccessResult(keys) =>
+        val (valres, store_) = evalLocalAll(localVars, store__, keyvalues.map(_._2))
+        valres match {
+          case SuccessResult(vals) =>
+            assert(keys.length == vals.length)
+            (MapValue(keys.zip(vals).toMap).pure[Result], store_)
+          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+        }
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+    }
+  }
+
+  private def evalSet(localVars: Map[VarName, Type], store: Store, elements: Seq[Expr]) = {
+    val (res, store_) = evalLocalAll(localVars, store, elements)
+    res match {
+      case SuccessResult(vals) => (SetValue(vals.toSet).pure[Result], store_)
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+    }
+  }
+
+  private def evalList(localVars: Map[VarName, Type], store: Store, elements: Seq[Expr]) = {
+    val (res, store_) = evalLocalAll(localVars, store, elements)
+    res match {
+      case SuccessResult(vals) => (ListValue(vals).pure[Result], store_)
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+    }
+  }
+
+  private def evalConstructor(localVars: Map[VarName, Type], store: Store, name: ConsName, args: Seq[Expr]) = {
+    val (res, store_) = evalLocalAll(localVars, store, args)
+    res match {
+      case SuccessResult(vals) =>
+        val (_, parameters) = module.constructors(name)
+        if (vals.length == parameters.length &&
+          vals.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled))
+          (ConstructorValue(name, vals).pure[Result], store_)
+        else (ExceptionalResult(Error(SignatureMismatch(name, vals, parameters.map(_.typ)))), store_)
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+    }
+  }
+
+  private def evalBinary(localVars: Map[VarName, Type], store: Store, left: Expr, op: OpName, right: Expr) = {
+    val (lhres, store__) = evalLocal(localVars, store, left)
+    lhres match {
+      case SuccessResult(lhval) =>
+        val (rhres, store_) = evalLocal(localVars, store__, right)
+        (rhres.flatMap(rhval => evalBinaryOp(lhval, op, rhval)), store_)
+      case _ => (lhres, store__)
+    }
+  }
+
+  private def evalUnary(localVars: Map[VarName, Type], store: Store, op: OpName, operand: Expr) = {
+    val (res, store_) = evalLocal(localVars, store, operand)
+    (res.flatMap(vl => evalUnaryOp(op, vl)), store_)
+  }
+
+  private def evalFieldAccess(localVars: Map[VarName, Type], store: Store, target: Expr, fieldName: FieldName) = {
+    val (targetres, store_) = evalLocal(localVars, store, target)
+    targetres match {
+      case SuccessResult(tv) => (accessField(tv, fieldName), store_)
+      case _ => (targetres, store_)
+    }
+  }
+
+  private def evalVar(store: Store, x: VarName) = {
+    if (store.map.contains(x)) (store.map(x).pure[Result], store)
+    else (ExceptionalResult(Error(UnassignedVarError(x))), store)
+  }
+
   private
   def evalLocal(localVars: Map[VarName, Type], store: Store, expr: Expr): (Result[Value], Store) = {
     expr match {
       case BasicExpr(b) => (BasicValue(b).pure[Result], store)
-      case VarExpr(x) =>
-        if (store.map.contains(x)) (store.map(x).pure[Result], store)
-        else (ExceptionalResult(Error(UnassignedVarError(x))), store)
-      case FieldAccExpr(target, fieldName) =>
-        val (targetres, store_) = evalLocal(localVars, store, target)
-        targetres match {
-          case SuccessResult(tv) => (accessField(tv, fieldName), store_)
-          case _ => (targetres, store_)
-        }
-      case UnaryExpr(op, operand) =>
-        val (res, store_) = evalLocal(localVars, store, operand)
-        (res.flatMap(vl => evalUnary(op, vl)), store_)
-      case BinaryExpr(left, op, right) =>
-        val (lhres, store__) = evalLocal(localVars, store, left)
-        lhres match {
-          case SuccessResult(lhval) =>
-            val (rhres, store_) = evalLocal(localVars, store__, right)
-            (rhres.flatMap(rhval => evalBinary(lhval, op, rhval)), store_)
-          case _ => (lhres, store__)
-        }
-      case ConstructorExpr(name, args) =>
-        val (res, store_) = evalLocalAll(localVars, store, args)
-        res match {
-          case SuccessResult(vals) =>
-            val (_, parameters) = module.constructors(name)
-            if (vals.length == parameters.length &&
-              vals.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled))
-              (ConstructorValue(name, vals).pure[Result], store_)
-            else (ExceptionalResult(Error(SignatureMismatch(name, vals, parameters.map(_.typ)))), store_)
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-        }
-      case ListExpr(elements) =>
-        val (res, store_) = evalLocalAll(localVars, store, elements)
-        res match {
-          case SuccessResult(vals) => (ListValue(vals).pure[Result], store_)
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-        }
-      case SetExpr(elements) =>
-        val (res, store_) = evalLocalAll(localVars, store, elements)
-        res match {
-          case SuccessResult(vals) => (SetValue(vals.toSet).pure[Result], store_)
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-        }
-      case MapExpr(keyvalues) =>
-        val (keyres, store__) = evalLocalAll(localVars, store, keyvalues.map(_._1))
-        keyres match {
-          case SuccessResult(keys) =>
-            val (valres, store_) = evalLocalAll(localVars, store__, keyvalues.map(_._2))
-            valres match {
-              case SuccessResult(vals) =>
-                assert(keys.length == vals.length)
-                (MapValue(keys.zip(vals).toMap).pure[Result], store_)
-              case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-            }
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
-        }
-      case MapLookupExpr(emap, ekey) =>
-        val (mapres, store__) = evalLocal(localVars, store, emap)
-        mapres match {
-          case SuccessResult(mapv) =>
-            mapv match {
-              case MapValue(vals) =>
-                val (keyres, store_) = evalLocal(localVars, store__, ekey)
-                keyres match {
-                  case SuccessResult(keyv) =>
-                    if (vals.contains(keyv)) (vals(keyv).pure[Result], store_)
-                    else (ExceptionalResult(Throw(ConstructorValue("nokey", Seq(keyv)))), store_)
-                  case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-                }
-              case _ => (ExceptionalResult(Error(TypeError(mapv, MapType(ValueType, ValueType)))), store__)
-            }
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
-        }
-      case MapUpdExpr(emap, ekey, evl) =>
-        val (mapres, store___) = evalLocal(localVars, store, emap)
-        mapres match {
-          case SuccessResult(mapv) =>
-            mapv match {
-              case MapValue(vals) =>
-                val (keyres, store__) = evalLocal(localVars, store___, ekey)
-                keyres match {
-                  case SuccessResult(keyv) =>
-                    val (valres, store_) = evalLocal(localVars, store__, evl)
-                    valres match {
-                      case SuccessResult(valv) => (MapValue(vals.updated(keyv, valv)).pure[Result], store_)
-                      case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-                    }
-                  case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
-                }
-              case _ => (ExceptionalResult(Error(TypeError(mapv, MapType(ValueType, ValueType)))), store___)
-            }
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store___)
-        }
-      case FunCallExpr(functionName, args) =>
-        val (argres, store__) = evalLocalAll(localVars, store, args)
-        argres match {
-          case SuccessResult(argvals) =>
-            val (funresty, funpars, funbody) = module.funs(functionName)
-            val argpartyps = argvals.zip(funpars.map(_.typ))
-            if (argvals.length == funpars.length &&
-              argpartyps.forall((typing.checkType _).tupled)) {
-              val callstore = Store(module.globalVars.map { case (x, _) => (x, store__.map(x)) } ++
-                funpars.map(_.name).zip(argvals).toMap)
-              val (res, resstore) = funbody match {
-                case ExprFunBody(exprfunbody) =>
-                  evalLocal(funpars.map(par => par.name -> par.typ).toMap, callstore, exprfunbody)
-                case PrimitiveFunBody =>
-                  functionName match {
-                    case "delete" =>
-                      val map = callstore.map("emap")
-                      val key = callstore.map("ekey")
-                      map match {
-                        case MapValue(vals) => (SuccessResult(MapValue(vals - key)), callstore)
-                        case _ => (ExceptionalResult(Error(OtherError)), callstore)
-                      }
-                    case "toString" =>
-                      val arg = callstore.map("earg")
-                      (SuccessResult(BasicValue(StringLit(arg.toString))), callstore) // TO DO - Use pretty printing instead
-                    case _ => (ExceptionalResult(Error(OtherError)), callstore)
-                  }
-              }
-              val store_ = Store(module.globalVars.map { case (x, _) => (x, resstore.map(x)) } ++ store__.map)
-              def funcallsuccess(resval: Value): (Result[Value], Store) = {
-                if (typing.checkType(resval, funresty)) (resval.point[Result], store_)
-                else (ExceptionalResult(Error(TypeError(resval, funresty))), store_)
-              }
-              res match {
-                case SuccessResult(resval) => funcallsuccess(resval)
-                case ExceptionalResult(exres) =>
-                  exres match {
-                    case Return(value) => funcallsuccess(value)
-                    case Throw(value) => (ExceptionalResult(Throw(value)), store_)
-                    case Break | Continue | Fail => (ExceptionalResult(Error(EscapedControlOperator)), store_)
-                    case _ => (ExceptionalResult(exres), store_)
-                  }
-              }
-            }
-            else (ExceptionalResult(Error(SignatureMismatch(functionName, argvals, funpars.map(_.typ)))), store__)
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
-        }
-      case ReturnExpr(evl) =>
-        val (res, store_) = evalLocal(localVars, store, evl)
-        res match {
-          case SuccessResult(vl) => (ExceptionalResult(Return(vl)), store_)
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-        }
-      case AssignExpr(assgn, targetexpr) =>
-        val (assgnres, store__) = evalAssignable(localVars, store, assgn)
-        assgnres match {
-          case SuccessResult(path) =>
-            val (targetres, store_) = evalLocal(localVars, store__, targetexpr)
-            targetres match {
-              case SuccessResult(vl) =>
-                val newValue =
-                  if (path.accessPaths.isEmpty) {
-                    vl.point[Result]
-                  } else {
-                    val res = store_.map.get(path.varName).fold[Result[Value]](ExceptionalResult(Error(UnassignedVarError(path.varName)))) {
-                      ovl => updatePath(ovl, path.accessPaths, vl) }
-                    res
-                  }
-                newValue match {
-                  case SuccessResult(nvl) =>
-                    val varty = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
-                    if (typing.checkType(nvl, varty)) {
-                      (nvl.pure[Result], Store(store_.map.updated(path.varName, nvl)))
-                    }
-                    else (ExceptionalResult(Error(TypeError(nvl, varty))), store_)
-                  case _ => (newValue, store_)
-                }
-              case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-            }
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
-        }
-      case IfExpr(cond, thenB, elseB) =>
-        val (condres, store__) = evalLocal(localVars, store, cond)
-        condres match {
-          case SuccessResult(condv) =>
-            condv match {
-              case ConstructorValue("true", Seq()) => evalLocal(localVars, store__, thenB)
-              case ConstructorValue("false", Seq()) => evalLocal(localVars, store__, elseB)
-              case _ => (ExceptionalResult(Error(TypeError(condv, DataType("Bool")))), store__)
-            }
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
-        }
-      case SwitchExpr(scrutinee, cases) =>
-        val (scrres, store__) = evalLocal(localVars, store, scrutinee)
-        scrres match {
-          case SuccessResult(scrval) =>
-            val (caseres, store_) = evalCases(localVars, store__, scrval, cases.toList)
-            caseres match {
-              case SuccessResult(caseval) =>
-                (caseval.point[Result], store_)
-              case ExceptionalResult(exres) =>
-                exres match {
-                  case Fail => (BottomValue.point[Result], store_)
-                  case _ => (ExceptionalResult(exres), store_)
-                }
-            }
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
-        }
-      case VisitExpr(strategy, scrutinee, cases) =>
-        val (scrres, store__) = evalLocal(localVars, store, scrutinee)
-        scrres match {
-          case SuccessResult(scrval) =>
-            val (caseres, store_) = evalVisit(strategy, localVars, store__, scrval, cases.toList)
-            caseres match {
-              case SuccessResult(caseval) => (caseval.point[Result], store_)
-              case ExceptionalResult(exres) =>
-                exres match {
-                  case Fail => (BottomValue.point[Result], store_)
-                  case _ => (ExceptionalResult(exres), store_)
-                }
-            }
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
-        }
+      case VarExpr(x) => evalVar(store, x)
+      case FieldAccExpr(target, fieldName) => evalFieldAccess(localVars, store, target, fieldName)
+      case UnaryExpr(op, operand) => evalUnary(localVars, store, op, operand)
+      case BinaryExpr(left, op, right) => evalBinary(localVars, store, left, op, right)
+      case ConstructorExpr(name, args) => evalConstructor(localVars, store, name, args)
+      case ListExpr(elements) => evalList(localVars, store, elements)
+      case SetExpr(elements) => evalSet(localVars, store, elements)
+      case MapExpr(keyvalues) => evalMap(localVars, store, keyvalues)
+      case MapLookupExpr(emap, ekey) => evalMapLookup(localVars, store, emap, ekey)
+      case MapUpdExpr(emap, ekey, evl) => evalMapUpdate(localVars, store, emap, ekey, evl)
+      case FunCallExpr(functionName, args) => evalFunCall(localVars, store, functionName, args)
+      case ReturnExpr(evl) => evalReturn(localVars, store, evl)
+      case AssignExpr(assgn, targetexpr) => evalAssign(localVars, store, assgn, targetexpr)
+      case IfExpr(cond, thenB, elseB) => evalIf(localVars, store, cond, thenB, elseB)
+      case SwitchExpr(scrutinee, cases) => evalSwitch(localVars, store, scrutinee, cases)
+      case VisitExpr(strategy, scrutinee, cases) => evalVisit(localVars, store, strategy, scrutinee, cases)
       case BreakExpr => (ExceptionalResult(Break), store)
       case ContinueExpr => (ExceptionalResult(Continue), store)
       case FailExpr => (ExceptionalResult(Fail), store)
-      case LocalBlockExpr(vardefs, exprs) =>
-        val localVars_ = vardefs.toList.foldLeft(localVars) { (lvs, vdef) =>
-          lvs.updated(vdef.name, vdef.typ)
-        }
-        val (res, store__) = evalLocalAll(localVars_, store, exprs)
-        val store_ = Store(store__.map -- vardefs.map(_.name))
-        res match {
-          case SuccessResult(vals) => (vals.lastOption.getOrElse(BottomValue).pure[Result], store_)
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-        }
-      case ForExpr(enum, body) =>
-        val (enumres, store__) = evalEnum(localVars, store, enum)
-        enumres match {
-          case SuccessResult(envs) =>
-            val (bodyres, store_) = evalEach(localVars, store__, envs, body)
-            (bodyres.map{_ => BottomValue}, store_)
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
-        }
-      case WhileExpr(cond, body) =>
-        def loopWhile(store: Store): (Result[Unit], Store) = {
-          val (condres, store__) = evalLocal(localVars, store, cond)
-          condres match {
-            case SuccessResult(condval) =>
-              condval match {
-                case ConstructorValue("true", Seq()) =>
-                  val (condres, store_) = evalLocal(localVars, store__, body)
-                  condres match {
-                    case SuccessResult(_) =>
-                      loopWhile(store_)
-                    case ExceptionalResult(exres) =>
-                      exres match {
-                        case Break => (().point[Result], store_)
-                        case Continue => loopWhile(store_)
-                        case _ => (ExceptionalResult(exres), store_)
-                      }
-                  }
-                case ConstructorValue("false", Seq()) => (().point[Result], store__)
-                case _ => (ExceptionalResult(Error(TypeError(condval, DataType("Bool")))), store__)
-              }
-            case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
-          }
-        }
-        val (res, store_) = loopWhile(store)
-        (res.map(_ => BottomValue), store_)
-      case SolveExpr(vars, body) =>
-        def loopSolve(store: Store): (Result[Value], Store) = {
-          val (bodyres, store_) = evalLocal(localVars, store, body)
-          bodyres match {
-            case SuccessResult(v) =>
-              if (vars.toList.map(store.map).zip(vars.toList.map(store_.map)).forall { case (v1, v2) => v1 == v2 })
-                (SuccessResult(v), store_)
-              else loopSolve(store_)
-            case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-          }
-        }
-        loopSolve(store)
-      case ThrowExpr(evl) =>
-        val (res, store_) = evalLocal(localVars, store, evl)
-        res match {
-          case SuccessResult(vl) => (ExceptionalResult(Throw(vl)), store_)
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-        }
-      case TryCatchExpr(tryB, catchVar, catchB) =>
-        val (tryres, store__) = evalLocal(localVars, store, tryB)
-        tryres match {
-          case SuccessResult(tryval) => (tryval.point[Result], store__)
-          case ExceptionalResult(exres) =>
-            exres match {
-              case Throw(value) => evalLocal(localVars, Store(store__.map.updated(catchVar,value)), catchB)
-              case _ => (ExceptionalResult(exres), store__)
-            }
-        }
-      case TryFinallyExpr(tryB, finallyB) =>
-        val (tryres, store__) = evalLocal(localVars, store, tryB)
-        tryres match {
-          case SuccessResult(vl) =>
-            val (finres, store_) = evalLocal(localVars, store__, finallyB)
-            finres match {
-              case SuccessResult(_) => (vl.point[Result], store_)
-              case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-            }
-          case ExceptionalResult(exres) =>
-            exres match {
-              case Throw(_) =>
-                val (finres, store_) = evalLocal(localVars, store__, finallyB)
-                (finres.map(_ => BottomValue), store_)
-              case _ => (ExceptionalResult(exres), store__)
-            }
-        }
-      case EnumExpr(enum) =>
-        val (enres, store_) = evalEnum(localVars, store, enum)
-        enres match {
-          case SuccessResult(envs) =>
-            val env = envs.head.toList
-            if (env.isEmpty) (ConstructorValue("false", Seq.empty).point[Result], store_)
-            else (ConstructorValue("true", Seq.empty).point[Result], Store(store_.map ++ env.head))
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-        }
-      case AssertExpr(cond) =>
-        val (condres, store_) = evalLocal(localVars, store, cond)
-        condres match {
-          case SuccessResult(condval) =>
-            condval match {
-              case ConstructorValue("true", Seq()) => (condres, store_)
-              case ConstructorValue("false", Seq()) => (ExceptionalResult(Error(AssertionError(cond))), store_)
-              case _ => (ExceptionalResult(Error(TypeError(condval, DataType("Bool")))), store_)
-            }
-          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
-        }
+      case LocalBlockExpr(vardefs, exprs) => evalBlock(localVars, store, vardefs, exprs)
+      case ForExpr(enum, body) => evalFor(localVars, store, enum, body)
+      case WhileExpr(cond, body) => evalWhile(localVars, store, cond, body)
+      case SolveExpr(vars, body) => evalSolve(localVars, store, vars, body)
+      case ThrowExpr(evl) => evalThrow(localVars, store, evl)
+      case TryCatchExpr(tryB, catchVar, catchB) => evalTryCatch(localVars, store, tryB, catchVar, catchB)
+      case TryFinallyExpr(tryB, finallyB) => evalTryFinally(localVars, store, tryB, finallyB)
+      case EnumExpr(enum) => evalEnumExpr(localVars, store, enum)
+      case AssertExpr(cond) => evalAssert(localVars, store, cond)
     }
   }
 
