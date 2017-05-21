@@ -169,6 +169,12 @@ case class Executor(module: Module) {
             matchPattAll(store, vals.toList, spatts.toList, extractSet, vs => SetValue(vs.toSet), subsets, restSet)
           case _ => Stream()
         }
+      case NegationPatt(inpatt) =>
+        val res = matchPatt(store, tval, inpatt)
+        res.head.toList match {
+          case Nil => Stream(Map())
+          case _ :: _ => Stream()
+        }
       case DescendantPatt(inpatt) => matchPatt(store, tval, inpatt) ++
         Stream.emits(tval.children).flatMap(cv => matchPatt(store, cv, DescendantPatt(inpatt)))
     }

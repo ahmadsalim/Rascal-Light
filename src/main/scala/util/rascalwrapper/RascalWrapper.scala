@@ -117,6 +117,9 @@ object RascalWrapper {
     } else if (pattern.isSet) {
       val innerPats = pattern.getElements0.asScala.toList
       innerPats.traverseU(translateStarPattern).map(SetPatt)
+    } else if (pattern.isNegation) {
+      val innerPat = pattern.getArgument
+      translatePattern(innerPat).map(NegationPatt)
     } else if (pattern.isVariableBecomes || pattern.isTypedVariable || pattern.isTypedVariableBecomes) {
       val varName = nameToString(pattern.getName)
       val varType = if (pattern.hasType) translateType(pattern.getType) else ValueType.right

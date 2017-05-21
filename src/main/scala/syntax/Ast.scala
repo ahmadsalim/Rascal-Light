@@ -84,6 +84,7 @@ case class ConstructorPatt(name: ConsName, pats: Seq[Patt]) extends Patt
 case class LabelledTypedPatt(typ: Type, labelVar: VarName, patt: Patt) extends Patt
 case class ListPatt(spatts: Seq[StarPatt]) extends Patt
 case class SetPatt(spatts: Seq[StarPatt]) extends Patt
+case class NegationPatt(patt: Patt) extends Patt
 case class DescendantPatt(patt: Patt) extends Patt
 
 sealed trait StarPatt
