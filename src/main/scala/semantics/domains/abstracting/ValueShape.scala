@@ -17,6 +17,15 @@ object ValueShape {
 
   type PValueShape[E] = Sum3[E, Lambda[E => Sign], ListShape, DataShape]
   type ValueShape = Fix[PValueShape]
+
+  def fromSign(sign: Sign): ValueShape =
+    Fix[PValueShape](Inj1[Fix[PValueShape], Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing](sign))
+
+  def fromListShape(listShape: ListShape[ValueShape]): ValueShape =
+    Fix[PValueShape](Inj2[Fix[PValueShape], Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing](listShape))
+
+  def fromDataShape(dataShape: DataShape[ValueShape]): ValueShape =
+    Fix[PValueShape](Inj3[Fix[PValueShape], Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing](dataShape))
 }
 
 case class ValueShapeOf(module: Module) {

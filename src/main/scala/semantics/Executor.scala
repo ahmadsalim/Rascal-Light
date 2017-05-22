@@ -777,8 +777,8 @@ case class Executor(module: Module) {
   }
 
   private def evalConstructor(localVars: Map[VarName, Type], store: Store, name: ConsName, args: Seq[Expr]) = {
-    val (res, store_) = evalLocalAll(localVars, store, args)
-    res match {
+    val (argsres, store_) = evalLocalAll(localVars, store, args)
+    argsres match {
       case SuccessResult(vals) =>
         val (_, parameters) = module.constructors(name)
         if (vals.length == parameters.length &&

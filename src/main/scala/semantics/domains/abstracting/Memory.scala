@@ -11,8 +11,7 @@ object Memory {
   type AValue = (ValueShape, Flat[VarName])
   type AResult[T] = ResultV[AValue, T]
 
-  type AMemory = (AResult[AValue], AStore, RelCt)
-
+  type AMemory[T] = (AResult[T], ACStore)
 }
 
 case object NonNormalFormMemories extends Exception
@@ -21,7 +20,9 @@ sealed trait AStore
 case object StoreTop extends AStore
 case class AbstractStore(store: Map[VarName, AValue]) extends AStore
 
-case class AMemories(memories: Set[AMemory])
+case class ACStore(store: AStore, path: RelCt)
+
+case class AMemories[T](memories: Set[AMemory[T]])
 
 
 case class MemoryOf(module: Module) {
@@ -83,10 +84,10 @@ case class MemoryOf(module: Module) {
     }
   }
 
-  implicit def AMemoriesLattice : Lattice[AMemories] = new Lattice[AMemories] {
-    override def bot: AMemories = AMemories(Set())
+  implicit def AMemoriesLattice : Lattice[AMemories[AValue]] = new Lattice[AMemories[AValue]] {
+    override def bot: AMemories[AValue] = AMemories(Set())
 
-    override def top: AMemories = {
+    override def top: AMemories[AValue] = {
       val vstop = Lattice[ValueShape].top
       val symtop = Lattice[Flat[VarName]].top
       val valtop : AValue = (vstop, symtop)
@@ -98,22 +99,22 @@ case class MemoryOf(module: Module) {
         , ExceptionalResult(Continue)
         , ExceptionalResult(Fail)
         , ExceptionalResult(Error(OtherError))
-      ).map(res => (res, Lattice[AStore].top, Lattice[RelCt].top)))
+      ).map(res => (res, ACStore(Lattice[AStore].top, Lattice[RelCt].top))))
     }
 
-    override def lub(a1: AMemories, a2: AMemories): AMemories = upperBound(a1, a2) { (v1, v2) =>
+    override def lub(a1: AMemories[AValue], a2: AMemories[AValue]): AMemories[AValue] = upperBound(a1, a2) { (v1, v2) =>
       val (vs1, sym1) = v1
       val (vs2, sym2) = v2
       (Lattice[ValueShape].lub(vs1,vs2), Lattice[Flat[VarName]].lub(sym1, sym2))
     }
 
-    private def upperBound(a1: AMemories, a2: AMemories)(vlub: (AValue, AValue) => AValue) = {
-      val grouped: Map[ResultV[Unit, Unit], Set[AMemory]] = groupMemories(a1, a2)
-      AMemories(grouped.values.toSet[Set[AMemory]].flatMap[AMemory, Set[AMemory]] { ress =>
+    private def upperBound(a1: AMemories[AValue], a2: AMemories[AValue])(vlub: (AValue, AValue) => AValue) = {
+      val grouped: Map[ResultV[Unit, Unit], Set[AMemory[AValue]]] = groupMemories(a1, a2)
+      AMemories(grouped.values.toSet[Set[AMemory[AValue]]].flatMap[AMemory[AValue], Set[AMemory[AValue]]] { ress =>
         if (ress.size <= 1) ress
         else if (ress.size == 2) {
           ress.toList match {
-            case List((res1, store1, rel1), (res2, store2, rel2)) =>
+            case List((res1, ACStore(store1, rel1)), (res2, ACStore(store2, rel2))) =>
               val nres = res1 match {
                 case SuccessResult(value1) =>
                   val SuccessResult(value2) = res2
@@ -134,14 +135,14 @@ case class MemoryOf(module: Module) {
               }
               val nstore = Lattice[AStore].lub(store1, store2)
               val nrel = Lattice[RelCt].lub(rel1, rel2)
-              Set((nres, nstore, nrel))
+              Set((nres, ACStore(nstore, nrel)))
           }
         }
         else throw NonNormalFormMemories
       })
     }
 
-    private def groupMemories(a1: AMemories, a2: AMemories) = {
+    private def groupMemories(a1: AMemories[AValue], a2: AMemories[AValue]) = {
       val grouped = (a1.memories union a2.memories).groupBy[ResultV[Unit, Unit]] {
         _._1 match {
           case SuccessResult(t) => SuccessResult(())
@@ -159,13 +160,13 @@ case class MemoryOf(module: Module) {
       grouped
     }
 
-    override def glb(a1: AMemories, a2: AMemories): AMemories = {
-      val grouped: Map[ResultV[Unit, Unit], Set[AMemory]] = groupMemories(a1, a2)
-      AMemories(grouped.values.toSet[Set[AMemory]].flatMap[AMemory, Set[AMemory]] { ress =>
+    override def glb(a1: AMemories[AValue], a2: AMemories[AValue]): AMemories[AValue] = {
+      val grouped: Map[ResultV[Unit, Unit], Set[AMemory[AValue]]] = groupMemories(a1, a2)
+      AMemories(grouped.values.toSet[Set[AMemory[AValue]]].flatMap[AMemory[AValue], Set[AMemory[AValue]]] { ress =>
         if (ress.size <= 1) Set()
         else if (ress.size == 2) {
           ress.toList match {
-            case List((res1, store1, rel1), (res2, store2, rel2)) =>
+            case List((res1, ACStore(store1, rel1)), (res2, ACStore(store2, rel2))) =>
               val nres = res1 match {
                 case SuccessResult((vs1,sym1)) =>
                   val SuccessResult((vs2, sym2)) = res2
@@ -186,17 +187,17 @@ case class MemoryOf(module: Module) {
               }
               val nstore = Lattice[AStore].lub(store1, store2)
               val nrel = Lattice[RelCt].lub(rel1, rel2)
-              Set((nres, nstore, nrel))
+              Set((nres, ACStore(nstore, nrel)))
           }
         }
         else throw NonNormalFormMemories
       })
     }
 
-    override def <=(a1: AMemories, a2: AMemories): Boolean = a1.memories.forall { case (res1, store1, rel1) =>
+    override def <=(a1: AMemories[AValue], a2: AMemories[AValue]): Boolean = a1.memories.forall { case (res1, ACStore(store1, rel1)) =>
         res1 match {
           case SuccessResult((vs1, sym1)) =>
-            a2.memories.exists { case (res2, store2, rel2) =>
+            a2.memories.exists { case (res2, ACStore(store2, rel2)) =>
               res2 match {
                 case SuccessResult((vs2, sym2)) =>
                   Lattice[ValueShape].<=(vs1, vs2) &&
@@ -209,7 +210,7 @@ case class MemoryOf(module: Module) {
           case ExceptionalResult(exres) =>
             exres match {
               case Return((vs1, sym1)) =>
-                a2.memories.exists { case (res2, store2, rel2) =>
+                a2.memories.exists { case (res2, ACStore(store2, rel2)) =>
                   res2 match {
                     case (ExceptionalResult(Return((vs2, sym2)))) =>
                       Lattice[ValueShape].<=(vs1, vs2) &&
@@ -220,7 +221,7 @@ case class MemoryOf(module: Module) {
                   }
                 }
               case Throw((vs1, sym1)) =>
-                a2.memories.exists { case (res2, store2, rel2) =>
+                a2.memories.exists { case (res2, ACStore(store2, rel2)) =>
                   res2 match {
                     case (ExceptionalResult(Throw((vs2, sym2)))) =>
                       Lattice[ValueShape].<=(vs1, vs2) &&
@@ -231,7 +232,7 @@ case class MemoryOf(module: Module) {
                   }
                 }
               case Break =>
-                a2.memories.exists { case (res2, store2, rel2) =>
+                a2.memories.exists { case (res2, ACStore(store2, rel2)) =>
                   res2 match {
                     case (ExceptionalResult(Break)) =>
                         Lattice[AStore].<=(store1, store2) &&
@@ -240,7 +241,7 @@ case class MemoryOf(module: Module) {
                   }
                 }
               case Continue =>
-                a2.memories.exists { case (res2, store2, rel2) =>
+                a2.memories.exists { case (res2, ACStore(store2, rel2)) =>
                   res2 match {
                     case (ExceptionalResult(Continue)) =>
                       Lattice[AStore].<=(store1, store2) &&
@@ -249,7 +250,7 @@ case class MemoryOf(module: Module) {
                   }
                 }
               case Fail =>
-                a2.memories.exists { case (res2, store2, rel2) =>
+                a2.memories.exists { case (res2, ACStore(store2, rel2)) =>
                   res2 match {
                     case (ExceptionalResult(Fail)) =>
                       Lattice[AStore].<=(store1, store2) &&
@@ -258,7 +259,7 @@ case class MemoryOf(module: Module) {
                   }
                 }
               case Error(kind) =>
-                a2.memories.exists { case (res2, store2, rel2) =>
+                a2.memories.exists { case (res2, ACStore(store2, rel2)) =>
                   res2 match {
                     case (ExceptionalResult(Error(_))) =>
                       Lattice[AStore].<=(store1, store2) &&
@@ -270,7 +271,7 @@ case class MemoryOf(module: Module) {
         }
     }
 
-    override def widen(a1: AMemories, a2: AMemories, depth: Int): AMemories = upperBound(a1, a2) { (v1, v2) =>
+    override def widen(a1: AMemories[AValue], a2: AMemories[AValue], depth: Int): AMemories[AValue] = upperBound(a1, a2) { (v1, v2) =>
       val (vs1, sym1) = v1
       val (vs2, sym2) = v2
       (Lattice[ValueShape].widen(vs1,vs2, depth), Lattice[Flat[VarName]].widen(sym1, sym2, depth))
