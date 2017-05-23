@@ -4,7 +4,7 @@ import semantics.domains.abstracting
 
 import scalaz.syntax.monad._
 import semantics.domains.abstracting.Memory.{AMemory, AResult, AValue}
-import semantics.domains.abstracting.ValueShape.{ValueShape, fromDataShape}
+import semantics.domains.abstracting.ValueShape.ValueShape
 import semantics.domains.abstracting._
 import semantics.domains.common._
 import syntax._
@@ -27,14 +27,54 @@ case class AbstractExecutor(module: Module) {
   }
 
   private
-  def evalUnaryOp(av: AValue): AResult[AValue] = ???
+  def evalUnaryOp(op: OpName, av: AValue): Set[AResult[AValue]] = {
+    val (avs, sym1) = av
+    op match {
+      case "-" =>
+        ValueShape.toSign(avs).fold[Set[AResult[AValue]]] {
+          if(ValueShape.isTop(avs))
+            Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))),
+              SuccessResult((ValueShape.fromSign(SignTop), Lattice[Flat[VarName]].top)))
+          else Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
+        } {
+          case SignBot => Set(SuccessResult((ValueShape.fromSign(SignBot), Lattice[Flat[VarName]].bot)))
+          case Neg => Set(SuccessResult((ValueShape.fromSign(Pos), Lattice[Flat[VarName]].top)))
+          case NonPos => Set(SuccessResult((ValueShape.fromSign(NonNeg), Lattice[Flat[VarName]].top)))
+          case Zero => Set(SuccessResult((ValueShape.fromSign(Zero), Lattice[Flat[VarName]].top)))
+          case NonNeg => Set(SuccessResult((ValueShape.fromSign(NonPos), Lattice[Flat[VarName]].top)))
+          case Pos => Set(SuccessResult((ValueShape.fromSign(Pos), Lattice[Flat[VarName]].top)))
+          case SignTop => Set(SuccessResult((ValueShape.fromSign(SignTop), Lattice[Flat[VarName]].top)))
+        }
+      case "!" =>
+        ValueShape.toDataShape(avs).fold[Set[AResult[AValue]]] {
+          if(ValueShape.isTop(avs))
+            Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))),
+              SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), Lattice[Flat[VarName]].top)))
+          else Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
+        } {
+          case DataBot() => Set(SuccessResult((ValueShape.fromDataShape(DataBot()), Lattice[Flat[VarName]].top)))
+          case DataElements("Bool", consShape) =>
+            Set(SuccessResult((ValueShape.fromDataShape(DataShape.dataElements("Bool", consShape.map {
+              case ("true", List()) => ("false", List())
+              case ("false", List()) => ("true", List())
+            })), Lattice[Flat[VarName]].top)))
+          case DataAny("Bool") =>
+            Set(SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), Lattice[Flat[VarName]].top)))
+          case DataTop() =>
+            Set(SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), Lattice[Flat[VarName]].top)),
+              ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
+          case _ =>  Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
+        }
+      case _ => Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
+    }
+  }
 
   private
-  def evalUnary(localVars: Map[VarName, Type], acstore: ACStore, name: OpName, operand: Expr): AMemories[AValue] = {
+  def evalUnary(localVars: Map[VarName, Type], acstore: ACStore, operator: OpName, operand: Expr): AMemories[AValue] = {
     val mems = evalLocal(localVars, acstore, operand)
     Lattice[AMemories[AValue]].lub(mems.memories.map { case (res, acstore_) =>
       res match {
-        case SuccessResult(avl) => AMemories[AValue](Set((SuccessResult(avl), acstore_)))
+        case SuccessResult(avl) => AMemories[AValue](evalUnaryOp(operator, avl).map((_, acstore_)))
         case ExceptionalResult(exres) => AMemories[AValue](Set((ExceptionalResult(exres), acstore_)))
       }
     })
@@ -56,8 +96,8 @@ case class AbstractExecutor(module: Module) {
             if (vals.length == parameters.length)
             // TODO Check types: vals.zip(parameters.map(_.typ)).forall((typing.checkType _).typed)
             // TODO Abstract relational constraints via paths
-              AMemories(Set[AMemory[AValue]]((SuccessResult((fromDataShape(DataElements[ValueShape](typ,
-               Map(name -> vals.map(_._1).toList))), Lattice[Flat[VarName]].top)), acstore_)))
+              AMemories(Set[AMemory[AValue]]((SuccessResult((fromDataShape(ValueShape.DataShape.dataElements(typ,
+               Map(name -> vals.map(_._1)))), Lattice[Flat[VarName]].top)), acstore_)))
             else AMemories(Set[AMemory[AValue]]((ExceptionalResult(Error(SignatureMismatch(name, vals.toList, parameters.map(_.typ)))), acstore_)))
           case ExceptionalResult(exres) => AMemories(Set[AMemory[AValue]]((ExceptionalResult(exres), acstore_)))
         }
@@ -65,7 +105,16 @@ case class AbstractExecutor(module: Module) {
   }
 
   private
-  def evalList(localVars: Map[VarName, Type], acstore: ACStore, elements: Seq[Expr]): AMemories[AValue] = ???
+  def evalList(localVars: Map[VarName, Type], acstore: ACStore, elements: Seq[Expr]): AMemories[AValue] = {
+    val eresmems = evalLocalAll(localVars, acstore, elements)
+    Lattice[AMemories[AValue]].lub(eresmems.memories.map { case (res, acstore_) =>
+        res match {
+          case SuccessResult(vals) =>
+            AMemories(Set[AMemory[AValue]]((SuccessResult((fromListShape(ListShape.listElements(Lattice[ValueShape].lub(vals.map(_._1).toSet))),Lattice[Flat[VarName]].top)), acstore_)))
+          case ExceptionalResult(exres) => AMemories(Set[AMemory[AValue]]((ExceptionalResult(exres), acstore_)))
+        }
+    })
+  }
 
   private
   def evalSet(localVars: Map[VarName, Type], acstore: ACStore, elements: Seq[Expr]): AMemories[AValue] = ???
@@ -145,7 +194,25 @@ case class AbstractExecutor(module: Module) {
   def evalAssert(localVars: Map[VarName, Type], acstore: ACStore, cond: Expr): AMemories[AValue] = ???
 
   private
-  def evalLocalAll(localVars: Map[VarName, Type], acstore: ACStore, args: Seq[Expr]): AMemories[Seq[AValue]] = ???
+  def evalLocalAll(localVars: Map[VarName, Type], acstore: ACStore, exprs: Seq[Expr]): AMemories[List[AValue]] = {
+    val amemories = exprs.toList.foldLeft[AMemories[List[AValue]]](AMemories(Set((SuccessResult(List()), acstore)))) { (prevmems, e) =>
+      AMemories[List[AValue]](prevmems.memories.flatMap[AMemory[List[AValue]], Set[AMemory[List[AValue]]]] { case (prevres, acstore__) =>
+          prevres match {
+            case SuccessResult(vals) =>
+              val newmems = evalLocal(localVars, acstore__, e)
+              newmems.memories.map { case (res, acstore_) =>
+                res match {
+                  case SuccessResult(vl) =>
+                    (SuccessResult(vals :+ vl), acstore_)
+                  case ExceptionalResult(exres) => (ExceptionalResult(exres), acstore_)
+                }
+              }
+            case ExceptionalResult(exres) => Set[AMemory[List[AValue]]]((ExceptionalResult(exres), acstore__))
+          }
+      })
+    }
+    amemories
+  }
 
   private
   def evalLocal(localVars: Map[VarName, Type], acstore: ACStore, expr: Expr): AMemories[AValue] = expr match {

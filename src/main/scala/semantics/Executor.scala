@@ -387,11 +387,11 @@ case class Executor(module: Module) {
       prevres match {
         case SuccessResult(vals) =>
           val (res, store_) = evalLocal(localVars, store__, e)
-          (res.map(vl => vl :: vals), store_)
+          (res.map(vl => vals :+ vl), store_)
         case _ => (prevres, store__)
       }
     }
-    (res.map(_.reverse), store_)
+    (res, store_)
   }
 
   private

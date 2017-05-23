@@ -17,6 +17,13 @@ object ValueShape {
 
   type PValueShape[E] = Sum3[E, Lambda[E => Sign], ListShape, DataShape]
   type ValueShape = Fix[PValueShape]
+}
+
+case class ValueShapeOf(module: Module) {
+
+  val DataShape = DataShapeOf(module)
+
+  import DataShape._
 
   def fromSign(sign: Sign): ValueShape =
     Fix[PValueShape](Inj1[Fix[PValueShape], Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing](sign))
@@ -26,14 +33,31 @@ object ValueShape {
 
   def fromDataShape(dataShape: DataShape[ValueShape]): ValueShape =
     Fix[PValueShape](Inj3[Fix[PValueShape], Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing](dataShape))
-}
 
-case class ValueShapeOf(module: Module) {
+  def isTop(valueShape: ValueShape): Boolean = valueShape.out match {
+    case _: SumTop[ValueShape, Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing] => true
+    case _ => false
+  }
 
-  private
-  val DataShape = DataShapeOf(module)
+  def isBot(valueShape: ValueShape): Boolean = valueShape.out match {
+    case _: SumBot[ValueShape, Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing] => true
+    case _ => false
+  }
 
-  import DataShape._
+  def toSign(valueShape: ValueShape): Option[Sign] = valueShape.out match {
+    case inj1: Inj1[ValueShape, Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing] => Some(inj1.ret1)
+    case _ => None
+  }
+
+  def toListShape(valueShape: ValueShape): Option[ListShape[ValueShape]] = valueShape.out match {
+    case inj2: Inj2[ValueShape, Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing] => Some(inj2.ret2)
+    case _ => None
+  }
+
+  def toDataShape(valueShape: ValueShape): Option[DataShape[ValueShape]] = valueShape.out match {
+    case inj3: Inj3[ValueShape, Lambda[E => Sign], ListShape, DataShape, Nothing, Nothing] => Some(inj3.ret3)
+    case _ => None
+  }
 
   private implicit
   val bijValueFValue = {
