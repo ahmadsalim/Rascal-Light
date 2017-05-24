@@ -29,6 +29,14 @@ case class AbstractExecutor(module: Module) {
   }
 
   private
+  def dropStoreVars(acstore : ACStore, varnames: Seq[VarName]): ACStore = {
+    acstore.store match {
+      case StoreTop => acstore
+      case AbstractStore(store) => ACStore(AbstractStore(store -- varnames), acstore.path)
+    }
+  }
+
+  private
   def evalVar(acstore: ACStore, x: VarName): AMemories[AValue] = {
     acstore.store match {
       case StoreTop => AMemories[AValue](Set((SuccessResult((Lattice[ValueShape].top, Lattice[Flat[VarName]].top)), acstore)))
@@ -206,7 +214,18 @@ case class AbstractExecutor(module: Module) {
   def evalVisit(localVars: Map[VarName, Type], acstore: ACStore, strategy: Strategy, scrutinee: Expr, cases: Seq[Case]): AMemories[AValue] = ???
 
   private
-  def evalBlock(localVars: Map[VarName, Type], acstore: ACStore, vardefs: Seq[Parameter], exprs: Seq[Expr]): AMemories[AValue] = ???
+  def evalBlock(localVars: Map[VarName, Type], acstore: ACStore, vardefs: Seq[Parameter], exprs: Seq[Expr]): AMemories[AValue] = {
+    val localVars_ = localVars ++ vardefs.map(par => par.name -> par.typ)
+    val seqmems = evalLocalAll(localVars_, acstore, exprs)
+    Lattice[AMemories[AValue]].lub(seqmems.memories.map { case (res, acstore__) =>
+      val acstore_ = dropStoreVars(acstore__, vardefs.map(_.name))
+      res match {
+        case SuccessResult(vals) =>
+          AMemories[AValue](Set((SuccessResult(vals.lastOption.getOrElse((Lattice[ValueShape].bot, Lattice[Flat[VarName]].bot))), acstore_)))
+        case ExceptionalResult(exres) => AMemories[AValue](Set((ExceptionalResult(exres), acstore_)))
+      }
+    })
+  }
 
   private
   def evalFor(localVars: Map[VarName, Type], acstore: ACStore, enum: Enum, body: Expr): AMemories[AValue] = ???
@@ -321,7 +340,7 @@ case class AbstractExecutor(module: Module) {
     case MapUpdExpr(emap, ekey, eval) => evalMapUpdate(localVars, acstore, emap, ekey, eval)
     case FunCallExpr(functionName, args) => evalFunCall(localVars, acstore, functionName, args)
     case ReturnExpr(result) => evalReturn(localVars, acstore, result)
-    case AssignExpr(assgn, expr) => evalAssign(localVars, acstore, assgn, expr)
+    case AssignExpr(assgn, targetexpr) => evalAssign(localVars, acstore, assgn, targetexpr)
     case IfExpr(cond, thenB, elseB) =>  evalIf(localVars, acstore, cond, thenB, elseB)
     case SwitchExpr(scrutinee, cases) =>  evalSwitch(localVars, acstore, scrutinee, cases)
     case VisitExpr(strategy, scrutinee, cases) => evalVisit(localVars, acstore, strategy, scrutinee, cases)

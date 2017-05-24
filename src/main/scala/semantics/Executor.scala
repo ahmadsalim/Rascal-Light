@@ -555,9 +555,7 @@ case class Executor(module: Module) {
   }
 
   private def evalBlock(localVars: Map[VarName, Type], store: Store, vardefs: Seq[Parameter], exprs: Seq[Expr]) = {
-    val localVars_ = vardefs.toList.foldLeft(localVars) { (lvs, vdef) =>
-      lvs.updated(vdef.name, vdef.typ)
-    }
+    val localVars_ = localVars ++ vardefs.map(par => par.name -> par.typ)
     val (res, store__) = evalLocalAll(localVars_, store, exprs)
     val store_ = Store(store__.map -- vardefs.map(_.name))
     res match {
