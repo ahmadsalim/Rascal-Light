@@ -1,20 +1,32 @@
 package semantics
 
-import semantics.domains.abstracting
-
-import scalaz.syntax.monad._
 import semantics.domains.abstracting.Memory.{AMemory, AResult, AValue}
 import semantics.domains.abstracting.ValueShape.ValueShape
 import semantics.domains.abstracting._
 import semantics.domains.common._
-import syntax._
 import semantics.domains.concrete.{BasicValue, Value}
+import syntax._
+import util.Counter
 
 case class AbstractExecutor(module: Module) {
   val Memory = MemoryOf(module)
 
-  import Memory._
   import Memory.ValueShape._
+  import Memory._
+
+  private
+  val symbolCounter: Counter = Counter(0)
+
+  private
+  def genSymbol: Flat[VarName] = FlatValue(s"sym$$${symbolCounter += 1}")
+
+  private
+  def updateStore(acstore : ACStore, varName: VarName, value: AValue): ACStore = {
+    acstore.store match {
+      case StoreTop => acstore
+      case AbstractStore(store) => ACStore(AbstractStore(store.updated(varName, value)), acstore.path)
+    }
+  }
 
   private
   def evalVar(acstore: ACStore, x: VarName): AMemories[AValue] = {
@@ -34,34 +46,35 @@ case class AbstractExecutor(module: Module) {
         ValueShape.toSign(avs).fold[Set[AResult[AValue]]] {
           if(ValueShape.isTop(avs))
             Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))),
-              SuccessResult((ValueShape.fromSign(SignTop), Lattice[Flat[VarName]].top)))
+              SuccessResult((ValueShape.fromSign(SignTop), genSymbol)))
           else Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
         } {
           case SignBot => Set(SuccessResult((ValueShape.fromSign(SignBot), Lattice[Flat[VarName]].bot)))
-          case Neg => Set(SuccessResult((ValueShape.fromSign(Pos), Lattice[Flat[VarName]].top)))
-          case NonPos => Set(SuccessResult((ValueShape.fromSign(NonNeg), Lattice[Flat[VarName]].top)))
-          case Zero => Set(SuccessResult((ValueShape.fromSign(Zero), Lattice[Flat[VarName]].top)))
-          case NonNeg => Set(SuccessResult((ValueShape.fromSign(NonPos), Lattice[Flat[VarName]].top)))
-          case Pos => Set(SuccessResult((ValueShape.fromSign(Pos), Lattice[Flat[VarName]].top)))
-          case SignTop => Set(SuccessResult((ValueShape.fromSign(SignTop), Lattice[Flat[VarName]].top)))
+          case Neg => Set(SuccessResult((ValueShape.fromSign(Pos), genSymbol)))
+          case NonPos => Set(SuccessResult((ValueShape.fromSign(NonNeg), genSymbol)))
+          case Zero => Set(SuccessResult((ValueShape.fromSign(Zero), genSymbol)))
+          case NonNeg => Set(SuccessResult((ValueShape.fromSign(NonPos), genSymbol)))
+          case Pos => Set(SuccessResult((ValueShape.fromSign(Pos), genSymbol)))
+          case SignTop => Set(SuccessResult((ValueShape.fromSign(SignTop), genSymbol)))
         }
       case "!" =>
         ValueShape.toDataShape(avs).fold[Set[AResult[AValue]]] {
           if(ValueShape.isTop(avs))
             Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))),
-              SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), Lattice[Flat[VarName]].top)))
+              SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), genSymbol)))
           else Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
         } {
-          case DataBot() => Set(SuccessResult((ValueShape.fromDataShape(DataBot()), Lattice[Flat[VarName]].top)))
+          case DataBot() => Set(SuccessResult((ValueShape.fromDataShape(DataBot()), genSymbol)))
           case DataElements("Bool", consShape) =>
             Set(SuccessResult((ValueShape.fromDataShape(DataShape.dataElements("Bool", consShape.map {
               case ("true", List()) => ("false", List())
               case ("false", List()) => ("true", List())
-            })), Lattice[Flat[VarName]].top)))
+              case _ => throw NonNormalFormMemories
+            })), genSymbol)))
           case DataAny("Bool") =>
-            Set(SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), Lattice[Flat[VarName]].top)))
+            Set(SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), genSymbol)))
           case DataTop() =>
-            Set(SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), Lattice[Flat[VarName]].top)),
+            Set(SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), genSymbol)),
               ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
           case _ =>  Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
         }
@@ -83,8 +96,43 @@ case class AbstractExecutor(module: Module) {
   private
   def evalFieldAccess(localVars: Map[VarName, Type], acstore: ACStore, target: Expr, fieldName: FieldName): AMemories[AValue] = ???
 
+  // TODO Consider tracking relational constraints for Boolean variables or treating Boolean variables specifically
   private
-  def evalBinary(localVars: Map[VarName, Type], acstore: ACStore, left: Expr, name: OpName, right: Expr): AMemories[AValue] = ???
+  def evalBinaryOp(lhvl: AValue, op: OpName, rhvl: AValue): Set[(AResult[AValue], Option[RelCt])] = op match {
+    case "==" => ???
+    case "!=" => ???
+    case "in" => ???
+    case "notin" => ???
+    case "&&" => ???
+    case "||" => ???
+    case "+" => ???
+    case "-" => ???
+    case "*" => ???
+    case "/" => ???
+    case "%" => ???
+    case _ => Set((ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))), None))
+  }
+
+  private
+  def evalBinary(localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr): AMemories[AValue] = {
+    val lhsmems = evalLocal(localVars, acstore, left)
+    Lattice[AMemories[AValue]].lub(lhsmems.memories.map { case (lhres, acstore__) =>
+        lhres match {
+          case SuccessResult(lhval) =>
+            val rhmems = evalLocal(localVars, acstore__, right)
+            Lattice[AMemories[AValue]].lub(lhsmems.memories.map { case (rhres, acstore_) =>
+                rhres match {
+                  case SuccessResult(rhval) =>
+                    AMemories[AValue](evalBinaryOp(lhval, op, rhval).map { case (binres, phiO) =>
+                      (binres, ACStore(acstore_.store, phiO.fold(acstore_.path)(phi => AndCt(acstore_.path, phi))))
+                    })
+                  case _ => AMemories[AValue](Set((rhres, acstore_)))
+                }
+            })
+          case _ => AMemories[AValue](Set((lhres, acstore__)))
+        }
+    })
+  }
 
   private
   def evalConstructor(localVars: Map[VarName, Type], acstore: ACStore, name: ConsName, args: Seq[Expr]): AMemories[AValue] = {
@@ -97,8 +145,8 @@ case class AbstractExecutor(module: Module) {
             // TODO Check types: vals.zip(parameters.map(_.typ)).forall((typing.checkType _).typed)
             // TODO Abstract relational constraints via paths
               AMemories(Set[AMemory[AValue]]((SuccessResult((fromDataShape(ValueShape.DataShape.dataElements(typ,
-               Map(name -> vals.map(_._1)))), Lattice[Flat[VarName]].top)), acstore_)))
-            else AMemories(Set[AMemory[AValue]]((ExceptionalResult(Error(SignatureMismatch(name, vals.toList, parameters.map(_.typ)))), acstore_)))
+               Map(name -> vals.map(_._1)))), genSymbol)), acstore_)))
+            else AMemories(Set[AMemory[AValue]]((ExceptionalResult(Error(SignatureMismatch(name, vals, parameters.map(_.typ)))), acstore_)))
           case ExceptionalResult(exres) => AMemories(Set[AMemory[AValue]]((ExceptionalResult(exres), acstore_)))
         }
     })
@@ -110,7 +158,7 @@ case class AbstractExecutor(module: Module) {
     Lattice[AMemories[AValue]].lub(eresmems.memories.map { case (res, acstore_) =>
         res match {
           case SuccessResult(vals) =>
-            AMemories(Set[AMemory[AValue]]((SuccessResult((fromListShape(ListShape.listElements(Lattice[ValueShape].lub(vals.map(_._1).toSet))),Lattice[Flat[VarName]].top)), acstore_)))
+            AMemories(Set[AMemory[AValue]]((SuccessResult((fromListShape(ListShape.listElements(Lattice[ValueShape].lub(vals.map(_._1).toSet))),genSymbol)), acstore_)))
           case ExceptionalResult(exres) => AMemories(Set[AMemory[AValue]]((ExceptionalResult(exres), acstore_)))
         }
     })
@@ -184,13 +232,56 @@ case class AbstractExecutor(module: Module) {
 
 
   private
-  def evalTryCatch(localVars: Map[VarName, Type], acstore: ACStore, tryB: Expr, catchVar: VarName, catchB: Expr): AMemories[AValue] = ???
+  def evalTryCatch(localVars: Map[VarName, Type], acstore: ACStore, tryB: Expr, catchVar: VarName, catchB: Expr): AMemories[AValue] = {
+    val trymems = evalLocal(localVars, acstore, tryB)
+    Lattice[AMemories[AValue]].lub(trymems.memories.map { case (tryres, acstore__) =>
+        tryres match {
+          case SuccessResult(tryval) => AMemories[AValue](Set((SuccessResult(tryval), acstore__)))
+          case ExceptionalResult(exres) =>
+            exres match {
+              case Throw(value) =>
+                val acstore_ = updateStore(acstore__, catchVar, value)
+                evalLocal(localVars,acstore_, catchB)
+              case _ => AMemories[AValue](Set((ExceptionalResult(exres), acstore__)))
+            }
+        }
+    })
+  }
 
   private
-  def evalTryFinally(localVars: Map[VarName, Type], acstore: ACStore, tryB: Expr, finallyB: Expr): AMemories[AValue] = ???
+  def evalTryFinally(localVars: Map[VarName, Type], acstore: ACStore, tryB: Expr, finallyB: Expr): AMemories[AValue] = {
+    val trymems = evalLocal(localVars, acstore, tryB)
+    Lattice[AMemories[AValue]].lub(trymems.memories.map { case (tryres, acstore__) =>
+      tryres match {
+        case SuccessResult(vl) =>
+          val finmems = evalLocal(localVars, acstore__, finallyB)
+          Lattice[AMemories[AValue]].lub(finmems.memories.map { case (finres, acstore_) =>
+            finres match {
+              case SuccessResult(_) => AMemories[AValue](Set((SuccessResult(vl), acstore_)))
+              case ExceptionalResult(exres) => AMemories[AValue](Set((ExceptionalResult(exres), acstore_)))
+            }
+          })
+        case ExceptionalResult(exres) =>
+          exres match {
+            case Throw(_) =>
+              val finmems = evalLocal(localVars, acstore__, finallyB)
+              Lattice[AMemories[AValue]].lub(finmems.memories.map { case (finres, acstore_) =>
+                  finres match {
+                    case SuccessResult(_) =>
+                      AMemories[AValue](Set((SuccessResult((Lattice[ValueShape].bot, Lattice[Flat[VarName]].bot)), acstore_)))
+                    case ExceptionalResult(exres_) => AMemories[AValue](Set((ExceptionalResult(exres_), acstore_)))
+                  }
+              })
+            case _ => AMemories[AValue](Set((ExceptionalResult(exres), acstore__)))
+          }
+      }
+    })
+  }
 
+  private
   def evalEnumExpr(localVars: Map[VarName, Type], acstore: ACStore, enum: Enum): AMemories[AValue] = ???
 
+  private
   def evalAssert(localVars: Map[VarName, Type], acstore: ACStore, cond: Expr): AMemories[AValue] = ???
 
   private
@@ -217,7 +308,7 @@ case class AbstractExecutor(module: Module) {
   private
   def evalLocal(localVars: Map[VarName, Type], acstore: ACStore, expr: Expr): AMemories[AValue] = expr match {
     case BasicExpr(b) =>
-      AMemories[AValue](Set((SuccessResult((galois[Value, ValueShape].alpha(Set(BasicValue(b))), Lattice[Flat[VarName]].top)), acstore)))
+      AMemories[AValue](Set((SuccessResult((galois[Value, ValueShape].alpha(Set(BasicValue(b))), genSymbol)), acstore)))
     case VarExpr(name) => evalVar(acstore, name)
     case FieldAccExpr(target, fieldName) => evalFieldAccess(localVars, acstore, target, fieldName)
     case UnaryExpr(name, operand) => evalUnary(localVars, acstore, name, operand)
@@ -249,5 +340,4 @@ case class AbstractExecutor(module: Module) {
   }
 
   def eval(acstore: ACStore, expr: Expr): AMemories[AValue] = evalLocal(Map.empty, acstore, expr)
-
 }
