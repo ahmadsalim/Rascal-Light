@@ -4,9 +4,12 @@ import semantics.domains.abstracting.Memory.{AMemory, AResult, AValue}
 import semantics.domains.abstracting.ValueShape.ValueShape
 import semantics.domains.abstracting._
 import semantics.domains.common._
+import semantics.domains.common.Product._
 import semantics.domains.concrete.{BasicValue, Value}
 import syntax._
 import util.Counter
+
+import scalaz.\/
 
 case class AbstractExecutor(module: Module) {
   val Memory = MemoryOf(module)
@@ -39,7 +42,7 @@ case class AbstractExecutor(module: Module) {
   private
   def evalVar(acstore: ACStore, x: VarName): AMemories[AValue] = {
     acstore.store match {
-      case StoreTop => AMemories[AValue](Set((SuccessResult((Lattice[ValueShape].top, Lattice[Flat[VarName]].top)), acstore)))
+      case StoreTop => AMemories[AValue](Set((SuccessResult(Lattice[AValue].top), acstore)))
       case AbstractStore(store) =>
         if (store.contains(x)) AMemories[AValue](Set((SuccessResult(store(x)), acstore)))
         else AMemories[AValue](Set((ExceptionalResult(Error(UnassignedVarError(x))), acstore)))
@@ -106,41 +109,55 @@ case class AbstractExecutor(module: Module) {
 
   // TODO Consider tracking relational constraints for Boolean variables or treating Boolean variables specifically
   private
-  def evalBinaryOp(lhvl: AValue, op: OpName, rhvl: AValue): Set[(AResult[AValue], Option[RelCt])] = op match {
-    case "==" => ???
-    case "!=" => ???
-    case "in" => ???
-    case "notin" => ???
-    case "&&" => ???
-    case "||" => ???
-    case "+" => ???
-    case "-" => ???
-    case "*" => ???
-    case "/" => ???
-    case "%" => ???
-    case _ => Set((ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))), None))
+  def evalBinaryOp(lhvl: AValue, op: OpName, rhvl: AValue, acstore: ACStore): AMemories[AValue] = {
+    val ress: Set[AResult[AValue]] = op match {
+      case "==" => ???
+      case "!=" => ???
+      case "in" => ???
+      case "notin" => ???
+      case "&&" => ???
+      case "||" => ???
+      case "+" => ???
+      case "-" => ???
+      case "*" => ???
+      case "/" => ???
+      case "%" => ???
+      case _ => Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))))
+    }
+    AMemories(ress.map(res => (res, acstore)))
   }
 
   private
-  def evalBinary(localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr): AMemories[AValue] = {
+  def evalBinaryRelOp(lhvl: RelCt, op: OpName, rhvl: RelCt, acstore: ACStore): AMemories[RelCt] = {
+
+  }
+
+  private
+  def evalBinaryHelper[E: Lattice](localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr,
+                                  semop: (E, OpName, E, ACStore) => AMemories[E]): AMemories[E] = {
     val lhsmems = evalLocal(localVars, acstore, left)
-    Lattice[AMemories[AValue]].lub(lhsmems.memories.map { case (lhres, acstore__) =>
+    Lattice[AMemories[E]].lub(lhsmems.memories.map { case (lhres, acstore__) =>
         lhres match {
           case SuccessResult(lhval) =>
             val rhmems = evalLocal(localVars, acstore__, right)
-            Lattice[AMemories[AValue]].lub(lhsmems.memories.map { case (rhres, acstore_) =>
+            Lattice[AMemories[E]].lub(lhsmems.memories.map { case (rhres, acstore_) =>
                 rhres match {
-                  case SuccessResult(rhval) =>
-                    AMemories[AValue](evalBinaryOp(lhval, op, rhval).map { case (binres, phiO) =>
-                      (binres, ACStore(acstore_.store, phiO.fold(acstore_.path)(phi => AndCt(acstore_.path, phi))))
-                    })
-                  case _ => AMemories[AValue](Set((rhres, acstore_)))
+                  case SuccessResult(rhval) => semop(lhval, op, rhval, acstore_)
+                  case ExceptionalResult(exres) => AMemories[E](Set((ExceptionalResult(exres), acstore_)))
                 }
             })
-          case _ => AMemories[AValue](Set((lhres, acstore__)))
+          case ExceptionalResult(exres) => AMemories[E](Set((ExceptionalResult(exres), acstore__)))
         }
     })
   }
+
+  private
+  def evalBinary(localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr) =
+    evalBinaryHelper(localVars, acstore, left, op, right, evalBinaryOp)
+
+  private
+  def evalBinaryRel(localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr) =
+    evalBinaryHelper(localVars, acstore, left, op, right, evalBinaryRelOp)
 
   private
   def evalConstructor(localVars: Map[VarName, Type], acstore: ACStore, name: ConsName, args: Seq[Expr]): AMemories[AValue] = {
@@ -221,7 +238,7 @@ case class AbstractExecutor(module: Module) {
       val acstore_ = dropStoreVars(acstore__, vardefs.map(_.name))
       res match {
         case SuccessResult(vals) =>
-          AMemories[AValue](Set((SuccessResult(vals.lastOption.getOrElse((Lattice[ValueShape].bot, Lattice[Flat[VarName]].bot))), acstore_)))
+          AMemories[AValue](Set((SuccessResult(vals.lastOption.getOrElse(Lattice[AValue].bot)), acstore_)))
         case ExceptionalResult(exres) => AMemories[AValue](Set((ExceptionalResult(exres), acstore_)))
       }
     })
@@ -287,7 +304,7 @@ case class AbstractExecutor(module: Module) {
               Lattice[AMemories[AValue]].lub(finmems.memories.map { case (finres, acstore_) =>
                   finres match {
                     case SuccessResult(_) =>
-                      AMemories[AValue](Set((SuccessResult((Lattice[ValueShape].bot, Lattice[Flat[VarName]].bot)), acstore_)))
+                      AMemories[AValue](Set((SuccessResult(Lattice[AValue].bot), acstore_)))
                     case ExceptionalResult(exres_) => AMemories[AValue](Set((ExceptionalResult(exres_), acstore_)))
                   }
               })
