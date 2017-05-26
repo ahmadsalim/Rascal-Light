@@ -6,8 +6,11 @@ import semantics.domains.abstracting._
 import semantics.domains.common._
 import semantics.domains.common.Product._
 import semantics.domains.concrete.{BasicValue, Value}
+import semantics.domains.abstracting.Relational._
 import syntax._
+import semantics._
 import util.Counter
+import scalaz.syntax.functor._
 
 import scalaz.\/
 
@@ -107,6 +110,93 @@ case class AbstractExecutor(module: Module) {
   private
   def evalFieldAccess(localVars: Map[VarName, Type], acstore: ACStore, target: Expr, fieldName: FieldName): AMemories[AValue] = ???
 
+  private
+  def evalMult(lsgn: Sign, rsgn: Sign): Set[AResult[Sign]] = {
+    /*         \b  | -  | -0 | 0  | 0+ | +  | \t
+        -----------------------------------------
+        \b   | \b  | \b | \b | \b | \b | \b | \b
+        -    | \b  | +  | 0+ | 0  | -0 | -  | \t
+        -0   | \b  | 0+ | 0+ | 0  | -0 | -0 | \t
+        0    | \b  | 0  | 0  | 0  | 0  | 0  | 0
+        0+   | \b  | -0 | -0 | 0  | 0+ | 0+ | \t
+        +    | \b  | -  | -0 | 0  | 0+ | +  | \t
+        \t   | \b  | \t | \t | 0  | \t | \t | \t
+     */
+    (lsgn, rsgn) match {
+      case (SignBot, _) | (_, SignBot) => Set(SuccessResult(SignBot))
+      case (Zero, _) | (_, Zero) => Set(SuccessResult(Zero))
+      case (SignTop, _) | (_, SignTop) => Set(SuccessResult(SignTop))
+      case (Pos, Pos) | (Neg, Neg) => Set(SuccessResult(Pos))
+      case (Neg, Pos) | (Pos, Neg) => Set(SuccessResult(Neg))
+      case (NonNeg, Pos) | (Pos, NonNeg) | (NonNeg, NonNeg) |
+           (NonPos, Neg) | (Neg, NonPos) | (NonPos, NonPos) => Set(SuccessResult(NonNeg))
+      case (Neg, NonNeg) | (NonNeg, Neg) | (NonNeg, NonPos) |
+           (NonPos, NonNeg) | (Pos, NonPos) | (NonPos, Pos) => Set(SuccessResult(NonPos))
+    }
+  }
+
+  def evalDiv (lhvl: Sign, rhvl: Sign): Set[AResult[Sign]] = {
+    /*         \b  | -  | -0    | 0   | 0+    | +  | \t
+        -----------------------------------------
+        \b   | \b  | \b | \b    | ex  | \b    | \b | \b/ex
+        -    | \b  | +  | +/ex  | ex  | -/ex  | -  | \t/ex
+        -0   | \b  | 0+ | 0+/ex | ex  | -0/ex | -0 | \t/ex
+        0    | \b  | 0  | 0/ex  | ex  | 0/ex  | 0  | 0/ex
+        0+   | \b  | -0 | -0/ex | ex  | 0+/ex | 0+ | \t/ex
+        +    | \b  | -  | -/ex  | ex  | +/ex  | +  | \t/ex
+        \t   | \b  | \t | \t/ex | ex  | \t/ex | \t | \t/ex
+     */
+    (lhvl, rhvl) match {
+      case (_, Zero) =>  Set(ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+      case (SignBot, SignTop) =>
+        Set(SuccessResult(SignBot), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+      case (SignBot, _) | (_, SignBot) => Set(SuccessResult(SignBot))
+      case (Zero, SignTop) | (Zero, NonNeg) | (Zero, NonPos) =>
+        Set(SuccessResult(Zero), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+      case  (Zero, Neg) | (Zero, Pos) =>
+        Set(SuccessResult(Zero))
+      case (_, SignTop) | (SignTop, NonPos) | (SignTop, NonNeg)  =>
+        Set(SuccessResult(SignTop), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+      case (Neg, Pos) | (Pos, Neg) => Set(SuccessResult(Neg))
+      case (Pos, Pos) | (Neg, Neg) => Set(SuccessResult(Pos))
+      case (Neg, NonNeg) | (Pos, NonPos) =>
+        Set(SuccessResult(Neg), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+      case (Neg, NonPos) | (Pos, NonNeg) =>
+        Set(SuccessResult(Pos), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+      case (NonNeg, NonNeg) | (NonPos, NonPos) =>
+        Set(SuccessResult(NonNeg), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+      case (NonNeg, NonPos) | (NonPos, NonNeg) =>
+        Set(SuccessResult(NonPos), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+      case (NonNeg, Neg) | (NonPos, Pos) => Set(SuccessResult(NonPos))
+      case (NonNeg, Pos) | (NonPos, Neg) => Set(SuccessResult(NonNeg))
+      case (SignTop, _) => Set(SuccessResult(SignTop))
+    }
+  }
+
+  def evalSubt(lsgn: Sign, rsgn: Sign): Set[AResult[Sign]] = {
+    /*       \b  | -  | -0    | 0   | 0+    | +  | \t
+      -----------------------------------------
+      \b   | \b  | \b | \b    | \b  | \b    | \b | \b
+      -    | \b  | \t | \t    | -   | -     | -  | \t
+      -0   | \b  | \t | \t    | -0  | -0    | -  | \t
+      0    | \b  | +  | 0+    | 0   | -0    | -  | \t
+      0+   | \b  | +  | 0+    | 0+  | \t    | \t | \t
+      +    | \b  | +  | +     | +   | \t    | \t | \t
+      \t   | \b  | \t | \t    | \t  | \t    | \t | \t
+   */
+    (lsgn, rsgn) match {
+      case (_, SignBot) | (SignBot, _) => Set(SuccessResult(SignBot))
+      case (_, SignTop) | (SignTop, _) | (NonPos, Neg) | (NonPos, NonPos)
+          | (Neg, Neg) | (Neg, NonPos) | (NonNeg, NonNeg) | (NonNeg, Pos)
+          | (Pos, NonNeg) | (Pos, Pos) => Set(SuccessResult(SignTop))
+      case (Neg, Zero) | (Neg, NonNeg) | (Neg, Pos) | (NonPos, Pos) | (Zero, Pos) => Set(SuccessResult(Neg))
+      case (NonPos, Zero) | (NonPos, NonNeg) | (Zero, NonNeg) => Set(SuccessResult(NonPos))
+      case (Zero, Zero) => Set(SuccessResult(Zero))
+      case (NonNeg, Zero) | (NonNeg, NonPos) | (Zero, NonPos) => Set(SuccessResult(NonNeg))
+      case (Pos, Zero) | (Pos, NonPos) | (Pos, Neg) | (NonNeg, Neg) | (Zero, Neg) => Set(SuccessResult(Pos))
+    }
+  }
+
   // TODO Consider tracking relational constraints for Boolean variables or treating Boolean variables specifically
   private
   def evalBinaryOp(lhvl: AValue, op: OpName, rhvl: AValue, acstore: ACStore): AMemories[AValue] = {
@@ -118,9 +208,12 @@ case class AbstractExecutor(module: Module) {
       case "&&" => ???
       case "||" => ???
       case "+" => ???
-      case "-" => ???
-      case "*" => ???
-      case "/" => ???
+      case "-" =>
+        evalSignOp(lhvl, op, rhvl, evalSubt)
+      case "*" =>
+        evalSignOp(lhvl, op, rhvl, evalMult)
+      case "/" =>
+        evalSignOp(lhvl, op, rhvl, evalDiv)
       case "%" => ???
       case _ => Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))))
     }
@@ -128,36 +221,73 @@ case class AbstractExecutor(module: Module) {
   }
 
   private
-  def evalBinaryRelOp(lhvl: RelCt, op: OpName, rhvl: RelCt, acstore: ACStore): AMemories[RelCt] = {
-
+  def evalSignOp(lhvl: (ValueShape, Flat[VarName]), op: OpName, rhvl: (ValueShape, Flat[VarName]),
+                evalSign: (Sign, Sign) => Set[AResult[Sign]]) = {
+    val (lhvs, lhsym) = lhvl
+    val (rhvs, rhsym) = rhvl
+    if (ValueShape.isTop(lhvs) && ValueShape.isTop(rhvs)) {
+      Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))) ++
+        evalSign(SignTop, SignTop).map(_.map(sgnres => (ValueShape.fromSign(sgnres), genSymbol)))
+    } else if (ValueShape.isTop(lhvs)) {
+      Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))) ++
+        ValueShape.toSign(rhvs).fold(Set[AResult[AValue]]()) { rsgn =>
+          evalSign(SignTop, rsgn).map(_.map(sgnres => (ValueShape.fromSign(sgnres), genSymbol)))
+        }
+    } else if (ValueShape.isTop(rhvs)) {
+      Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))) ++
+        ValueShape.toSign(lhvs).fold(Set[AResult[AValue]]()) { lsgn =>
+          evalSign(lsgn, SignTop).map(_.map(sgnres => (ValueShape.fromSign(sgnres), genSymbol)))
+        }
+    } else {
+      ValueShape.toSign(lhvs).fold[Set[AResult[AValue]]](Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))))) { lsgn =>
+        ValueShape.toSign(rhvs).fold[Set[AResult[AValue]]](Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))))) { rsgn =>
+          evalSign(lsgn, rsgn).map(_.map(sgnres => (ValueShape.fromSign(sgnres), genSymbol)))
+        }
+      }
+    }
   }
 
   private
-  def evalBinaryHelper[E: Lattice](localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr,
-                                  semop: (E, OpName, E, ACStore) => AMemories[E]): AMemories[E] = {
-    val lhsmems = evalLocal(localVars, acstore, left)
-    Lattice[AMemories[E]].lub(lhsmems.memories.map { case (lhres, acstore__) =>
+  def evalBinaryHelper[E1 : Lattice, E2: Lattice](localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr,
+                          evalsub : (Map[VarName, Type], ACStore, Expr) => AMemories[E1], semop: (E1, OpName, E1, ACStore) => AMemories[E2]): AMemories[E2] = {
+    val lhsmems = evalsub(localVars, acstore, left)
+    Lattice[AMemories[E2]].lub(lhsmems.memories.map { case (lhres, acstore__) =>
         lhres match {
           case SuccessResult(lhval) =>
-            val rhmems = evalLocal(localVars, acstore__, right)
-            Lattice[AMemories[E]].lub(lhsmems.memories.map { case (rhres, acstore_) =>
+            val rhmems = evalsub(localVars, acstore__, right)
+            Lattice[AMemories[E2]].lub(lhsmems.memories.map { case (rhres, acstore_) =>
                 rhres match {
                   case SuccessResult(rhval) => semop(lhval, op, rhval, acstore_)
-                  case ExceptionalResult(exres) => AMemories[E](Set((ExceptionalResult(exres), acstore_)))
+                  case ExceptionalResult(exres) => AMemories[E2](Set((ExceptionalResult(exres), acstore_)))
                 }
             })
-          case ExceptionalResult(exres) => AMemories[E](Set((ExceptionalResult(exres), acstore__)))
+          case ExceptionalResult(exres) => AMemories[E2](Set((ExceptionalResult(exres), acstore__)))
         }
     })
   }
 
   private
-  def evalBinary(localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr) =
-    evalBinaryHelper(localVars, acstore, left, op, right, evalBinaryOp)
+  def evalBinaryRel(localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr): AMemories[RelCt] = {
+    op match {
+      case "==" | "!=" | "in" | "notin" =>
+        evalBinaryHelper[AValue, RelCt](localVars, acstore, left, op, right, evalLocal, ???)
+      case "&&" | "||" =>
+        evalBinaryHelper[RelCt, RelCt](localVars, acstore, left, op, right, evalAsRel, ???)
+        // TODO Fix
+      case _ => throw new RuntimeException(s"Unsupported binary rel: $left $op $right")
+    }
+  }
 
   private
-  def evalBinaryRel(localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr) =
-    evalBinaryHelper(localVars, acstore, left, op, right, evalBinaryRelOp)
+  def evalAsRel(localVars: Map[VarName, Type], acstore: ACStore, expr: Expr): AMemories[RelCt] = expr match {
+    case BinaryExpr(left, name, right) => evalBinaryRel(localVars, acstore, left, name, right)
+      // TODO Consider more cases
+    case _ => throw new RuntimeException(s"Can not evaluate $expr as a relation")
+  }
+
+  private
+  def evalBinary(localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr): AMemories[AValue] =
+    evalBinaryHelper(localVars, acstore, left, op, right, evalLocal, evalBinaryOp)
 
   private
   def evalConstructor(localVars: Map[VarName, Type], acstore: ACStore, name: ConsName, args: Seq[Expr]): AMemories[AValue] = {

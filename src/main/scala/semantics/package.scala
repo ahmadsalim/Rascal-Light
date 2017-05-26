@@ -8,10 +8,11 @@ import scalaz.Monad
   */
 package object semantics {
   type Result[T] = ResultV[Value, T]
-  implicit val monadResult = new Monad[Result] {
-    override def point[A](a: => A): Result[A] = SuccessResult(a)
 
-    override def bind[A, B](fa: Result[A])(f: (A) => Result[B]): Result[B] = fa match {
+  implicit def monadResult[V] = new Monad[ResultV[V, ?]] {
+    override def point[A](a: => A): ResultV[V, A] = SuccessResult(a)
+
+    override def bind[A, B](fa: ResultV[V, A])(f: (A) => ResultV[V, B]): ResultV[V, B] = fa match {
       case ExceptionalResult(exres) => ExceptionalResult(exres)
       case SuccessResult(t) => f(t)
     }
