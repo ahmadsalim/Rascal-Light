@@ -11,6 +11,7 @@ import syntax._
 import semantics._
 import util.Counter
 import scalaz.syntax.functor._
+import scalaz.syntax.either._
 
 import scalaz.\/
 
@@ -24,7 +25,7 @@ case class AbstractExecutor(module: Module) {
   val symbolCounter: Counter = Counter(0)
 
   private
-  def genSymbol: Flat[VarName] = FlatValue(s"sym$$${symbolCounter += 1}")
+  def genSymbol: Flat[VarName \/ RelCt] = FlatValue(s"sym$$${symbolCounter += 1}".left)
 
   private
   def updateStore(acstore : ACStore, varName: VarName, value: AValue): ACStore = {
@@ -63,7 +64,7 @@ case class AbstractExecutor(module: Module) {
               SuccessResult((ValueShape.fromSign(SignTop), genSymbol)))
           else Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
         } {
-          case SignBot => Set(SuccessResult((ValueShape.fromSign(SignBot), Lattice[Flat[VarName]].bot)))
+          case SignBot => Set(SuccessResult((ValueShape.fromSign(SignBot), Lattice[Flat[VarName \/ RelCt]].bot)))
           case Neg => Set(SuccessResult((ValueShape.fromSign(Pos), genSymbol)))
           case NonPos => Set(SuccessResult((ValueShape.fromSign(NonNeg), genSymbol)))
           case Zero => Set(SuccessResult((ValueShape.fromSign(Zero), genSymbol)))
@@ -250,10 +251,10 @@ case class AbstractExecutor(module: Module) {
   }
 
   private
-  def evalSignOp(lhvl: (ValueShape, Flat[VarName]), op: OpName, rhvl: (ValueShape, Flat[VarName]),
+  def evalSignOp(lhvl: AValue, op: OpName, rhvl: AValue,
                 evalSign: (Sign, Sign) => Set[AResult[Sign]]) = {
-    val (lhvs, lhsym) = lhvl
-    val (rhvs, rhsym) = rhvl
+    val (lhvs, lhrelcmp1) = lhvl
+    val (rhvs, lhrelcmp2) = rhvl
     if (ValueShape.isTop(lhvs) && ValueShape.isTop(rhvs)) {
       Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))) ++
         evalSign(SignTop, SignTop).map(_.map(sgnres => (ValueShape.fromSign(sgnres), genSymbol)))

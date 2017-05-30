@@ -8,8 +8,10 @@ import Relational._
 import semantics.domains.abstracting.Memory.{AMemory, AResult, AValue}
 import semantics.domains.abstracting.ValueShape.ValueShape
 
+import scalaz.\/
+
 object Memory {
-  type AValue = (ValueShape, Flat[VarName])
+  type AValue = (ValueShape, Flat[VarName \/ RelCt])
   type AResult[T] = ResultV[AValue, T]
 
   type AMemory[T] = (AResult[T], ACStore)
@@ -36,16 +38,17 @@ case class MemoryOf(module: Module) {
       case (_, StoreTop) => true
       case (AbstractStore(store1), AbstractStore(store2)) =>
         (store1.keySet subsetOf store2.keySet) && store1.keySet.forall { vari =>
-          val (vs1, sym1) = store1(vari)
-          val (vs2, sym2) = store2(vari)
-          Lattice[ValueShape].<=(vs1, vs2) && Lattice[Flat[VarName]].<=(sym1, sym2)
+          val (vs1, relcmp1) = store1(vari)
+          val (vs2, relcmp2) = store2(vari)
+          Lattice[ValueShape].<=(vs1, vs2) && Lattice[Flat[VarName \/ RelCt]].<=(relcmp1, relcmp2)
         }
       case _ => false
     }
 
     override def widen(a1: AStore, a2: AStore, depth: Int): AStore = upperBound(a1, a2) { (v1, v2) =>
       (v1, v2) match {
-        case ((vs1, sym1), (vs2, sym2)) => (Lattice[ValueShape].widen(vs1, vs2, depth), Lattice[Flat[VarName]].widen(sym1, sym2, depth))
+        case ((vs1, relcmp1), (vs2, relcmp2)) => (Lattice[ValueShape].widen(vs1, vs2, depth),
+          Lattice[Flat[VarName \/ RelCt]].widen(relcmp1, relcmp2, depth))
       }
     }
 
@@ -55,7 +58,8 @@ case class MemoryOf(module: Module) {
 
     override def lub(a1: AStore, a2: AStore): AStore = upperBound(a1, a2) { (v1, v2) =>
       (v1, v2) match {
-        case ((vs1, sym1), (vs2, sym2)) => (Lattice[ValueShape].lub(vs1, vs2), Lattice[Flat[VarName]].lub(sym1, sym2))
+        case ((vs1, relcmp1), (vs2, relcmp2)) =>
+          (Lattice[ValueShape].lub(vs1, vs2), Lattice[Flat[VarName \/ RelCt]].lub(relcmp1, relcmp2))
       }
     }
 
@@ -64,8 +68,8 @@ case class MemoryOf(module: Module) {
         case (StoreTop, _) | (_, StoreTop) => StoreTop
         case (AbstractStore(store1), AbstractStore(store2)) =>
           AbstractStore((store1.keySet union store2.keySet).toList.map { vari =>
-            val v1 = store1.get(vari).fold((Lattice[ValueShape].bot, Lattice[Flat[VarName]].bot))(identity)
-            val v2 = store2.get(vari).fold((Lattice[ValueShape].bot, Lattice[Flat[VarName]].bot))(identity)
+            val v1 = store1.get(vari).fold((Lattice[ValueShape].bot, Lattice[Flat[VarName \/ RelCt]].bot))(identity)
+            val v2 = store2.get(vari).fold((Lattice[ValueShape].bot, Lattice[Flat[VarName \/ RelCt]].bot))(identity)
             vari -> vlub(v1, v2)
           }.toMap)
       }
@@ -77,9 +81,9 @@ case class MemoryOf(module: Module) {
         case (a, StoreTop) => a
         case (AbstractStore(store1), AbstractStore(store2)) =>
           AbstractStore((store1.keySet intersect store2.keySet).toList.map { vari =>
-            val (vs1, sym1) = store1(vari)
-            val (vs2, sym2) = store2(vari)
-            vari -> (Lattice[ValueShape].glb(vs1, vs2), Lattice[Flat[VarName]].glb(sym1, sym2))
+            val (vs1, relcmp1) = store1(vari)
+            val (vs2, relcmp2) = store2(vari)
+            vari -> (Lattice[ValueShape].glb(vs1, vs2), Lattice[Flat[VarName \/ RelCt]].glb(relcmp1, relcmp2))
           }.toMap)
       }
     }
