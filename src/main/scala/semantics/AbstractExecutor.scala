@@ -197,6 +197,33 @@ case class AbstractExecutor(module: Module) {
     }
   }
 
+  def evalPlus(lsgn: Sign, rsgn: Sign): Set[AResult[Sign]] = {
+    /*     \b  | -  | -0    | 0   | 0+    | +   | \t
+    -------------------------------------------------
+    \b   | \b  | \b | \b    | \b  | \b    | \b  | \b
+    -    | \b  | -  | -     | -   | \t    | \t  | \t
+    -0   | \b  | -  | -0    | -0  | \t    | \t  | \t
+    0    | \b  | -  | -0    | 0   | 0+    | +   | \t
+    0+   | \b  | \t | \t    | 0+  | 0+    | +   | \t
+    +    | \b  | \t | \t    | +   | +     | +   | \t
+    \t   | \b  | \t | \t    | \t  | \t    | \t  | \t
+ */
+    (lsgn, rsgn) match {
+      case (_, SignBot) | (SignBot, _) => Set(SuccessResult(SignBot))
+      case (_, SignTop) | (SignTop, _) |
+           (Pos, Neg) | (Pos, NonPos) |
+           (NonNeg, Neg) | (NonNeg, NonPos) |
+           (Neg, NonNeg) | (NonPos, NonNeg) |
+           (Neg, Pos) | (NonPos, Pos) => Set(SuccessResult(SignTop))
+      case (NonPos, NonPos) | (Zero, NonPos) | (NonPos, Zero) => Set(SuccessResult(NonPos))
+      case (NonNeg, NonNeg) | (Zero, NonNeg) | (NonNeg, Zero) => Set(SuccessResult(NonNeg))
+      case (Zero, Zero) => Set(SuccessResult(Zero))
+      case (Neg, Neg) | (Neg, NonPos) | (Neg, Zero) |
+           (Zero, Neg) | (NonPos, Neg) => Set(SuccessResult(Neg))
+      case (NonNeg, Pos) | (Pos, NonNeg) | (Pos, Pos) | (Pos, Zero) | (Zero, Pos) => Set(SuccessResult(Pos))
+    }
+  }
+
   // TODO Consider tracking relational constraints for Boolean variables or treating Boolean variables specifically
   private
   def evalBinaryOp(lhvl: AValue, op: OpName, rhvl: AValue, acstore: ACStore): AMemories[AValue] = {
@@ -207,8 +234,10 @@ case class AbstractExecutor(module: Module) {
       case "notin" => ???
       case "&&" => ???
       case "||" => ???
-      case "+" => ???
+      case "+" =>
+        evalSignOp(lhvl, op, rhvl, (e1, e2) => evalPlus(e1, e2))
       case "-" =>
+        // TODO Add lists, sets, other
         evalSignOp(lhvl, op, rhvl, evalSubt)
       case "*" =>
         evalSignOp(lhvl, op, rhvl, evalMult)
