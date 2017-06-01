@@ -225,29 +225,79 @@ case class AbstractExecutor(module: Module) {
     }
   }
 
+  private
+  def getBool(vl: AValue): Set[AResult[(Boolean, RelCt)]] = {
+    val (vls, relcmp) = vl
+    if (ValueShape.isBot(vls) || relcmp == Lattice[Flat[VarName \/ RelCt]].bot) Set()
+    else {
+      val rr = relcmp match {
+        case FlatBot => FalseCt
+        case FlatValue(v) => v.fold(_ => TrueCt, identity) // Perhaps include relations over boolean vars as well
+        case FlatTop => TrueCt
+      }
+      if (ValueShape.isTop(vls)) {
+        Set(ExceptionalResult(Error(TypeError(vl, DataType("bool")))),
+          SuccessResult((true, rr)), SuccessResult((false, rr)))
+      } else {
+        ValueShape.toDataShape(vls).fold(Set[AResult[(Boolean, RelCt)]](ExceptionalResult(Error(TypeError(vl, DataType("bool")))))) {
+          case DataBot() => Set()
+          case DataElements(typeName, consShape) if typeName == "bool" =>
+            consShape.toList.map {
+              case ("true", List()) => SuccessResult((true, rr))
+              case ("false", List()) => SuccessResult((false, rr))
+              case _ => throw NonNormalFormMemories
+            }.toSet
+          case DataAny(typeName) if typeName == "bool" =>
+            Set(SuccessResult((true, rr)), SuccessResult((false, rr)))
+          case DataTop() => Set(ExceptionalResult(Error(TypeError(vl, DataType("bool")))),
+            SuccessResult((true, rr)), SuccessResult((false, rr)))
+          case _ => Set(ExceptionalResult(Error(TypeError(vl, DataType("bool")))))
+        }
+      }
+    }
+  }
+
+  def toBoolDataShape(b: Boolean): DataShape[ValueShape] = {
+    if (b) DataElements("bool", Map("true" -> List()))
+    else DataElements("bool", Map("false" -> List()))
+  }
+
   // TODO Consider tracking relational constraints for Boolean variables or treating Boolean variables specifically
   private
   def evalBinaryOp(lhvl: AValue, op: OpName, rhvl: AValue, acstore: ACStore): AMemories[AValue] = {
-    val ress: Set[AResult[AValue]] = op match {
+    def evalBinBoolOp(bop: (Boolean, Boolean) => Boolean) = {
+      Lattice[AMemories[AValue]].lub(getBool(lhvl).map {
+        case SuccessResult((lhb, lhrelcmp)) =>
+          Lattice[AMemories[AValue]].lub(getBool(rhvl).map {
+            case SuccessResult((rhb, rhrelcmp)) =>
+              AMemories[AValue](Set((SuccessResult((ValueShape.fromDataShape(toBoolDataShape(bop(lhb, rhb))),
+                FlatValue(AndCt(lhrelcmp, lhrelcmp).right))), acstore)))
+            case ExceptionalResult(exres) => AMemories[AValue](Set((ExceptionalResult(exres), acstore)))
+          })
+        case ExceptionalResult(exres) => AMemories[AValue](Set((ExceptionalResult(exres), acstore)))
+      })
+    }
+    op match {
       case "==" => ???
       case "!=" => ???
       case "in" => ???
       case "notin" => ???
-      case "&&" => ???
-      case "||" => ???
+      case "&&" =>
+        evalBinBoolOp(_ && _)
+      case "||" =>
+        evalBinBoolOp(_ || _)
       case "+" =>
-        evalSignOp(lhvl, op, rhvl, (e1, e2) => evalPlus(e1, e2))
+        AMemories(evalSignOp(lhvl, op, rhvl, (e1, e2) => evalPlus(e1, e2)).map((_, acstore)))
       case "-" =>
         // TODO Add lists, sets, other
-        evalSignOp(lhvl, op, rhvl, evalSubt)
+        AMemories(evalSignOp(lhvl, op, rhvl, evalSubt).map((_, acstore)))
       case "*" =>
-        evalSignOp(lhvl, op, rhvl, evalMult)
+        AMemories(evalSignOp(lhvl, op, rhvl, evalMult).map((_, acstore)))
       case "/" =>
-        evalSignOp(lhvl, op, rhvl, evalDiv)
+        AMemories(evalSignOp(lhvl, op, rhvl, evalDiv).map((_, acstore)))
       case "%" => ???
-      case _ => Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))))
+      case _ => AMemories(Set((ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))), acstore)))
     }
-    AMemories(ress.map(res => (res, acstore)))
   }
 
   private
@@ -255,7 +305,11 @@ case class AbstractExecutor(module: Module) {
                 evalSign: (Sign, Sign) => Set[AResult[Sign]]) = {
     val (lhvs, lhrelcmp1) = lhvl
     val (rhvs, lhrelcmp2) = rhvl
-    if (ValueShape.isTop(lhvs) && ValueShape.isTop(rhvs)) {
+    if (ValueShape.isBot(lhvs) || ValueShape.isBot(rhvs) ||
+         lhrelcmp1 == Lattice[Flat[VarName \/ RelCt]].bot ||
+          lhrelcmp2 == Lattice[Flat[VarName \/ RelCt]].bot) {
+      Set[AResult[AValue]]()
+    } else if (ValueShape.isTop(lhvs) && ValueShape.isTop(rhvs)) {
       Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))) ++
         evalSign(SignTop, SignTop).map(_.map(sgnres => (ValueShape.fromSign(sgnres), genSymbol)))
     } else if (ValueShape.isTop(lhvs)) {
@@ -294,25 +348,6 @@ case class AbstractExecutor(module: Module) {
           case ExceptionalResult(exres) => AMemories[E2](Set((ExceptionalResult(exres), acstore__)))
         }
     })
-  }
-
-  private
-  def evalBinaryRel(localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr): AMemories[RelCt] = {
-    op match {
-      case "==" | "!=" | "in" | "notin" =>
-        evalBinaryHelper[AValue, RelCt](localVars, acstore, left, op, right, evalLocal, ???)
-      case "&&" | "||" =>
-        evalBinaryHelper[RelCt, RelCt](localVars, acstore, left, op, right, evalAsRel, ???)
-        // TODO Fix
-      case _ => throw new RuntimeException(s"Unsupported binary rel: $left $op $right")
-    }
-  }
-
-  private
-  def evalAsRel(localVars: Map[VarName, Type], acstore: ACStore, expr: Expr): AMemories[RelCt] = expr match {
-    case BinaryExpr(left, name, right) => evalBinaryRel(localVars, acstore, left, name, right)
-      // TODO Consider more cases
-    case _ => throw new RuntimeException(s"Can not evaluate $expr as a relation")
   }
 
   private
