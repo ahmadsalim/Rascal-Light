@@ -262,6 +262,8 @@ case class AbstractExecutor(module: Module) {
     else DataElements("bool", Map("false" -> List()))
   }
 
+
+
   // TODO Consider tracking relational constraints for Boolean variables or treating Boolean variables specifically
   private
   def evalBinaryOp(lhvl: AValue, op: OpName, rhvl: AValue, acstore: ACStore): AMemories[AValue] = {
@@ -278,8 +280,68 @@ case class AbstractExecutor(module: Module) {
       })
     }
     op match {
-      case "==" => ???
-      case "!=" => ???
+      case "==" | "!=" =>
+        def boolop(phi: RelCt, psi: RelCt) =
+          if (op == "==") RelCt.biImplCt(phi, psi)
+          else NotCt(RelCt.biImplCt(phi, psi))
+        val (lhvs, lhvrelcmp) = lhvl
+        val (rhvs, rhvrelcmp) = rhvl
+        val eqCt: Flat[VarName \/ RelCt] = lhvrelcmp match {
+          case FlatBot => FlatBot
+          case FlatValue(lhrc) => rhvrelcmp match {
+            case FlatBot => FlatBot
+            case FlatValue(rhrc) =>
+              lhrc.fold(lhsym =>
+                rhrc.fold(rhsym => FlatValue(OpCt(DataPath(lhsym, List()), op, DataPath(rhsym, List())).right),
+                          rhrel => FlatValue(boolop(IsCt(DataPath(lhsym, List()), "true"), rhrel).right)),
+                lhrel =>
+                FlatValue(boolop(lhrel, rhrc.fold(rhsym => IsCt(DataPath(rhsym, List()), "true"), identity)).right))
+            case FlatTop => FlatTop
+          }
+          case FlatTop => FlatTop
+        }
+        val trueres = (SuccessResult((ValueShape.fromDataShape(DataElements("bool", Map("true" -> List()))), FlatValue(TrueCt.right))), acstore)
+        val falseres = (SuccessResult((ValueShape.fromDataShape(DataElements("bool", Map("false" -> List()))), FlatValue(TrueCt.right))), acstore)
+        val defValue = if (op == "==") AMemories[AValue](Set(falseres))
+                       else AMemories[AValue](Set(trueres))
+        def doSign(lhsign: Sign, rhsign: Sign): AMemories[AValue] =
+          (lhsign, rhsign) match {
+            case (SignBot, _) | (_, SignBot) => AMemories(Set())
+            case (SignTop, _) | (_, SignTop) =>
+              AMemories[AValue](Set((SuccessResult((ValueShape.fromDataShape(DataAny("bool")), eqCt)), acstore)))
+            case (Neg, Pos) | (Neg, NonNeg) |
+                 (Pos, Neg) | (NonNeg, Neg) |
+                 (Pos, NonPos) | (NonPos, Pos) |
+                 (Zero, Neg) | (Neg, Zero) | (Pos, Zero) | (Zero, Pos) =>
+              AMemories[AValue](Set(falseres))
+            case (Zero, Zero) =>
+              AMemories[AValue](Set(trueres))
+            case (NonNeg, Pos) | (Pos, NonNeg) |
+                 (NonPos, Neg) | (Neg, NonPos) |
+                 (Pos, Pos) | (Neg, Neg) |
+                 (NonPos, Zero) | (Zero, NonPos) |
+                 (NonNeg, Zero) | (Zero, NonNeg) |
+                 (NonNeg, NonNeg) | (NonPos, NonPos) |
+                 (NonPos, NonNeg) | (NonNeg, NonPos) =>
+              AMemories[AValue](Set((SuccessResult((ValueShape.fromDataShape(DataAny("bool")), eqCt)), acstore)))
+          }
+        def doList(lhlistshape: ListShape[ValueShape], rhlistshape: ListShape[ValueShape]) = ???
+        def doData(lhdatashape: DataShape[ValueShape], rhdatashape: DataShape[ValueShape]) = ???
+        if (ValueShape.isBot(lhvs) || ValueShape.isBot(rhvs)) AMemories(Set())
+        else if (ValueShape.isTop(lhvs) || ValueShape.isTop(rhvs)) {
+          AMemories(Set((SuccessResult((ValueShape.fromDataShape(DataAny("bool")), eqCt)), acstore)))
+        } else {
+          ValueShape.toSign(lhvs).fold {
+            ValueShape.toListShape(lhvs).fold {
+              val lhdatashape = ValueShape.toDataShape(lhvs).get
+              ValueShape.toDataShape(rhvs).fold(defValue) { rhdatashape => doData(lhdatashape, rhdatashape) }
+            } { lhlistshape =>
+              ValueShape.toListShape(rhvs).fold(defValue) { rhlistshape => doList(lhlistshape, rhlistshape) }
+            }
+          } { lhsign =>
+            ValueShape.toSign(rhvs).fold(defValue) { rhsign => doSign(lhsign, rhsign) }
+          }
+        }
       case "in" => ???
       case "notin" => ???
       case "&&" =>

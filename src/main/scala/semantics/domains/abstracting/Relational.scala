@@ -14,6 +14,16 @@ case class NotCt(phi: RelCt) extends RelCt
 case object TrueCt extends RelCt
 case object FalseCt extends RelCt
 
+object RelCt {
+  def implCt(phi: RelCt, psi: RelCt): RelCt = {
+    OrCt(NotCt(phi), psi)
+  }
+
+  def biImplCt(phi: RelCt, psi: RelCt): RelCt = {
+    AndCt(implCt(phi, psi), implCt(psi, phi))
+  }
+}
+
 object Relational {
   implicit val RelCtLattice: Lattice[RelCt] = new Lattice[RelCt] {
     override def bot: RelCt = FalseCt
