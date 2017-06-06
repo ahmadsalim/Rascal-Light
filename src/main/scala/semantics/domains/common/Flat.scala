@@ -1,11 +1,21 @@
 package semantics.domains.common
 
+import scalaz.Functor
+
 sealed trait Flat[+V]
 case object FlatBot extends Flat[Nothing]
 case class FlatValue[V](v: V) extends Flat[V]
 case object FlatTop extends Flat[Nothing]
 
 object Flat {
+  implicit def FlatFunctor: Functor[Flat] = new Functor[Flat] {
+    override def map[A, B](fa: Flat[A])(f: (A) => B): Flat[B] = fa match {
+      case FlatBot => FlatBot
+      case FlatValue(v) => FlatValue(f(v))
+      case FlatTop => FlatTop
+    }
+  }
+
   implicit def FlatLattice[V]: Lattice[Flat[V]] = new Lattice[Flat[V]] {
     override def <=(a1: Flat[V], a2: Flat[V]): Boolean = (a1, a2) match {
       case (FlatBot, _) => true
