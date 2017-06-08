@@ -1,7 +1,8 @@
 package semantics
 
-import semantics.domains.common.Module
+import semantics.domains.common.{Lattice, Module}
 import semantics.domains.concrete._
+import Type._
 import syntax._
 
 import scalaz.syntax.monad._
@@ -11,12 +12,7 @@ import scalaz.std.list._
 
 case class Typing(module: Module) {
 
-  private def lub(types: List[Type]): Type =
-    types.fold(VoidType) { (t1, t2) =>
-      if (isSubType(t1, t2)) t2
-      else if (isSubType(t2, t1)) t1
-      else ValueType
-    }
+  private def lub(types: List[Type]): Type = Lattice[Type].lub(types.toSet)
 
   private def inferType(basic: Basic): BasicType = basic match {
     case IntLit(i) => IntType
@@ -43,14 +39,6 @@ case class Typing(module: Module) {
     inferRes.exists(inftyp => isSubType(inftyp, typ))
   }
   
-  def isSubType(t1: Type, t2: Type): Boolean = (t1, t2) match {
-    case _ if t1 == t2 => true
-    case (VoidType, _) => true
-    case (_, ValueType) => true
-    case (ListType(t1_), ListType(t2_)) => isSubType(t1_, t2_)
-    case (SetType(t1_), SetType(t2_)) => isSubType(t1_, t2_)
-    case (MapType(tk1, tv1), MapType(tk2, tv2)) => isSubType(tk1, tk2) && isSubType(tv1, tv2)
-    case _ => false
-  }
+  def isSubType(t1: Type, t2: Type): Boolean = Lattice[Type].<=(t1, t2)
 }
 

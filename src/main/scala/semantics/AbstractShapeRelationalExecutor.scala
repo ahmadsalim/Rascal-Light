@@ -1,6 +1,6 @@
 package semantics
 
-import semantics.domains.abstracting.Memory.{AMemory, AResult, AValue}
+import semantics.domains.abstracting.SRMemory.{AMemory, AResult, AValue}
 import semantics.domains.abstracting.ValueShape.ValueShape
 import semantics.domains.abstracting._
 import semantics.domains.common.Product._
@@ -13,8 +13,8 @@ import scalaz.\/
 import scalaz.syntax.either._
 import scalaz.syntax.functor._
 
-case class AbstractExecutor(module: Module) {
-  val Memory = MemoryOf(module)
+case class AbstractShapeRelationalExecutor(module: Module) {
+  val Memory = SRMemoryOf(module)
 
   import Memory.ValueShape._
   import Memory._
@@ -28,26 +28,27 @@ case class AbstractExecutor(module: Module) {
   private
   def updateStore(acstore : ACStore, varName: VarName, value: AValue): ACStore = {
     acstore.store match {
-      case StoreTop => acstore
-      case AbstractStore(store) => ACStore(AbstractStore(store.updated(varName, value)), acstore.path)
+      case FlatValue(store) => ACStore(FlatValue(store.updated(varName, value)), acstore.path)
+      case _ => acstore
     }
   }
 
   private
   def dropStoreVars(acstore : ACStore, varnames: Seq[VarName]): ACStore = {
     acstore.store match {
-      case StoreTop => acstore
-      case AbstractStore(store) => ACStore(AbstractStore(store -- varnames), acstore.path)
+      case FlatValue(store) => ACStore(FlatValue(store -- varnames), acstore.path)
+      case _ => acstore
     }
   }
 
   private
   def evalVar(acstore: ACStore, x: VarName): AMemories[AValue] = {
     acstore.store match {
-      case StoreTop => AMemories[AValue](Set((SuccessResult(Lattice[AValue].top), acstore)))
-      case AbstractStore(store) =>
+      case FlatBot => Lattice[AMemories[AValue]].bot
+      case FlatValue(store) =>
         if (store.contains(x)) AMemories[AValue](Set((SuccessResult(store(x)), acstore)))
         else AMemories[AValue](Set((ExceptionalResult(Error(UnassignedVarError(x))), acstore)))
+      case FlatTop => AMemories[AValue](Set((SuccessResult(Lattice[AValue].top), acstore)))
     }
   }
 
