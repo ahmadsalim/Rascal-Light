@@ -3,7 +3,7 @@ package semantics.domains.concrete
 import semantics.domains.common.Lattice
 import syntax.{ListType, MapType, SetType, Type, ValueType, VoidType}
 
-object Type {
+object TypeOps {
   implicit def TypeLattice = new Lattice[Type] {
     override def bot: Type = VoidType
 

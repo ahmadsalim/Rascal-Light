@@ -49,8 +49,12 @@ case class Executor(module: Module) {
       case (BasicValue(IntLit(i1)), "+", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 + i2)).point[Result]
       case (BasicValue(IntLit(i1)), "-", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 - i2)).point[Result]
       case (BasicValue(IntLit(i1)), "*", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 * i2)).point[Result]
-      case (BasicValue(IntLit(i1)), "/", BasicValue(IntLit(i2))) if i2 != 0 => BasicValue(IntLit(i1 / i2)).point[Result]
-      case (BasicValue(IntLit(i1)), "%", BasicValue(IntLit(i2))) if i2 > 0 => BasicValue(IntLit(i1 % i2)).point[Result]
+      case (BasicValue(IntLit(i1)), "/", BasicValue(IntLit(i2)))  =>
+        if (i2 == 0) ExceptionalResult(Throw(ConstructorValue("DivByZero", List())))
+        else BasicValue(IntLit(i1 / i2)).point[Result]
+      case (BasicValue(IntLit(i1)), "%", BasicValue(IntLit(i2))) =>
+        if (i2 <= 0) ExceptionalResult(Throw(ConstructorValue("ModNonPos", List())))
+        else BasicValue(IntLit(i1 % i2)).point[Result]
       case _ => ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))
     }
 

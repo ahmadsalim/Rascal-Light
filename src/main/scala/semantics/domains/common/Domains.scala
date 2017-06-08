@@ -51,5 +51,7 @@ object Domains {
     Map("true" -> ("Bool", List()),
         "false" -> ("Bool", List()),
         "nokey" -> ("NoKey", List(Parameter(ValueType, "key"))),
+        "divByZero" -> ("DivByZero", List()),
+        "modNonPos" -> ("ModNonPos", List()),
         "pair" -> ("Pair", List(Parameter(ValueType, "fst"), Parameter(ValueType, "snd")))))
 }

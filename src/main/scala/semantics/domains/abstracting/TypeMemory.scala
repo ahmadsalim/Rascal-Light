@@ -3,14 +3,14 @@ package semantics.domains.abstracting
 import semantics.domains.abstracting.TypeMemory.{TypeResult, TypeStore}
 import semantics.domains.common._
 import syntax.{Type, VarName}
-import semantics.domains.concrete.Type._
+import semantics.domains.concrete.TypeOps._
 
 case class TypeMemory[T](result: TypeResult[T], store: TypeStore)
 case class TypeMemories[T](memories: Set[TypeMemory[T]])
 
 object TypeMemory {
   type TypeResult[T] = ResultV[Type, T]
-  type TypeStore = Flat[Map[VarName, Type]]
+  type TypeStore = Flat[Map[VarName, (Boolean, Type)]]
 
   implicit def TypeMemoriesLattice[T : Lattice] = new Lattice[TypeMemories[T]] {
     override def bot: TypeMemories[T] = TypeMemories(Set())

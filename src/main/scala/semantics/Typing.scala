@@ -2,7 +2,7 @@ package semantics
 
 import semantics.domains.common.{Lattice, Module}
 import semantics.domains.concrete._
-import Type._
+import TypeOps._
 import syntax._
 
 import scalaz.syntax.monad._
@@ -14,7 +14,7 @@ case class Typing(module: Module) {
 
   private def lub(types: List[Type]): Type = Lattice[Type].lub(types.toSet)
 
-  private def inferType(basic: Basic): BasicType = basic match {
+  def inferType(basic: Basic): BasicType = basic match {
     case IntLit(i) => IntType
     case StringLit(s) => StringType
   }
