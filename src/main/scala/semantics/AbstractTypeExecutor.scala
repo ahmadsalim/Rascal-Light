@@ -5,6 +5,7 @@ import semantics.domains.abstracting.TypeMemory.{TypeResult, TypeStore}
 import semantics.domains.common._
 import semantics.domains.concrete.TypeOps._
 import TypeMemory._
+import semantics.domains.concrete.ConstructorValue
 import syntax._
 
 case class AbstractTypeExecutor(module: Module) {
@@ -72,40 +73,56 @@ case class AbstractTypeExecutor(module: Module) {
     })
   }
 
-  def evalBinaryOp(lhval: Type, op: OpName, rhval: Type): Set[TypeResult[Type]] = ???
-    /*(lhvl, op, rhvl) match {
-      case (lhvl, "==", rhvl) =>
-        (if (lhvl == rhvl) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "!=", rhvl) =>
-        (if (lhvl != rhvl) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "in", ListValue(vs)) =>
-        (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "in", SetValue(vs)) =>
-        (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "in", MapValue(vs)) =>
-        (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "notin", rhvl) => evalBinaryOp(lhvl, "in", rhvl).flatMap(v => evalUnaryOp("!", v))
-      case (ConstructorValue("false", Seq()), "&&", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
-        ConstructorValue("false", Seq()).point[Result]
-      case (ConstructorValue("true", Seq()), "&&", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
-        ConstructorValue(bnm, Seq()).point[Result]
-      case (ConstructorValue("true", Seq()), "||", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
-        ConstructorValue("true", Seq()).point[Result]
-      case (ConstructorValue("false", Seq()), "||", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
-        ConstructorValue(bnm, Seq()).point[Result]
-      case (MapValue(vs), "delete", rhvl) => MapValue(vs - rhvl).point[Result]
-      case (BasicValue(StringLit(s1)), "+", BasicValue(StringLit(s2))) => BasicValue(StringLit(s1 + s2)).point[Result]
-      case (BasicValue(IntLit(i1)), "+", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 + i2)).point[Result]
-      case (BasicValue(IntLit(i1)), "-", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 - i2)).point[Result]
-      case (BasicValue(IntLit(i1)), "*", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 * i2)).point[Result]
-      case (BasicValue(IntLit(i1)), "/", BasicValue(IntLit(i2)))  =>
-        if (i2 == 0) ExceptionalResult(Throw(ConstructorValue("DivByZero", List())))
-        else BasicValue(IntLit(i1 / i2)).point[Result]
-      case (BasicValue(IntLit(i1)), "%", BasicValue(IntLit(i2))) =>
-        if (i2 <= 0) ExceptionalResult(Throw(ConstructorValue("ModNonPos", List())))
-        else BasicValue(IntLit(i1 % i2)).point[Result]
-      case _ => ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))
-    }*/
+  def evalBinaryOp(lhtyp: Type, op: OpName, rhtyp: Type): Set[TypeResult[Type]] = {
+    val invOp = ExceptionalResult(Error(InvalidOperationError(op, List(lhtyp, rhtyp))))
+    (lhtyp, op, rhtyp) match {
+      case (_, "==", _) => Set(SuccessResult(DataType("bool")))
+      case (lhvl, "!=", rhvl) => Set(SuccessResult(DataType("bool")))
+      case (lhvl, "in", ListType(ty)) => Set(SuccessResult(DataType("bool")))
+      case (lhvl, "in", SetType(ty)) => Set(SuccessResult(DataType("bool")))
+      case (lhvl, "in", MapType(kty, vty)) => Set(SuccessResult(DataType("bool")))
+      case (lhvl, "in", ValueType) => Set(invOp, SuccessResult(DataType("bool")))
+      case (lhvl, "notin", rhvl) => evalBinaryOp(lhvl, "in", rhvl).flatMap[TypeResult[Type], Set[TypeResult[Type]]] {
+        case SuccessResult(ty) => evalUnaryOp("!", ty)
+        case ExceptionalResult(exres) => Set(ExceptionalResult(exres))
+      }
+      case (DataType("bool"), "&&", DataType("bool")) =>
+        Set(SuccessResult(DataType("bool")))
+      case (ValueType | DataType("bool"), "&&", ValueType | DataType("bool")) =>
+        Set(invOp, SuccessResult(DataType("bool")))
+      case (DataType("bool"), "||", DataType("bool")) =>
+        Set(SuccessResult(DataType("bool")))
+      case (ValueType | DataType("bool"), "||", ValueType | DataType("bool")) =>
+        Set(invOp, SuccessResult(DataType("bool")))
+      case (BaseType(StringType), "+", BaseType(StringType)) =>
+        Set(SuccessResult(BaseType(StringType)))
+      case (BaseType(IntType), "+", BaseType(IntType)) =>
+        Set(SuccessResult(BaseType(IntType)))
+      case (BaseType(StringType), "+", ValueType) | (ValueType, "+", BaseType(StringType)) =>
+        Set(invOp, SuccessResult(BaseType(StringType)))
+      case (BaseType(IntType), "+", ValueType) | (ValueType, "+", BaseType(IntType)) =>
+        Set(invOp, SuccessResult(BaseType(IntType)))
+      case (ValueType, "+", ValueType) =>
+        Set(invOp, SuccessResult(BaseType(StringType)), SuccessResult(BaseType(IntType)))
+      case (BaseType(IntType), "-", BaseType(IntType)) =>
+        Set(SuccessResult(BaseType(IntType)))
+      case (ValueType | BaseType(IntType), "-", ValueType | BaseType(IntType)) =>
+        Set(invOp, SuccessResult(BaseType(IntType)))
+      case (BaseType(IntType), "*", BaseType(IntType)) =>
+        Set(SuccessResult(BaseType(IntType)))
+      case (ValueType | BaseType(IntType), "*", ValueType | BaseType(IntType)) =>
+        Set(invOp, SuccessResult(BaseType(IntType)))
+      case (BaseType(IntType), "/", BaseType(IntType)) =>
+        Set(ExceptionalResult(Throw(DataType("divByZero"))), SuccessResult(BaseType(IntType)))
+      case (ValueType | BaseType(IntType), "/", ValueType | BaseType(IntType)) =>
+        Set(invOp, ExceptionalResult(Throw(DataType("divByZero"))), SuccessResult(BaseType(IntType)))
+      case (BaseType(IntType), "%", BaseType(IntType)) =>
+        Set(ExceptionalResult(Throw(DataType("modNonPos"))), SuccessResult(BaseType(IntType)))
+      case (ValueType | BaseType(IntType), "%", ValueType | BaseType(IntType)) =>
+        Set(invOp, ExceptionalResult(Throw(DataType("modNonPos"))), SuccessResult(BaseType(IntType)))
+      case _ => Set(invOp)
+    }
+  }
 
   def evalBinary(localVars: Map[VarName, Type], store: TypeStore, left: Expr, op: OpName, right: Expr): TypeMemories[Type] = {
     val leftmems = evalLocal(localVars, store, left)
@@ -125,17 +142,139 @@ case class AbstractTypeExecutor(module: Module) {
     })
   }
 
-  def evalConstructor(localVars: Map[VarName, Type], store: TypeStore, name: ConsName, args: Seq[Expr]): TypeMemories[Type] = ???
+  def evalConstructor(localVars: Map[VarName, Type], store: TypeStore, name: ConsName, args: Seq[Expr]): TypeMemories[Type] = {
+    val argmems = evalLocalAll(localVars, store, args)
+    Lattice[TypeMemories[Type]].lub(argmems.memories.flatMap {
+      case TypeMemory(argres, store_) =>
+        argres match {
+          case SuccessResult(tys) =>
+            val (tyname, parameters) = module.constructors(name)
+            val tysparszipped = tys.zip(parameters.map(_.typ))
+            val exRes: TypeMemory[Type] = TypeMemory(ExceptionalResult(Error(SignatureMismatch(name, tys, parameters.map(_.typ)))), store_)
+            if (tys.length == parameters.length &&
+                  tysparszipped.forall { case (ty1, ty2) => typing.isSubType(ty1, ty2) || ty1 == ValueType }) {
+              val sucsRes: TypeMemory[Type] = TypeMemory(SuccessResult(DataType(tyname)), store_)
+              if (tysparszipped.exists { case (ty1, ty2) => ty1 == ValueType && ty2 != ValueType })
+                Set(TypeMemories(Set(exRes, sucsRes)))
+              else Set(TypeMemories[Type](Set(sucsRes)))
+            } else Set(TypeMemories[Type](Set(exRes)))
+          case ExceptionalResult(exres) =>
+            Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_))))
+        }
+    })
+  }
 
-  def evalList(localVars: Map[VarName, Type], store: TypeStore, elements: Seq[Expr]): TypeMemories[Type] = ???
+  def evalList(localVars: Map[VarName, Type], store: TypeStore, elements: Seq[Expr]): TypeMemories[Type] = {
+    val elmems = evalLocalAll(localVars, store, elements)
+    TypeMemories(elmems.memories.map[TypeMemory[Type], Set[TypeMemory[Type]]] { case TypeMemory(res, store_) =>
+      res match {
+        case SuccessResult(tys) => TypeMemory(SuccessResult(ListType(Lattice[Type].lub(tys.toSet[Type]))), store_)
+        case ExceptionalResult(exres) => TypeMemory(ExceptionalResult(exres), store_)
+      }
+    })
+  }
 
-  def evalSet(localVars: Map[VarName, Type], store: TypeStore, elements: Seq[Expr]): TypeMemories[Type] = ???
+  def evalSet(localVars: Map[VarName, Type], store: TypeStore, elements: Seq[Expr]): TypeMemories[Type] = {
+    val elmems = evalLocalAll(localVars, store, elements)
+    TypeMemories(elmems.memories.map[TypeMemory[Type], Set[TypeMemory[Type]]] { case TypeMemory(res, store_) =>
+      res match {
+        case SuccessResult(tys) => TypeMemory(SuccessResult(SetType(Lattice[Type].lub(tys.toSet[Type]))), store_)
+        case ExceptionalResult(exres) => TypeMemory(ExceptionalResult(exres), store_)
+      }
+    })
+  }
 
-  def evalMap(localVars: Map[VarName, Type], store: TypeStore, keyvalues: Seq[(Expr, Expr)]): TypeMemories[Type] = ???
+  def evalMap(localVars: Map[VarName, Type], store: TypeStore, keyvalues: Seq[(Expr, Expr)]): TypeMemories[Type] = {
+    val keymems = evalLocalAll(localVars, store, keyvalues.map(_._1))
+    Lattice[TypeMemories[Type]].lub(keymems.memories.flatMap[TypeMemories[Type], Set[TypeMemories[Type]]] {
+      case TypeMemory(keyres, store__) =>
+        keyres match {
+          case SuccessResult(keys) =>
+            val valmems = evalLocalAll(localVars, store__, keyvalues.map(_._2))
+            Set(TypeMemories(valmems.memories.map { case TypeMemory(valres, store_) =>
+              valres match {
+                case SuccessResult(vals) =>
+                  TypeMemory[Type](SuccessResult(MapType(Lattice[Type].lub(keys.toSet), Lattice[Type].lub(vals.toSet))), store_)
+                case ExceptionalResult(exres) =>
+                  TypeMemory[Type](ExceptionalResult(exres), store_)
+              }
+            }))
+          case ExceptionalResult(exres) => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__))))
+        }
+    })
+  }
 
-  def evalMapLookup(localVars: Map[VarName, Type], store: TypeStore, emap: Expr, ekey: Expr): TypeMemories[Type] = ???
+  def evalMapLookup(localVars: Map[VarName, Type], store: TypeStore, emap: Expr, ekey: Expr): TypeMemories[Type] = {
+    val mapmems = evalLocal(localVars, store, emap)
+    Lattice[TypeMemories[Type]].lub(mapmems.memories.flatMap { case TypeMemory(mapres, store__) =>
+      mapres match {
+        case SuccessResult(mapty) =>
+          val exRes = TypeMemory[Type](ExceptionalResult(Error(TypeError(mapty, MapType(ValueType, ValueType)))), store__)
+          def lookupOnMap(keyType: Type, valueType: Type) = {
+            val keymems = evalLocal(localVars, store__, ekey)
+            keymems.memories.flatMap[TypeMemories[Type], Set[TypeMemories[Type]]] { case TypeMemory(keyres, store_) =>
+                keyres match {
+                  case SuccessResult(actualKeyType) =>
+                    if (actualKeyType == ValueType || typing.isSubType(actualKeyType, keyType)) {
+                      val posEx = if (!typing.isSubType(actualKeyType, keyType))
+                                       Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(Throw(DataType("nokey"))), store_))))
+                                  else Set[TypeMemories[Type]]()
+                      posEx ++ Set(TypeMemories[Type](Set(TypeMemory(SuccessResult(valueType), store_))))
+                    }
+                    else Set(TypeMemories(Set(TypeMemory(ExceptionalResult(Throw(DataType("nokey"))), store_))))
+                  case ExceptionalResult(exres) =>
+                    Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_))))
+                }
+            }
+          }
+          mapty match {
+            case MapType(keyType, valueType) => lookupOnMap(keyType, valueType)
+            case ValueType => Set(TypeMemories(Set(exRes))) ++ lookupOnMap(ValueType, ValueType)
+            case _ =>
+              Set(TypeMemories[Type](Set(exRes)))
+          }
+        case ExceptionalResult(exres) =>
+          Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__))))
+      }
+    })
+  }
 
-  def evalMapUpdate(localVars: Map[VarName, Type], store: TypeStore, emap: Expr, ekey: Expr, evl: Expr): TypeMemories[Type] = ???
+  def evalMapUpdate(localVars: Map[VarName, Type], store: TypeStore, emap: Expr, ekey: Expr, evl: Expr): TypeMemories[Type] = {
+    val mapmems = evalLocal(localVars, store, emap)
+    Lattice[TypeMemories[Type]].lub(mapmems.memories.flatMap { case TypeMemory(mapres, store___) =>
+      mapres match {
+        case SuccessResult(mapt) =>
+          def updateOnMap(keyType: Type, valueType: Type) = {
+            val keymems = evalLocal(localVars, store___, ekey)
+            keymems.memories.flatMap { case TypeMemory(keyres, store__) =>
+              keyres match {
+                case SuccessResult(keyt) =>
+                  val valmems = evalLocal(localVars, store__, evl)
+                  valmems.memories.flatMap { case TypeMemory(valres, store_) =>
+                      valres match {
+                        case SuccessResult(valt) =>
+                          Set(TypeMemories[Type](
+                            Set(TypeMemory(SuccessResult(MapType(Lattice[Type].lub(keyType, keyt),
+                                                                 Lattice[Type].lub(valueType, valt))), store_))))
+                        case ExceptionalResult(exres) =>
+                          Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_))))
+                      }
+                  }
+                case ExceptionalResult(exres) =>
+                  Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__))))
+              }
+            }
+          }
+          val exRes = TypeMemory[Type](ExceptionalResult(Error(TypeError(mapt, MapType(ValueType, ValueType)))), store___)
+          mapt match {
+            case MapType(keyType, valueType) => updateOnMap(keyType, valueType)
+            case ValueType => Set(TypeMemories(Set(exRes))) ++ updateOnMap(ValueType, ValueType)
+            case _ => Set(TypeMemories(Set(exRes)))
+          }
+        case ExceptionalResult(exres) => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store___))))
+      }
+    })
+  }
 
   def evalFunCall(localVars: Map[VarName, Type], store: TypeStore, functionName: VarName, args: Seq[Expr]): TypeMemories[Type] = ???
 
@@ -166,6 +305,34 @@ case class AbstractTypeExecutor(module: Module) {
   def evalEnumExpr(localVars: Map[VarName, Type], store: TypeStore, enum: Enum): TypeMemories[Type] = ???
 
   def evalAssert(localVars: Map[VarName, Type], store: TypeStore, cond: Expr): TypeMemories[Type] = ???
+
+  def evalLocalAll(localVars: Map[VarName, Type], store: TypeStore, exprs: Seq[Expr]): TypeMemories[List[Type]] = {
+    exprs.toList.foldLeft[TypeMemories[List[Type]]](TypeMemories(Set(TypeMemory(SuccessResult(List()), store)))) { (mems, e) =>
+      val flatMems = Lattice[TypeMemories[Flat[List[Type]]]].lub(mems.memories.flatMap[TypeMemories[Flat[List[Type]]], Set[TypeMemories[Flat[List[Type]]]]] { case TypeMemory(prevres, store__) =>
+        prevres match {
+          case SuccessResult(tys) =>
+            val emems = evalLocal(localVars, store__, e)
+            Set(TypeMemories(emems.memories.map[TypeMemory[Flat[List[Type]]], Set[TypeMemory[Flat[List[Type]]]]] {
+              case TypeMemory(res, store_) =>
+                res match {
+                  case SuccessResult(ty) =>
+                    TypeMemory(SuccessResult(FlatValue(tys :+ ty)), store_)
+                  case ExceptionalResult(exres) => TypeMemory(ExceptionalResult(exres), store_)
+                }
+            }))
+          case ExceptionalResult(exres) =>
+            Set(TypeMemories[Flat[List[Type]]](Set(TypeMemory(ExceptionalResult(exres), store__))))
+        }
+      })
+      TypeMemories(flatMems.memories.map {
+        case TypeMemory(res, st) =>
+          TypeMemory(res match {
+            case SuccessResult(t) => SuccessResult(Flat.unflat(t))
+            case ExceptionalResult(exres) => ExceptionalResult(exres)
+          }, st)
+      }) // Remove dummy Flat, since all merger of successes happens manually
+    }
+  }
 
   def evalLocal(localVars: Map[VarName, Type], store: TypeStore, expr: Expr): TypeMemories[Type] = {
     expr match {

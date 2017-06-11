@@ -7,7 +7,14 @@ case object FlatBot extends Flat[Nothing]
 case class FlatValue[V](v: V) extends Flat[V]
 case object FlatTop extends Flat[Nothing]
 
+case object NonFlatValue extends Exception
+
 object Flat {
+  def unflat[V](flat: Flat[V]): V = flat match {
+    case FlatValue(v) => v
+    case _ => throw NonFlatValue
+  }
+
   implicit def FlatFunctor: Functor[Flat] = new Functor[Flat] {
     override def map[A, B](fa: Flat[A])(f: (A) => B): Flat[B] = fa match {
       case FlatBot => FlatBot

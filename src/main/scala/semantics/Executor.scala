@@ -44,7 +44,6 @@ case class Executor(module: Module) {
         ConstructorValue("true", Seq()).point[Result]
       case (ConstructorValue("false", Seq()), "||", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
         ConstructorValue(bnm, Seq()).point[Result]
-      case (MapValue(vs), "delete", rhvl) => MapValue(vs - rhvl).point[Result]
       case (BasicValue(StringLit(s1)), "+", BasicValue(StringLit(s2))) => BasicValue(StringLit(s1 + s2)).point[Result]
       case (BasicValue(IntLit(i1)), "+", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 + i2)).point[Result]
       case (BasicValue(IntLit(i1)), "-", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 - i2)).point[Result]
@@ -386,7 +385,7 @@ case class Executor(module: Module) {
 
   private
   def evalLocalAll(localVars: Map[VarName, Type], store: Store, exprs: Seq[Expr]): (Result[List[Value]], Store) = {
-    val (res, store_) = exprs.toList.foldLeft[(Result[List[Value]], Store)]((List().pure[Result], store)) { (st, e) =>
+    exprs.toList.foldLeft[(Result[List[Value]], Store)]((List().pure[Result], store)) { (st, e) =>
       val (prevres, store__) = st
       prevres match {
         case SuccessResult(vals) =>
@@ -395,7 +394,6 @@ case class Executor(module: Module) {
         case _ => (prevres, store__)
       }
     }
-    (res, store_)
   }
 
   private
@@ -738,7 +736,7 @@ case class Executor(module: Module) {
             keyres match {
               case SuccessResult(keyv) =>
                 if (vals.contains(keyv)) (vals(keyv).pure[Result], store_)
-                else (ExceptionalResult(Throw(ConstructorValue("nokey", Seq(keyv)))), store_)
+                else (ExceptionalResult(Throw(ConstructorValue("NoKey", Seq(keyv)))), store_)
               case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
             }
           case _ => (ExceptionalResult(Error(TypeError(mapv, MapType(ValueType, ValueType)))), store__)
