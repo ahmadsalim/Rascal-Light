@@ -206,7 +206,7 @@ case class Executor(module: Module) {
               if (vals.contains(kvl)) {
                 updatePath(vals(kvl), rpaths, tvl).map(nvl => MapValue(vals.updated(kvl, nvl)))
               }
-              else ExceptionalResult(Throw(ConstructorValue("nokey", Seq(kvl))))
+              else ExceptionalResult(Throw(ConstructorValue("NoKey", Seq(kvl))))
             case _ => ExceptionalResult(Error(TypeError(ovl, MapType(typing.inferType(kvl).get, typing.inferType(tvl).get))))
           }
         case FieldAccessPath(fieldName) =>

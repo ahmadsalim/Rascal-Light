@@ -344,7 +344,38 @@ case class AbstractTypeExecutor(module: Module) {
     }
   }
 
-  def updatePath(otyp: Type, accessPaths: List[AccessPath[Type]], typ: Type): TypeResult[Type] = ???
+
+  def updatePath(otyp: Type, paths: List[AccessPath[Type]], typ: Type): Set[TypeResult[Type]] = paths match {
+    case Nil => Set(SuccessResult(typ))
+    case path :: rpaths =>
+      path match {
+        case MapAccessPath(ktyp) =>
+          def updateOnMap(keyType: Type, valueType: Type): Set[TypeResult[Type]] = {
+            if (typing.isSubType(ktyp, keyType) || ktyp == ValueType) {
+              Set(ExceptionalResult(Throw(DataType("nokey")))) ++
+                updatePath(valueType, rpaths, typ).map {
+                  case SuccessResult(ntyp) =>
+                    SuccessResult(MapType(Lattice[Type].lub(ktyp, keyType), Lattice[Type].lub(ntyp, valueType)))
+                  case ExceptionalResult(exres) =>
+                    ExceptionalResult(exres)
+                }
+            } else {
+              Set(ExceptionalResult(Throw(DataType("nokey"))))
+            }
+          }
+          val exRes: TypeResult[Type] = ExceptionalResult(Error(TypeError(otyp, MapType(ktyp, typ))))
+          otyp match {
+            case MapType(keyType, valueType) => updateOnMap(keyType, valueType)
+            case ValueType => Set(exRes) ++ updateOnMap(ValueType, ValueType)
+            case _ => Set(exRes)
+          }
+        case FieldAccessPath(fieldName) =>
+          otyp match {
+            case DataType(name) => ???
+            case ValueType => ???
+          }
+      }
+  }
 
   def evalAssign(localVars: Map[VarName, Type], store: TypeStore, assgn: Assignable, targetexpr: Expr): TypeMemories[Type] = {
     val assignablemems = evalAssignable(localVars, store, assgn)
@@ -355,24 +386,26 @@ case class AbstractTypeExecutor(module: Module) {
             Set(Lattice[TypeMemories[Type]].lub(targetmems.memories.flatMap{ case TypeMemory(targetres, store_) =>
               targetres match {
                 case SuccessResult(typ) =>
-                  val newTypRes =
+                  val newTypRes: Set[TypeResult[Type]] =
                     if (path.accessPaths.isEmpty) {
-                      SuccessResult(typ)
+                      Set(SuccessResult(typ))
                     } else {
-                      getVar(store_, path.varName).fold[TypeResult[Type]](ExceptionalResult(Error(UnassignedVarError(path.varName)))) {
+                      getVar(store_, path.varName).fold[Set[TypeResult[Type]]](Set(ExceptionalResult(Error(UnassignedVarError(path.varName))))) {
                         case (_, otyp) => updatePath(otyp, path.accessPaths, typ)
                       }
                     }
-                  newTypRes match {
+                  newTypRes.flatMap {
                     case SuccessResult(newTyp) =>
                       // TODO provide internal error instead of exception
                       val staticVarTy = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
-                      /*   if (typing.checkType(nvl, varty)) {
-                        (nvl.pure[Result], Store(store_.map.updated(path.varName, nvl)))
+                      val exRes = TypeMemory[Type](ExceptionalResult(Error(TypeError(newTyp, staticVarTy))), store_)
+                      if (typing.isSubType(newTyp, staticVarTy) || newTyp == ValueType) {
+                        val posExRes = if (staticVarTy != ValueType) Set(TypeMemories(Set(exRes))) else Set()
+                        posExRes ++ Set(TypeMemories(Set(TypeMemory(SuccessResult(newTyp), setVar(store_, path.varName, newTyp)))))
                       }
-                      else (ExceptionalResult(Error(TypeError(nvl, varty))), store_)*/
-                      ???
-                    case _ => Set(TypeMemories[Type](Set(TypeMemory(newTypRes, store_))))
+                      else Set(TypeMemories[Type](Set(exRes)))
+                    case ExceptionalResult(exres) =>
+                      Set(TypeMemories[Type](Set(TypeMemory[Type](ExceptionalResult(exres), store_))))
                   }
                 case ExceptionalResult(exres) => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_))))
               }
