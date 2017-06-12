@@ -613,14 +613,12 @@ case class Executor(module: Module) {
             val newValue =
               if (path.accessPaths.isEmpty) {
                 vl.point[Result]
-              } else {
-                val res = store_.map.get(path.varName).fold[Result[Value]](ExceptionalResult(Error(UnassignedVarError(path.varName)))) {
-                  ovl => updatePath(ovl, path.accessPaths, vl)
-                }
-                res
+              } else store_.map.get(path.varName).fold[Result[Value]](ExceptionalResult(Error(UnassignedVarError(path.varName)))) {
+                ovl => updatePath(ovl, path.accessPaths, vl)
               }
             newValue match {
               case SuccessResult(nvl) =>
+                // TODO provide internal error instead of exception
                 val varty = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
                 if (typing.checkType(nvl, varty)) {
                   (nvl.pure[Result], Store(store_.map.updated(path.varName, nvl)))

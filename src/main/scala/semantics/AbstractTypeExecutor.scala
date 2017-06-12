@@ -6,6 +6,7 @@ import semantics.domains.common._
 import semantics.domains.concrete.TypeOps._
 import TypeMemory._
 import syntax._
+import scalaz.std.option._
 
 // TODO: Convert lub(...flatMap) to map(...lub)
 case class AbstractTypeExecutor(module: Module) {
@@ -32,6 +33,17 @@ case class AbstractTypeExecutor(module: Module) {
       case (possUnassigned, typ) =>
         TypeMemories((if (possUnassigned) unassignedError else Set()) ++ Set(TypeMemory(SuccessResult(typ), store)))
     }
+  }
+
+  private
+  def unflatMems[A](flatMems: TypeMemories[Flat[A]]): TypeMemories[A] = {
+    TypeMemories(flatMems.memories.map {
+      case TypeMemory(res, st) =>
+        TypeMemory(res match {
+          case SuccessResult(t) => SuccessResult(Flat.unflat(t))
+          case ExceptionalResult(exres) => ExceptionalResult(exres)
+        }, st)
+    })
   }
 
   def accessField(tv: Type, fieldName: FieldName): Set[TypeResult[Type]] = tv match {
@@ -295,7 +307,81 @@ case class AbstractTypeExecutor(module: Module) {
     })
   }
 
-  def evalAssign(localVars: Map[VarName, Type], store: TypeStore, assgn: Assignable, targetexpr: Expr): TypeMemories[Type] = ???
+  def evalAssignable(localVars: Map[VarName, Type], store: TypeStore, assgn: Assignable): TypeMemories[DataPath[Type]] = {
+    assgn match {
+      case VarAssgn(name) => TypeMemories(Set(TypeMemory(SuccessResult(DataPath(name, List())),store)))
+      case FieldAccAssgn(target, fieldName) =>
+        val targetmems = evalAssignable(localVars, store, target)
+        val flatmems = Lattice[TypeMemories[Flat[DataPath[Type]]]].lub(targetmems.memories.flatMap[TypeMemories[Flat[DataPath[Type]]], Set[TypeMemories[Flat[DataPath[Type]]]]] {
+          case TypeMemory(targetres, store_) =>
+            targetres match {
+              case SuccessResult(DataPath(vn, accessPaths)) =>
+                Set(TypeMemories(Set(TypeMemory(SuccessResult(FlatValue(DataPath(vn, accessPaths :+ FieldAccessPath(fieldName)))), store_))))
+              case ExceptionalResult(exres) =>
+                Set(TypeMemories[Flat[DataPath[Type]]](Set(TypeMemory(ExceptionalResult(exres), store_))))
+            }
+        })
+        unflatMems(flatmems)
+      case MapUpdAssgn(target, ekey) =>
+        val targetmems = evalAssignable(localVars, store, target)
+        val flatmems = Lattice[TypeMemories[Flat[DataPath[Type]]]].lub(targetmems.memories.flatMap[TypeMemories[Flat[DataPath[Type]]], Set[TypeMemories[Flat[DataPath[Type]]]]] {
+          case TypeMemory(targetres, store__) =>
+            targetres match {
+              case SuccessResult(DataPath(vn, accessPaths)) =>
+                val keymems = evalLocal(localVars, store__, ekey)
+                Set(TypeMemories(keymems.memories.map { case TypeMemory(keyres, store_) =>
+                  keyres match {
+                    case SuccessResult(keyt) =>
+                      TypeMemory[Flat[DataPath[Type]]](SuccessResult(FlatValue(DataPath(vn, accessPaths :+ MapAccessPath(keyt)))), store_)
+                    case ExceptionalResult(exres) => TypeMemory[Flat[DataPath[Type]]](ExceptionalResult(exres), store_)
+                  }
+                }))
+              case ExceptionalResult(exres) =>
+                Set(TypeMemories[Flat[DataPath[Type]]](Set(TypeMemory(ExceptionalResult(exres), store__))))
+            }
+        })
+        unflatMems(flatmems)
+    }
+  }
+
+  def updatePath(otyp: Type, accessPaths: List[AccessPath[Type]], typ: Type): TypeResult[Type] = ???
+
+  def evalAssign(localVars: Map[VarName, Type], store: TypeStore, assgn: Assignable, targetexpr: Expr): TypeMemories[Type] = {
+    val assignablemems = evalAssignable(localVars, store, assgn)
+    Lattice[TypeMemories[Type]].lub(assignablemems.memories.flatMap { case TypeMemory(assgnres, store__) =>
+        assgnres match {
+          case SuccessResult(path) =>
+            val targetmems = evalLocal(localVars, store__, targetexpr)
+            Set(Lattice[TypeMemories[Type]].lub(targetmems.memories.flatMap{ case TypeMemory(targetres, store_) =>
+              targetres match {
+                case SuccessResult(typ) =>
+                  val newTypRes =
+                    if (path.accessPaths.isEmpty) {
+                      SuccessResult(typ)
+                    } else {
+                      getVar(store_, path.varName).fold[TypeResult[Type]](ExceptionalResult(Error(UnassignedVarError(path.varName)))) {
+                        case (_, otyp) => updatePath(otyp, path.accessPaths, typ)
+                      }
+                    }
+                  newTypRes match {
+                    case SuccessResult(newTyp) =>
+                      // TODO provide internal error instead of exception
+                      val staticVarTy = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
+                      /*   if (typing.checkType(nvl, varty)) {
+                        (nvl.pure[Result], Store(store_.map.updated(path.varName, nvl)))
+                      }
+                      else (ExceptionalResult(Error(TypeError(nvl, varty))), store_)*/
+                      ???
+                    case _ => Set(TypeMemories[Type](Set(TypeMemory(newTypRes, store_))))
+                  }
+                case ExceptionalResult(exres) => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_))))
+              }
+            }))
+          case ExceptionalResult(exres) =>
+            Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__))))
+        }
+    })
+  }
 
   def evalIf(localVars: Map[VarName, Type], store: TypeStore, cond: Expr, thenB: Expr, elseB: Expr): TypeMemories[Type] = {
     val condmems = evalLocal(localVars, store, cond)
@@ -401,13 +487,7 @@ case class AbstractTypeExecutor(module: Module) {
             Set(TypeMemories[Flat[List[Type]]](Set(TypeMemory(ExceptionalResult(exres), store__))))
         }
       })
-      TypeMemories(flatMems.memories.map {
-        case TypeMemory(res, st) =>
-          TypeMemory(res match {
-            case SuccessResult(t) => SuccessResult(Flat.unflat(t))
-            case ExceptionalResult(exres) => ExceptionalResult(exres)
-          }, st)
-      }) // Remove dummy Flat, since all merger of successes happens manually
+      unflatMems(flatMems) // Remove dummy Flat, since all merger of successes happens manually
     }
   }
 
