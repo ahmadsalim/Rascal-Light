@@ -10,7 +10,7 @@ case class TypeMemories[T](memories: Set[TypeMemory[T]])
 
 object TypeMemory {
   type TypeResult[T] = ResultV[Type, T]
-  type TypeStore = Flat[Map[VarName, (Boolean, Type)]]
+  type TypeStore = Flat[Map[VarName, (Boolean, Type)]] // TODO Use custom merge operation instead of Flat
 
   implicit def TypeMemoriesLattice[T : Lattice] = new Lattice[TypeMemories[T]] {
     override def bot: TypeMemories[T] = TypeMemories(Set())
