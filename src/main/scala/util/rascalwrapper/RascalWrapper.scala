@@ -131,7 +131,7 @@ object RascalWrapper {
   }
 
   private
-  def translateEnum(enum: Expression): String \/ Enum = {
+  def translateEnum(enum: Expression): String \/ Generator = {
     if (enum.isMatch) {
       translatePattern(enum.getPattern).flatMap(patt =>
         translateExpression(enum.getExpression).map(MatchAssign(patt, _)))

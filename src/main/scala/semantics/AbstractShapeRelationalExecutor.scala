@@ -565,7 +565,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   }
 
   private
-  def evalFor(localVars: Map[VarName, Type], acstore: ACStore, enum: Enum, body: Expr): AMemories[AValue] = ???
+  def evalFor(localVars: Map[VarName, Type], acstore: ACStore, enum: Generator, body: Expr): AMemories[AValue] = ???
 
   private
   def evalWhile(localVars: Map[VarName, Type], acstore: ACStore, cond: Expr, body: Expr): AMemories[AValue] = ???
@@ -635,9 +635,6 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   }
 
   private
-  def evalEnumExpr(localVars: Map[VarName, Type], acstore: ACStore, enum: Enum): AMemories[AValue] = ???
-
-  private
   def evalAssert(localVars: Map[VarName, Type], acstore: ACStore, cond: Expr): AMemories[AValue] = ???
 
   private
@@ -691,7 +688,6 @@ case class AbstractShapeRelationalExecutor(module: Module) {
     case ThrowExpr(result) => evalThrow(localVars, acstore, result)
     case TryCatchExpr(tryB, catchVar, catchB) => evalTryCatch(localVars, acstore, tryB, catchVar, catchB)
     case TryFinallyExpr(tryB, finallyB) => evalTryFinally(localVars, acstore, tryB, finallyB)
-    case EnumExpr(enum) => evalEnumExpr(localVars, acstore, enum)
     case AssertExpr(cond) => evalAssert(localVars, acstore, cond)
   }
 

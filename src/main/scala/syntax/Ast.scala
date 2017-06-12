@@ -53,20 +53,19 @@ case object BreakExpr extends Expr
 case object ContinueExpr extends Expr
 case object FailExpr extends Expr
 case class LocalBlockExpr(vardefs: Seq[Parameter], exprs: Seq[Expr]) extends Expr
-case class ForExpr(enum: Enum, body: Expr) extends Expr
+case class ForExpr(gen: Generator, body: Expr) extends Expr
 case class WhileExpr(cond: Expr, body: Expr) extends Expr
 case class SolveExpr(vars: Seq[VarName], body: Expr) extends Expr
 case class ThrowExpr(result: Expr) extends Expr
 case class TryCatchExpr(tryB: Expr, catchVar: VarName, catchB: Expr) extends Expr
 case class TryFinallyExpr(tryB: Expr, finallyB: Expr) extends Expr
-case class EnumExpr(enum: Enum) extends Expr
 case class AssertExpr(cond: Expr) extends Expr
 
 case class Case(patt: Patt, action: Expr)
 
-sealed trait Enum
-case class MatchAssign(patt: Patt, target: Expr) extends Enum
-case class EnumAssign(varname: VarName, target: Expr) extends Enum
+sealed trait Generator
+case class MatchAssign(patt: Patt, target: Expr) extends Generator
+case class EnumAssign(varname: VarName, target: Expr) extends Generator
 
 sealed trait Strategy
 case object TopDown extends Strategy

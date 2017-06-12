@@ -320,7 +320,7 @@ case class AbstractTypeExecutor(module: Module) {
 
   def evalBlock(localVars: Map[VarName, Type], store: TypeStore, vardefs: Seq[Parameter], exprs: Seq[Expr]): TypeMemories[Type] = ???
 
-  def evalFor(localVars: Map[VarName, Type], store: TypeStore, enum: Enum, body: Expr): TypeMemories[Type] = ???
+  def evalFor(localVars: Map[VarName, Type], store: TypeStore, enum: Generator, body: Expr): TypeMemories[Type] = ???
 
   def evalWhile(localVars: Map[VarName, Type], store: TypeStore, cond: Expr, body: Expr): TypeMemories[Type] = ???
 
@@ -379,8 +379,6 @@ case class AbstractTypeExecutor(module: Module) {
       }
     })
   }
-
-  def evalEnumExpr(localVars: Map[VarName, Type], store: TypeStore, enum: Enum): TypeMemories[Type] = ???
 
   def evalAssert(localVars: Map[VarName, Type], store: TypeStore, cond: Expr): TypeMemories[Type] =
     throw new UnsupportedOperationException("Assertion Expression")
@@ -442,7 +440,6 @@ case class AbstractTypeExecutor(module: Module) {
       case ThrowExpr(evl) => evalThrow(localVars, store, evl)
       case TryCatchExpr(tryB, catchVar, catchB) => evalTryCatch(localVars, store, tryB, catchVar, catchB)
       case TryFinallyExpr(tryB, finallyB) => evalTryFinally(localVars, store, tryB, finallyB)
-      case EnumExpr(enum) => evalEnumExpr(localVars, store, enum)
       case AssertExpr(cond) => evalAssert(localVars, store, cond)
     }
   }

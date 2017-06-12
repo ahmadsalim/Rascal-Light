@@ -397,8 +397,8 @@ case class Executor(module: Module) {
   }
 
   private
-  def evalEnum(localVars: Map[VarName, Type], store: Store, enum: Enum): (Result[Stream[Pure, Map[VarName, Value]]], Store) =
-    enum match {
+  def evalGenerator(localVars: Map[VarName, Type], store: Store, gen: Generator): (Result[Stream[Pure, Map[VarName, Value]]], Store) =
+    gen match {
       case MatchAssign(patt, target) =>
         val (tres, store_) = evalLocal(localVars, store, target)
         tres match {
@@ -436,17 +436,6 @@ case class Executor(module: Module) {
             (keyres.map(keyv => DataPath(vn, accessPaths :+ MapAccessPath(keyv))), store_)
           case ExceptionalResult(exres) => (targetres, store__)
         }
-    }
-  }
-
-  private def evalEnumExpr(localVars: Map[VarName, Type], store: Store, enum: Enum) = {
-    val (enres, store_) = evalEnum(localVars, store, enum)
-    enres match {
-      case SuccessResult(envs) =>
-        val env = envs.head.toList
-        if (env.isEmpty) (ConstructorValue("false", Seq.empty).point[Result], store_)
-        else (ConstructorValue("true", Seq.empty).point[Result], Store(store_.map ++ env.head))
-      case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
     }
   }
 
@@ -546,9 +535,9 @@ case class Executor(module: Module) {
     (res.map(_ => BottomValue), store_)
   }
 
-  private def evalFor(localVars: Map[VarName, Type], store: Store, enum: Enum, body: Expr) = {
-    val (enumres, store__) = evalEnum(localVars, store, enum)
-    enumres match {
+  private def evalFor(localVars: Map[VarName, Type], store: Store, gen: Generator, body: Expr) = {
+    val (genres, store__) = evalGenerator(localVars, store, gen)
+    genres match {
       case SuccessResult(envs) =>
         val (bodyres, store_) = evalEach(localVars, store__, envs, body)
         (bodyres.map { _ => BottomValue }, store_)
@@ -847,7 +836,6 @@ case class Executor(module: Module) {
       case ThrowExpr(evl) => evalThrow(localVars, store, evl)
       case TryCatchExpr(tryB, catchVar, catchB) => evalTryCatch(localVars, store, tryB, catchVar, catchB)
       case TryFinallyExpr(tryB, finallyB) => evalTryFinally(localVars, store, tryB, finallyB)
-      case EnumExpr(enum) => evalEnumExpr(localVars, store, enum)
       case AssertExpr(cond) => evalAssert(localVars, store, cond)
     }
   }
