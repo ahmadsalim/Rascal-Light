@@ -224,7 +224,7 @@ case class Executor(module: Module) {
                   }
                 }
               }
-            case _ => ExceptionalResult(Error(OtherError)) // TODO Should be type error, but of which type?
+            case _ => ExceptionalResult(Error(FieldError(ovl, fieldName)))
           }
       }
   }

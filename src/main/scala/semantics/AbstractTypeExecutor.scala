@@ -344,7 +344,6 @@ case class AbstractTypeExecutor(module: Module) {
     }
   }
 
-
   def updatePath(otyp: Type, paths: List[AccessPath[Type]], typ: Type): Set[TypeResult[Type]] = paths match {
     case Nil => Set(SuccessResult(typ))
     case path :: rpaths =>
@@ -370,9 +369,36 @@ case class AbstractTypeExecutor(module: Module) {
             case _ => Set(exRes)
           }
         case FieldAccessPath(fieldName) =>
+          def updateFieldOnType(dtname: TypeName): Set[TypeResult[Type]] = {
+            val conss = module.datatypes(dtname)
+            conss.toSet[ConsName].flatMap[TypeResult[Type], Set[TypeResult[Type]]] { cons =>
+              val (_, pars) = module.constructors(dtname)
+              val index = pars.indexWhere(_.name == fieldName)
+              if (index < 0) { Set(ExceptionalResult(Error(FieldError(otyp, fieldName)))) }
+              else {
+                updatePath(pars(index).typ, rpaths, typ).flatMap[TypeResult[Type], Set[TypeResult[Type]]] {
+                  case SuccessResult(ntyp) =>
+                    if (typing.isSubType(ntyp, pars(index).typ) || ntyp == ValueType) {
+                      val posEx = if (!typing.isSubType(ntyp, pars(index).typ))
+                                      Set(ExceptionalResult(Error(TypeError(ntyp, pars(index).typ))))
+                                  else Set()
+                      posEx ++ Set(SuccessResult(DataType(dtname)))
+                    } else Set(ExceptionalResult(Error(TypeError(ntyp, pars(index).typ))))
+                  case ExceptionalResult(exres) => Set(ExceptionalResult(exres))
+                }
+              }
+            }
+          }
           otyp match {
-            case DataType(name) => ???
-            case ValueType => ???
+            case DataType(name) => updateFieldOnType(name)
+            case ValueType =>
+              Set(ExceptionalResult(Error(FieldError(otyp, fieldName)))) ++ module.datatypes.keySet.filter { dt =>
+                module.datatypes(dt).exists { cons =>
+                  val (_, pars) = module.constructors(cons)
+                  pars.exists(_.name == fieldName)
+                }
+              }.flatMap(updateFieldOnType)
+            case _ => Set(ExceptionalResult(Error(FieldError(otyp, fieldName))))
           }
       }
   }
