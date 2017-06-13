@@ -107,7 +107,7 @@ case class Executor(module: Module) {
             }
             else
               allPartitions(vals).flatMap(part =>
-                matchPattAll(Store(store.map.updated(sx, construct(part))),
+                matchPattAll(Store(store.map.updated(sx, construct(part))), // Optimization to avoid heavy back-tracking
                   restPartition(part, vals).get, sps, extract, construct, allPartitions, restPartition))
         }
     }

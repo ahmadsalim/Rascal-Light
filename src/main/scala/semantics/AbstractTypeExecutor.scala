@@ -6,7 +6,7 @@ import semantics.domains.common._
 import semantics.domains.concrete.TypeOps._
 import TypeMemory._
 import fs2.{Pure, Stream}
-import semantics.domains.concrete.TypeOps
+import fs2.util.syntax._
 import syntax._
 
 import scala.collection.immutable
@@ -87,7 +87,47 @@ case class AbstractTypeExecutor(module: Module) {
     case ValueType => true
   }
 
-  def merge(envss: List[Stream[Pure, Map[VarName, Type]]]): Set[Stream[Pure, Map[VarName, Type]]] = ???
+  def mergePairs(pairs: Stream[Pure, (Map[VarName, Type], Map[VarName, Type])]): Set[Stream[Pure, Map[VarName, Type]]] = {
+    // TODO Seems to lose the laziness, but I am still unsure how to recover that
+    pairs.toList.toSet[(Map[VarName, Type], Map[VarName, Type])].flatMap { case (env1, env2) =>
+      if (env1.keySet.intersect(env2.keySet).forall(x => possiblyEqTyps(env1(x), env2(x))))
+        Set[Stream[Pure, Map[VarName, Type]]](Stream(), Stream(env1 ++ env2))
+      else Set[Stream[Pure, Map[VarName, Type]]](Stream())
+    }
+  }
+
+  def merge(envss: List[Stream[Pure, Map[VarName, Type]]]): Set[Stream[Pure, Map[VarName, Type]]] = {
+    envss.foldLeft[Set[Stream[Pure, Map[VarName, Type]]]](Set(Stream(Map()))) { (envsset, merged) =>
+      envsset.flatMap { envs =>
+        val pairsEnvs = envs.flatMap(env => merged.map(menv => (env, menv)))
+        mergePairs(pairsEnvs)
+      }
+    }
+  }
+
+  def matchPattAll(store: TypeStore, scrtyp: Type, spatts: List[StarPatt], construct: Type => Type): Set[Stream[Pure, Map[syntax.VarName, Type]]] = {
+    spatts match {
+      case Nil => Set(Stream(), Stream(Map()))
+      case sp :: sps =>
+        sp match {
+          case OrdinaryPatt(p) =>
+            Set(Stream[Pure, Map[VarName, Type]]()) ++
+              matchPatt(store, scrtyp, p).flatMap { envp =>
+                matchPattAll(store, scrtyp, sps, construct).flatMap { envps =>
+                  merge(List(envp, envps))
+                }
+              }
+          case ArbitraryPatt(sx) =>
+            getVar(store, sx).fold {
+              matchPattAll(setVar(store, sx, construct(scrtyp)), scrtyp, sps, construct)
+            } { case (_, sxtyp) =>
+                if (possiblyEqTyps(scrtyp, sxtyp))
+                  Set(Stream()) ++ matchPattAll(store, scrtyp, sps, construct)
+                else Set(Stream())
+            }
+        }
+    }
+  }
 
   def matchPatt(store: TypeStore, scrtyp: Type, cspatt: Patt): Set[Stream[Pure, Map[syntax.VarName, Type]]] = cspatt match {
     case BasicPatt(b) =>
@@ -114,8 +154,18 @@ case class AbstractTypeExecutor(module: Module) {
         val inmatchs = matchPatt(store, scrtyp, patt)
         posEx ++ inmatchs.flatMap(inmatch => merge(List(Stream(Map(labelVar -> scrtyp)), inmatch)))
       } else Set(Stream())
-    case ListPatt(spatts) => ???
-    case SetPatt(spatts) => ???
+    case ListPatt(spatts) =>
+      scrtyp match {
+        case ListType(elementType) => matchPattAll(store, elementType, spatts.toList, ListType)
+        case ValueType => Set(Stream()) ++ matchPattAll(store, ValueType, spatts.toList, ListType)
+        case _ => Set(Stream())
+      }
+    case SetPatt(spatts) =>
+      scrtyp match {
+        case SetType(elementType) => matchPattAll(store, elementType, spatts.toList, SetType)
+        case ValueType => Set(Stream()) ++ matchPattAll(store, ValueType, spatts.toList, SetType)
+        case _ => Set(Stream())
+      }
     case NegationPatt(patt) =>
       matchPatt(store, scrtyp, patt).map { res =>
         res.head.toList match {
