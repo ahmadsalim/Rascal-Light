@@ -4,6 +4,7 @@ import semantics.domains.common.Lattice
 import syntax.{ListType, MapType, SetType, Type, ValueType, VoidType}
 
 object TypeOps {
+  // TODO What about pesky bottom? Maybe should be treated differently in lattice
   implicit def TypeLattice = new Lattice[Type] {
     override def bot: Type = VoidType
 

@@ -5,8 +5,11 @@ import semantics.domains.abstracting.TypeMemory.{TypeResult, TypeStore}
 import semantics.domains.common._
 import semantics.domains.concrete.TypeOps._
 import TypeMemory._
+import fs2.{Pure, Stream}
+import semantics.domains.concrete.TypeOps
 import syntax._
-import scalaz.std.option._
+
+import scala.collection.immutable
 
 // TODO: Convert lub(...flatMap) to map(...lub)
 case class AbstractTypeExecutor(module: Module) {
@@ -25,6 +28,102 @@ case class AbstractTypeExecutor(module: Module) {
     case FlatBot => FlatBot
     case FlatValue(st) => FlatValue(st.updated(x, (false, typ)))
     case FlatTop => FlatTop
+  }
+
+  private
+  def setVars(store: TypeStore, env: Map[VarName, Type]): TypeStore =
+    env.foldLeft(store) { (store_, varval) =>
+      val (x, vl) = varval
+      setVar(store_, x, vl)
+    }
+
+  private
+  def dropVars(store : TypeStore, xs: Set[VarName]): TypeStore = store match {
+    case FlatBot => FlatBot
+    case FlatValue(st) => FlatValue(st -- xs)
+    case FlatTop => FlatTop
+  }
+
+  private
+  def possiblySubtype(typ1: Type, typ2: Type): Boolean = typing.isSubType(typ1, typ2) || (typ1 == ValueType)
+
+  private
+  def possibleNotSubtype(typ1: Type, typ2: Type): Boolean = !typing.isSubType(typ1, typ2)
+
+  private
+  def possiblyEqTyps(typ1: Type, typ2: Type): Boolean = typ1 match {
+    case BaseType(IntType) => typ2 match {
+      case BaseType(IntType) | ValueType => true
+      case _ => false
+    }
+    case BaseType(StringType) => typ2 match {
+      case BaseType(StringType) | ValueType => true
+      case _ => false
+    }
+    case DataType(name1) => typ2 match {
+      case DataType(name2) if name1 == name2 => true
+      case ValueType => true
+      case _ => false
+    }
+    case ListType(ety1) => typ2 match {
+      case ListType(ety2) => possiblyEqTyps(ety1, ety2)
+      case ValueType => true
+      case _ => false
+    }
+    case SetType(ety1) => typ2 match {
+      case SetType(ety2) => possiblyEqTyps(ety1, ety2)
+      case ValueType => true
+      case _ => false
+    }
+    case MapType(kty1, vty1) => typ2 match {
+      case MapType(kty2, vty2) => possiblyEqTyps(kty1, kty2) && possiblyEqTyps(vty1, vty2)
+      case ValueType => true
+      case _ => false
+    }
+    case VoidType => typ2 match { // TODO Check correctness w.r.t. bottom
+      case VoidType | ValueType => true
+      case _ => false
+    }
+    case ValueType => true
+  }
+
+  def merge(envss: List[Stream[Pure, Map[VarName, Type]]]): Set[Stream[Pure, Map[VarName, Type]]] = ???
+
+  def matchPatt(store: TypeStore, scrtyp: Type, cspatt: Patt): Set[Stream[Pure, Map[syntax.VarName, Type]]] = cspatt match {
+    case BasicPatt(b) =>
+      b match {
+        case IntLit(i) => scrtyp match {
+          case BaseType(IntType) | ValueType => Set(Stream(), Stream(Map()))
+          case _ => Set(Stream())
+        }
+        case StringLit(s) => scrtyp match {
+          case BaseType(StringType) | ValueType => Set(Stream(), Stream(Map()))
+          case _ => Set(Stream())
+        }
+      }
+    case IgnorePatt => Set(Stream(Map()))
+    case VarPatt(name) =>
+      getVar(store, name).fold[Set[Stream[Pure, Map[syntax.VarName, Type]]]](Set(Stream(Map(name -> scrtyp)))) { case (_, xtyp) =>
+          if (possiblyEqTyps(scrtyp, xtyp)) Set(Stream(), Stream(Map()))
+          else Set(Stream())
+      }
+    case ConstructorPatt(name, pats) => ???
+    case LabelledTypedPatt(typ, labelVar, patt) =>
+      if (possiblySubtype(scrtyp, typ)) {
+        val posEx = if (possibleNotSubtype(scrtyp, typ)) Set(Stream()) else Set()
+        val inmatchs = matchPatt(store, scrtyp, patt)
+        posEx ++ inmatchs.flatMap(inmatch => merge(List(Stream(Map(labelVar -> scrtyp)), inmatch)))
+      } else Set(Stream())
+    case ListPatt(spatts) => ???
+    case SetPatt(spatts) => ???
+    case NegationPatt(patt) =>
+      matchPatt(store, scrtyp, patt).map { res =>
+        res.head.toList match {
+          case Nil => Stream(Map[VarName, Type]())
+          case _ :: _ => Stream()
+        }
+      }
+    case DescendantPatt(patt) => ???
   }
 
   def evalVar(store: TypeStore, x: VarName): TypeMemories[Type] = {
@@ -171,9 +270,9 @@ case class AbstractTypeExecutor(module: Module) {
             val tysparszipped = tys.zip(parameters.map(_.typ))
             val exRes: TypeMemory[Type] = TypeMemory(ExceptionalResult(Error(SignatureMismatch(name, tys, parameters.map(_.typ)))), store_)
             if (tys.length == parameters.length &&
-                  tysparszipped.forall { case (ty1, ty2) => typing.isSubType(ty1, ty2) || ty1 == ValueType }) {
+                  tysparszipped.forall { case (ty1, ty2) => possiblySubtype(ty1, ty2) }) {
               val sucsRes: TypeMemory[Type] = TypeMemory(SuccessResult(DataType(tyname)), store_)
-              if (tysparszipped.exists { case (ty1, ty2) => ty1 == ValueType && ty2 != ValueType })
+              if (tysparszipped.exists { case (ty1, ty2) => possibleNotSubtype(ty1, ty2) })
                 Set(TypeMemories(Set(exRes, sucsRes)))
               else Set(TypeMemories[Type](Set(sucsRes)))
             } else Set(TypeMemories[Type](Set(exRes)))
@@ -234,8 +333,8 @@ case class AbstractTypeExecutor(module: Module) {
             keymems.memories.flatMap[TypeMemories[Type], Set[TypeMemories[Type]]] { case TypeMemory(keyres, store_) =>
                 keyres match {
                   case SuccessResult(actualKeyType) =>
-                    if (actualKeyType == ValueType || typing.isSubType(actualKeyType, keyType)) {
-                      val posEx = if (!typing.isSubType(actualKeyType, keyType))
+                    if (possiblySubtype(actualKeyType, keyType)) {
+                      val posEx = if (possibleNotSubtype(actualKeyType, keyType))
                                        Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(Throw(DataType("nokey"))), store_))))
                                   else Set[TypeMemories[Type]]()
                       posEx ++ Set(TypeMemories[Type](Set(TypeMemory(SuccessResult(valueType), store_))))
@@ -350,7 +449,7 @@ case class AbstractTypeExecutor(module: Module) {
       path match {
         case MapAccessPath(ktyp) =>
           def updateOnMap(keyType: Type, valueType: Type): Set[TypeResult[Type]] = {
-            if (typing.isSubType(ktyp, keyType) || ktyp == ValueType) {
+            if (possiblySubtype(ktyp, keyType)) {
               Set(ExceptionalResult(Throw(DataType("nokey")))) ++
                 updatePath(valueType, rpaths, typ).map {
                   case SuccessResult(ntyp) =>
@@ -378,8 +477,8 @@ case class AbstractTypeExecutor(module: Module) {
               else {
                 updatePath(pars(index).typ, rpaths, typ).flatMap[TypeResult[Type], Set[TypeResult[Type]]] {
                   case SuccessResult(ntyp) =>
-                    if (typing.isSubType(ntyp, pars(index).typ) || ntyp == ValueType) {
-                      val posEx = if (!typing.isSubType(ntyp, pars(index).typ))
+                    if (possiblySubtype(ntyp, pars(index).typ)) {
+                      val posEx = if (possibleNotSubtype(ntyp, pars(index).typ))
                                       Set(ExceptionalResult(Error(TypeError(ntyp, pars(index).typ))))
                                   else Set()
                       posEx ++ Set(SuccessResult(DataType(dtname)))
@@ -425,8 +524,8 @@ case class AbstractTypeExecutor(module: Module) {
                       // TODO provide internal error instead of exception
                       val staticVarTy = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
                       val exRes = TypeMemory[Type](ExceptionalResult(Error(TypeError(newTyp, staticVarTy))), store_)
-                      if (typing.isSubType(newTyp, staticVarTy) || newTyp == ValueType) {
-                        val posExRes = if (staticVarTy != ValueType) Set(TypeMemories(Set(exRes))) else Set()
+                      if (possiblySubtype(newTyp, staticVarTy)) {
+                        val posExRes = if (possibleNotSubtype(newTyp, staticVarTy)) Set(TypeMemories(Set(exRes))) else Set()
                         posExRes ++ Set(TypeMemories(Set(TypeMemory(SuccessResult(newTyp), setVar(store_, path.varName, newTyp)))))
                       }
                       else Set(TypeMemories[Type](Set(exRes)))
@@ -459,11 +558,71 @@ case class AbstractTypeExecutor(module: Module) {
     })
   }
 
-  def evalSwitch(localVars: Map[VarName, Type], store: TypeStore, scrutinee: Expr, cases: Seq[Case]): TypeMemories[Type] = ???
+  def evalCases(localVars: Map[VarName, Type], store: TypeStore, scrval: Type, cases: List[Case]): TypeMemories[Type] = {
+    def evalCase(store: TypeStore, action: Expr, envs: Stream[Pure, Map[VarName, Type]]): TypeMemories[Type] = {
+      envs.head.toList match {
+        case Nil => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(Fail), store)))
+        case env :: _ =>
+          val actmems = evalLocal(localVars, setVars(store, env), action)
+          Lattice[TypeMemories[Type]].lub(actmems.memories.map { case TypeMemory(actres, store_) =>
+              actres match {
+                case ExceptionalResult(Fail) => evalCase(store, action, envs.tail)
+                case _ => TypeMemories[Type](Set(TypeMemory(actres, dropVars(store_, env.keySet))))
+              }
+          })
+      }
+    }
+    cases match {
+      case Nil => TypeMemories(Set(TypeMemory(ExceptionalResult(Fail), store)))
+      case Case(cspatt, csaction) :: css =>
+        val envss = matchPatt(store, scrval, cspatt)
+        Lattice[TypeMemories[Type]].lub(envss.map { envs =>
+          val casemems: TypeMemories[Type] = evalCase(store, csaction, envs)
+          Lattice[TypeMemories[Type]].lub(casemems.memories.map { case TypeMemory(cres, store_) =>
+            cres match {
+              case ExceptionalResult(Fail) => evalCases(localVars, store, scrval, css)
+              case _ => TypeMemories[Type](Set(TypeMemory(cres, store_)))
+            }
+          })
+        })
+    }
+  }
+
+  def evalSwitch(localVars: Map[VarName, Type], store: TypeStore, scrutinee: Expr, cases: Seq[Case]): TypeMemories[Type] = {
+    val scrmems = evalLocal(localVars, store, scrutinee)
+    Lattice[TypeMemories[Type]].lub(scrmems.memories.flatMap { case TypeMemory(scrres, store__) =>
+        scrres match {
+          case SuccessResult(scrval) =>
+            val casemems: TypeMemories[Type] = evalCases(localVars, store__, scrval, cases.toList)
+            Set(Lattice[TypeMemories[Type]].lub(casemems.memories.map { case TypeMemory(caseres, store_) =>
+                caseres match {
+                  case SuccessResult(caseval) =>
+                    TypeMemories[Type](Set(TypeMemory(SuccessResult(caseval), store_)))
+                  case ExceptionalResult(exres) =>
+                    exres match {
+                      case Fail => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_)))
+                      case _ => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_)))
+                    }
+                }
+            }))
+          case ExceptionalResult(exres) => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__))))
+        }
+    })
+  }
 
   def evalVisit(localVars: Map[VarName, Type], store: TypeStore, strategy: Strategy, scrutinee: Expr, cases: Seq[Case]): TypeMemories[Type] = ???
 
-  def evalBlock(localVars: Map[VarName, Type], store: TypeStore, vardefs: Seq[Parameter], exprs: Seq[Expr]): TypeMemories[Type] = ???
+  def evalBlock(localVars: Map[VarName, Type], store: TypeStore, vardefs: Seq[Parameter], exprs: Seq[Expr]): TypeMemories[Type] = {
+    val localVars_ = localVars ++ vardefs.map(par => par.name -> par.typ)
+    val resmems = evalLocalAll(localVars_, store, exprs)
+    Lattice[TypeMemories[Type]].lub(resmems.memories.map[TypeMemories[Type], Set[TypeMemories[Type]]] { case TypeMemory(res, store__) =>
+        val store_ = dropVars(store__, vardefs.map(_.name).toSet)
+        res match {
+          case SuccessResult(typs) => TypeMemories(Set(TypeMemory(SuccessResult(typs.lastOption.getOrElse(VoidType)), store_)))
+          case ExceptionalResult(exres) => TypeMemories(Set(TypeMemory(ExceptionalResult(exres), store_)))
+        }
+    })
+  }
 
   def evalFor(localVars: Map[VarName, Type], store: TypeStore, enum: Generator, body: Expr): TypeMemories[Type] = ???
 
@@ -516,7 +675,7 @@ case class AbstractTypeExecutor(module: Module) {
               Set(Lattice[TypeMemories[Type]].lub(finmems.memories.flatMap { case TypeMemory(finres, store_) =>
                 finres match {
                   case SuccessResult(_) => Set(TypeMemories[Type](Set(TypeMemory(SuccessResult(VoidType), store_))))
-                  case ExceptionalResult(exres) => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_))))
+                  case ExceptionalResult(exres_) => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres_), store_))))
                 }
               }))
             case _ => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__))))
