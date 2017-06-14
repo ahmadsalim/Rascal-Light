@@ -5,11 +5,9 @@ import semantics.domains.abstracting.TypeMemory.{TypeResult, TypeStore}
 import semantics.domains.common._
 import semantics.domains.concrete.TypeOps._
 import TypeMemory._
-import fs2.{Pure, Stream}
-import fs2.util.syntax._
 import syntax._
-
-import scala.collection.immutable
+import scalaz.syntax.traverse._
+import scalaz.std.list._
 
 // TODO: Convert lub(...flatMap) to map(...lub)
 case class AbstractTypeExecutor(module: Module) {
@@ -87,17 +85,18 @@ case class AbstractTypeExecutor(module: Module) {
     case ValueType => true
   }
 
-  def mergePairs(pairs: Stream[Pure, (Map[VarName, Type], Map[VarName, Type])]): Set[Stream[Pure, Map[VarName, Type]]] = {
+  // Use Set instead of Stream for nicer equality, and easier structural traversal when having alternatives
+  def mergePairs(pairs: Set[(Map[VarName, Type], Map[VarName, Type])]): Set[Set[Map[VarName, Type]]] = {
     // TODO Seems to lose the laziness, but I am still unsure how to recover that
-    pairs.toList.toSet[(Map[VarName, Type], Map[VarName, Type])].flatMap { case (env1, env2) =>
+    pairs.flatMap { case (env1, env2) =>
       if (env1.keySet.intersect(env2.keySet).forall(x => possiblyEqTyps(env1(x), env2(x))))
-        Set[Stream[Pure, Map[VarName, Type]]](Stream(), Stream(env1 ++ env2))
-      else Set[Stream[Pure, Map[VarName, Type]]](Stream())
+        Set[Set[Map[VarName, Type]]](Set(), Set(env1 ++ env2))
+      else Set[Set[Map[VarName, Type]]](Set())
     }
   }
 
-  def merge(envss: List[Stream[Pure, Map[VarName, Type]]]): Set[Stream[Pure, Map[VarName, Type]]] = {
-    envss.foldLeft[Set[Stream[Pure, Map[VarName, Type]]]](Set(Stream(Map()))) { (envsset, merged) =>
+  def merge(envss: List[Set[Map[VarName, Type]]]): Set[Set[Map[VarName, Type]]] = {
+    envss.foldLeft[Set[Set[Map[VarName, Type]]]](Set(Set(Map()))) { (envsset, merged) =>
       envsset.flatMap { envs =>
         val pairsEnvs = envs.flatMap(env => merged.map(menv => (env, menv)))
         mergePairs(pairsEnvs)
@@ -105,13 +104,13 @@ case class AbstractTypeExecutor(module: Module) {
     }
   }
 
-  def matchPattAll(store: TypeStore, scrtyp: Type, spatts: List[StarPatt], construct: Type => Type): Set[Stream[Pure, Map[syntax.VarName, Type]]] = {
+  def matchPattAll(store: TypeStore, scrtyp: Type, spatts: List[StarPatt], construct: Type => Type): Set[Set[Map[syntax.VarName, Type]]] = {
     spatts match {
-      case Nil => Set(Stream(), Stream(Map()))
+      case Nil => Set(Set(), Set(Map()))
       case sp :: sps =>
         sp match {
           case OrdinaryPatt(p) =>
-            Set(Stream[Pure, Map[VarName, Type]]()) ++
+            Set(Set[Map[VarName, Type]]()) ++
               matchPatt(store, scrtyp, p).flatMap { envp =>
                 matchPattAll(store, scrtyp, sps, construct).flatMap { envps =>
                   merge(List(envp, envps))
@@ -122,58 +121,76 @@ case class AbstractTypeExecutor(module: Module) {
               matchPattAll(setVar(store, sx, construct(scrtyp)), scrtyp, sps, construct)
             } { case (_, sxtyp) =>
                 if (possiblyEqTyps(scrtyp, sxtyp))
-                  Set(Stream()) ++ matchPattAll(store, scrtyp, sps, construct)
-                else Set(Stream())
+                  Set(Set[Map[VarName, Type]]()) ++ matchPattAll(store, scrtyp, sps, construct)
+                else Set(Set())
             }
         }
     }
   }
 
-  def matchPatt(store: TypeStore, scrtyp: Type, cspatt: Patt): Set[Stream[Pure, Map[syntax.VarName, Type]]] = cspatt match {
+  def typeChildren(ty: Type): Set[List[Type]] = ???
+
+  def matchPatt(store: TypeStore, scrtyp: Type, cspatt: Patt): Set[Set[Map[syntax.VarName, Type]]] = cspatt match {
     case BasicPatt(b) =>
       b match {
-        case IntLit(i) => scrtyp match {
-          case BaseType(IntType) | ValueType => Set(Stream(), Stream(Map()))
-          case _ => Set(Stream())
+        case IntLit(_) => scrtyp match {
+          case BaseType(IntType) | ValueType => Set(Set(),Set(Map()))
+          case _ => Set(Set())
         }
-        case StringLit(s) => scrtyp match {
-          case BaseType(StringType) | ValueType => Set(Stream(), Stream(Map()))
-          case _ => Set(Stream())
+        case StringLit(_) => scrtyp match {
+          case BaseType(StringType) | ValueType => Set(Set(), Set(Map()))
+          case _ => Set(Set())
         }
       }
-    case IgnorePatt => Set(Stream(Map()))
+    case IgnorePatt => Set(Set(Map()))
     case VarPatt(name) =>
-      getVar(store, name).fold[Set[Stream[Pure, Map[syntax.VarName, Type]]]](Set(Stream(Map(name -> scrtyp)))) { case (_, xtyp) =>
-          if (possiblyEqTyps(scrtyp, xtyp)) Set(Stream(), Stream(Map()))
-          else Set(Stream())
+      getVar(store, name).fold[Set[Set[Map[syntax.VarName, Type]]]](Set(Set(Map(name -> scrtyp)))) { case (_, xtyp) =>
+          if (possiblyEqTyps(scrtyp, xtyp)) Set(Set(), Set(Map()))
+          else Set(Set())
       }
     case ConstructorPatt(name, pats) => ???
     case LabelledTypedPatt(typ, labelVar, patt) =>
       if (possiblySubtype(scrtyp, typ)) {
-        val posEx = if (possibleNotSubtype(scrtyp, typ)) Set(Stream()) else Set()
+        val posEx = if (possibleNotSubtype(scrtyp, typ)) Set(Set[Map[VarName, Type]]()) else Set()
         val inmatchs = matchPatt(store, scrtyp, patt)
-        posEx ++ inmatchs.flatMap(inmatch => merge(List(Stream(Map(labelVar -> scrtyp)), inmatch)))
-      } else Set(Stream())
+        posEx ++ inmatchs.flatMap(inmatch => merge(List(Set(Map(labelVar -> scrtyp)), inmatch)))
+      } else Set(Set())
     case ListPatt(spatts) =>
       scrtyp match {
         case ListType(elementType) => matchPattAll(store, elementType, spatts.toList, ListType)
-        case ValueType => Set(Stream()) ++ matchPattAll(store, ValueType, spatts.toList, ListType)
-        case _ => Set(Stream())
+        case ValueType => Set(Set[Map[VarName, Type]]()) ++ matchPattAll(store, ValueType, spatts.toList, ListType)
+        case _ => Set(Set())
       }
     case SetPatt(spatts) =>
       scrtyp match {
         case SetType(elementType) => matchPattAll(store, elementType, spatts.toList, SetType)
-        case ValueType => Set(Stream()) ++ matchPattAll(store, ValueType, spatts.toList, SetType)
-        case _ => Set(Stream())
+        case ValueType => Set(Set[Map[VarName, Type]]()) ++ matchPattAll(store, ValueType, spatts.toList, SetType)
+        case _ => Set(Set())
       }
     case NegationPatt(patt) =>
-      matchPatt(store, scrtyp, patt).map { res =>
-        res.head.toList match {
-          case Nil => Stream(Map[VarName, Type]())
-          case _ :: _ => Stream()
-        }
+      matchPatt(store, scrtyp, patt).map { envs =>
+        if (envs.isEmpty) Set(Map[VarName, Type]()) else Set[Map[VarName, Type]]()
       }
-    case DescendantPatt(patt) => ???
+    case DescendantPatt(patt) =>
+      type Res = Set[Set[Map[syntax.VarName, Type]]]
+      def memoFix(typ: Type, memo: Map[Type, Res]): Res  = {
+        memo.getOrElse(typ, {
+          /*
+          matchPatt(store, typ, patt).flatMap { selfenvs =>
+            typeChildren(typ).flatMap { chtyps =>
+              chtyps.flatMap { cty =>
+                val (cenvss, cmemo) = memoFix(cty, memo)
+                val newres = cenvss.map { cenv =>
+                  selfenvs ++ cenv
+                }
+                newres
+              }
+            }
+          }*/
+          ???
+        })
+      }
+      memoFix(scrtyp, Map())
   }
 
   def evalVar(store: TypeStore, x: VarName): TypeMemories[Type] = {
@@ -245,11 +262,11 @@ case class AbstractTypeExecutor(module: Module) {
     val invOp = ExceptionalResult(Error(InvalidOperationError(op, List(lhtyp, rhtyp))))
     (lhtyp, op, rhtyp) match {
       case (_, "==", _) => Set(SuccessResult(DataType("bool")))
-      case (lhvl, "!=", rhvl) => Set(SuccessResult(DataType("bool")))
-      case (lhvl, "in", ListType(ty)) => Set(SuccessResult(DataType("bool")))
-      case (lhvl, "in", SetType(ty)) => Set(SuccessResult(DataType("bool")))
-      case (lhvl, "in", MapType(kty, vty)) => Set(SuccessResult(DataType("bool")))
-      case (lhvl, "in", ValueType) => Set(invOp, SuccessResult(DataType("bool")))
+      case (_, "!=", _) => Set(SuccessResult(DataType("bool")))
+      case (_, "in", ListType(_)) => Set(SuccessResult(DataType("bool")))
+      case (_, "in", SetType(_)) => Set(SuccessResult(DataType("bool")))
+      case (_ , "in", MapType(_, _)) => Set(SuccessResult(DataType("bool")))
+      case (_ , "in", ValueType) => Set(invOp, SuccessResult(DataType("bool")))
       case (lhvl, "notin", rhvl) => evalBinaryOp(lhvl, "in", rhvl).flatMap[TypeResult[Type], Set[TypeResult[Type]]] {
         case SuccessResult(ty) => evalUnaryOp("!", ty)
         case ExceptionalResult(exres) => Set(ExceptionalResult(exres))
@@ -521,7 +538,7 @@ case class AbstractTypeExecutor(module: Module) {
           def updateFieldOnType(dtname: TypeName): Set[TypeResult[Type]] = {
             val conss = module.datatypes(dtname)
             conss.toSet[ConsName].flatMap[TypeResult[Type], Set[TypeResult[Type]]] { cons =>
-              val (_, pars) = module.constructors(dtname)
+              val (_, pars) = module.constructors(cons)
               val index = pars.indexWhere(_.name == fieldName)
               if (index < 0) { Set(ExceptionalResult(Error(FieldError(otyp, fieldName)))) }
               else {
@@ -609,17 +626,15 @@ case class AbstractTypeExecutor(module: Module) {
   }
 
   def evalCases(localVars: Map[VarName, Type], store: TypeStore, scrval: Type, cases: List[Case]): TypeMemories[Type] = {
-    def evalCase(store: TypeStore, action: Expr, envs: Stream[Pure, Map[VarName, Type]]): TypeMemories[Type] = {
-      envs.head.toList match {
-        case Nil => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(Fail), store)))
-        case env :: _ =>
-          val actmems = evalLocal(localVars, setVars(store, env), action)
-          Lattice[TypeMemories[Type]].lub(actmems.memories.map { case TypeMemory(actres, store_) =>
-              actres match {
-                case ExceptionalResult(Fail) => evalCase(store, action, envs.tail)
-                case _ => TypeMemories[Type](Set(TypeMemory(actres, dropVars(store_, env.keySet))))
-              }
-          })
+    def evalCase(store: TypeStore, action: Expr, envs: Set[Map[VarName, Type]]): TypeMemories[Type] = {
+      envs.headOption.fold(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(Fail), store)))) { env =>
+        val actmems = evalLocal(localVars, setVars(store, env), action)
+        Lattice[TypeMemories[Type]].lub(actmems.memories.map { case TypeMemory(actres, store_) =>
+          actres match {
+            case ExceptionalResult(Fail) => evalCase(store, action, envs.tail)
+            case _ => TypeMemories[Type](Set(TypeMemory(actres, dropVars(store_, env.keySet))))
+          }
+        })
       }
     }
     cases match {
@@ -699,7 +714,7 @@ case class AbstractTypeExecutor(module: Module) {
             exres match {
               case Throw(throwtyp) =>
                 val store_ = setVar(store__, catchVar, throwtyp)
-                Set(evalLocal(localVars, store, catchB))
+                Set(evalLocal(localVars, store_, catchB))
               case _ => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__))))
             }
         }
@@ -720,7 +735,7 @@ case class AbstractTypeExecutor(module: Module) {
           }))
         case ExceptionalResult(exres) =>
           exres match {
-            case Throw(typ) =>
+            case Throw(_) =>
               val finmems = evalLocal(localVars, store__, finallyB)
               Set(Lattice[TypeMemories[Type]].lub(finmems.memories.flatMap { case TypeMemory(finres, store_) =>
                 finres match {
