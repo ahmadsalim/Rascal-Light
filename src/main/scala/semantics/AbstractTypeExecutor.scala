@@ -129,7 +129,7 @@ case class AbstractTypeExecutor(module: Module) {
   }
 
   def typeChildren(ty: Type): Set[List[Type]] = ty match {
-    case BaseType(b) => Set(List())
+    case BaseType(_) => Set(List())
     case DataType(name) =>
       module.datatypes(name).map(module.constructors).map(_._2.map(_.typ)).toSet
     case ListType(elementType) => Set(List(elementType))
@@ -711,7 +711,38 @@ case class AbstractTypeExecutor(module: Module) {
     })
   }
 
-  def evalFor(localVars: Map[VarName, Type], store: TypeStore, enum: Generator, body: Expr): TypeMemories[Type] = ???
+  def evalGenerator(localVars: Map[VarName, Type], store: TypeStore, gen: Generator): TypeMemories[Set[Set[Map[VarName, Type]]]] = {
+    gen match {
+      case MatchAssign(patt, target) =>
+        val tmems = evalLocal(localVars, store, target)
+        TypeMemories(tmems.memories.map { case TypeMemory(tres, store_) =>
+          tres match {
+            case SuccessResult(ttyp) => TypeMemory[Set[Set[Map[VarName, Type]]]](SuccessResult(matchPatt(store_, ttyp, patt)), store_)
+            case ExceptionalResult(exres) => TypeMemory[Set[Set[Map[VarName, Type]]]](ExceptionalResult(exres), store_)
+          }
+        })
+      case EnumAssign(varname, target) => ???
+    }
+  }
+
+  def evalEach(localVars: Map[VarName, Type], store: TypeStore, envs: Set[Set[Map[VarName, Type]]], body: Expr): TypeMemories[Type] = ???
+
+  def evalFor(localVars: Map[VarName, Type], store: TypeStore, gen: Generator, body: Expr): TypeMemories[Type] = {
+    val genmems = evalGenerator(localVars, store, gen)
+    Lattice[TypeMemories[Type]].lub(genmems.memories.flatMap { case TypeMemory(genres, store__) =>
+      genres match {
+        case SuccessResult(envs) =>
+          val bodymems = evalEach(localVars, store__, envs, body)
+          Set(TypeMemories(bodymems.memories.map[TypeMemory[Type], Set[TypeMemory[Type]]] { case TypeMemory(bodyres, store_) =>
+            bodyres match {
+              case SuccessResult(_) => TypeMemory(SuccessResult(VoidType), store_)
+              case ExceptionalResult(exres) => TypeMemory(ExceptionalResult(exres), store_)
+            }
+          }))
+        case ExceptionalResult(exres) => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__))))
+      }
+    })
+  }
 
   def evalWhile(localVars: Map[VarName, Type], store: TypeStore, cond: Expr, body: Expr): TypeMemories[Type] = ???
 
