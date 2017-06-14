@@ -128,7 +128,17 @@ case class AbstractTypeExecutor(module: Module) {
     }
   }
 
-  def typeChildren(ty: Type): Set[List[Type]] = ???
+  def typeChildren(ty: Type): Set[List[Type]] = ty match {
+    case BaseType(b) => Set(List())
+    case DataType(name) =>
+      module.datatypes(name).map(module.constructors).map(_._2.map(_.typ)).toSet
+    case ListType(elementType) => Set(List(elementType))
+    case SetType(elementType) => Set(List(elementType))
+    case MapType(keyType, valueType) => Set(List(keyType, valueType))
+    case VoidType => Set(List())
+    case ValueType => Set(List(ValueType))
+      // It can have any child, and for current analysis there is no point in duplication of the same type
+  }
 
   def matchPatt(store: TypeStore, scrtyp: Type, cspatt: Patt): Set[Set[Map[syntax.VarName, Type]]] = cspatt match {
     case BasicPatt(b) =>
@@ -144,11 +154,23 @@ case class AbstractTypeExecutor(module: Module) {
       }
     case IgnorePatt => Set(Set(Map()))
     case VarPatt(name) =>
-      getVar(store, name).fold[Set[Set[Map[syntax.VarName, Type]]]](Set(Set(Map(name -> scrtyp)))) { case (_, xtyp) =>
+      getVar(store, name).fold[Set[Set[Map[VarName, Type]]]](Set(Set(Map(name -> scrtyp)))) { case (_, xtyp) =>
           if (possiblyEqTyps(scrtyp, xtyp)) Set(Set(), Set(Map()))
           else Set(Set())
       }
-    case ConstructorPatt(name, pats) => ???
+    case ConstructorPatt(consname, pats) =>
+      val (dt, pars) = module.constructors(consname)
+      def posMatch = {
+          val matched = pats.toList.zip(pars.map(_.typ)).traverseU { case (p,t) => matchPatt(store, t, p).toList }.toSet
+          matched.flatMap(merge)
+        }
+      scrtyp match {
+        case DataType(name) if name == dt =>
+          (if (module.constructors.size == 1) Set[Set[Map[VarName,Type]]]()
+           else Set(Set[Map[VarName, Type]]())) ++ posMatch
+        case ValueType => Set(Set[Map[VarName, Type]]()) ++ posMatch
+        case _ => Set(Set())
+      }
     case LabelledTypedPatt(typ, labelVar, patt) =>
       if (possiblySubtype(scrtyp, typ)) {
         val posEx = if (possibleNotSubtype(scrtyp, typ)) Set(Set[Map[VarName, Type]]()) else Set()
