@@ -174,21 +174,21 @@ case class AbstractTypeExecutor(module: Module) {
     case DescendantPatt(patt) =>
       type Res = Set[Set[Map[syntax.VarName, Type]]]
       def memoFix(typ: Type, memo: Map[Type, Res]): Res  = {
-        memo.getOrElse(typ, {
-          /*
-          matchPatt(store, typ, patt).flatMap { selfenvs =>
+        def go(prevres: Res): Res = {
+          val newres = matchPatt(store, typ, patt).flatMap { selfenvs =>
             typeChildren(typ).flatMap { chtyps =>
               chtyps.flatMap { cty =>
-                val (cenvss, cmemo) = memoFix(cty, memo)
-                val newres = cenvss.map { cenv =>
+                val cenvss = memoFix(cty, memo.updated(typ, prevres))
+                cenvss.map { cenv =>
                   selfenvs ++ cenv
                 }
-                newres
               }
             }
-          }*/
-          ???
-        })
+          }
+          if (newres == prevres) newres
+          else go(prevres union newres)
+        }
+        memo.getOrElse(typ, go(Set()))
       }
       memoFix(scrtyp, Map())
   }
