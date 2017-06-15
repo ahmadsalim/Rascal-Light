@@ -234,14 +234,14 @@ case class Executor(module: Module) {
     vl match {
       case BasicValue(b) =>
         if (cvs.isEmpty) BasicValue(b).point[Result] else ExceptionalResult(Error(ReconstructError(vl, cvs)))
-      case ConstructorValue(name, vals) =>
+      case ConstructorValue(name, _) =>
         val (_, parameters) = module.constructors(name)
         if (cvs.length == parameters.length &&
               cvs.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled)) ConstructorValue(name, cvs).point[Result]
         else ExceptionalResult(Error(ReconstructError(vl, cvs)))
-      case ListValue(vals) => ListValue(cvs).point[Result]
-      case SetValue(vals) => SetValue(cvs.toSet).point[Result]
-      case MapValue(vals) => MapValue(cvs.take(cvs.length/2).zip(cvs.drop(cvs.length/2)).toMap).point[Result]
+      case ListValue(_) => ListValue(cvs).point[Result]
+      case SetValue(_) => SetValue(cvs.toSet).point[Result]
+      case MapValue(_) => MapValue(cvs.take(cvs.length/2).zip(cvs.drop(cvs.length/2)).toMap).point[Result]
       case BottomValue =>
         if (cvs.isEmpty) BottomValue.point[Result] else ExceptionalResult(Error(ReconstructError(vl, cvs)))
     }
@@ -372,7 +372,7 @@ case class Executor(module: Module) {
       case env :: _ =>
         val (bodyres, store_) = evalLocal(localVars, Store(store.map ++ env), body)
         bodyres match {
-          case SuccessResult(vl) =>
+          case SuccessResult(_) =>
             evalEach(localVars, store_, envs.tail, body)
           case ExceptionalResult(exres) =>
             exres match {
@@ -434,7 +434,7 @@ case class Executor(module: Module) {
           case SuccessResult(DataPath(vn, accessPaths)) =>
             val (keyres, store_) = evalLocal(localVars, store, ekey)
             (keyres.map(keyv => DataPath(vn, accessPaths :+ MapAccessPath(keyv))), store_)
-          case ExceptionalResult(exres) => (targetres, store__)
+          case ExceptionalResult(_) => (targetres, store__)
         }
     }
   }
@@ -914,7 +914,7 @@ object Executor {
   private
   def executeTests(executor: Executor, tests: List[TestDef], store: Store) = {
     tests.foldLeftM[String \/ ?, List[VarName]](List()) { (failed, test) =>
-      val (res, store_) = executor.eval(store, test.body)
+      val (res, _) = executor.eval(store, test.body)
       res match {
         case SuccessResult(ConstructorValue("true", Seq()))
              | ExceptionalResult(Return(ConstructorValue("true", Seq()))) => failed.right
