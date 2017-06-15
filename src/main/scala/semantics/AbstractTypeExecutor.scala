@@ -1,11 +1,12 @@
 package semantics
 
-import semantics.domains.abstracting.{TypeMemories, TypeMemory}
-import semantics.domains.abstracting.TypeMemory.{TypeResult, TypeStore}
+import semantics.domains.abstracting._
+import semantics.domains.abstracting.TypeMemory.TypeResult
 import semantics.domains.common._
 import semantics.domains.concrete.TypeOps._
 import TypeMemory._
 import syntax._
+
 import scalaz.syntax.traverse._
 import scalaz.std.list._
 
@@ -16,16 +17,14 @@ case class AbstractTypeExecutor(module: Module) {
 
   private
   def getVar(store: TypeStore, x: VarName): Option[(Boolean, Type)] = store match {
-    case FlatBot => None
-    case FlatValue(storemap) => storemap.get(x)
-    case FlatTop => Some((true, Lattice[Type].top))
+    case TypeStoreV(storemap) => storemap.get(x)
+    case TypeStoreTop => Some((true, Lattice[Type].top))
   }
 
   private
   def setVar(store: TypeStore, x: VarName, typ: Type): TypeStore = store match {
-    case FlatBot => FlatBot
-    case FlatValue(st) => FlatValue(st.updated(x, (false, typ)))
-    case FlatTop => FlatTop
+    case TypeStoreV(st) => TypeStoreV(st.updated(x, (false, typ)))
+    case TypeStoreTop => TypeStoreTop
   }
 
   private
@@ -37,9 +36,8 @@ case class AbstractTypeExecutor(module: Module) {
 
   private
   def dropVars(store : TypeStore, xs: Set[VarName]): TypeStore = store match {
-    case FlatBot => FlatBot
-    case FlatValue(st) => FlatValue(st -- xs)
-    case FlatTop => FlatTop
+    case TypeStoreV(st) => TypeStoreV(st -- xs)
+    case TypeStoreTop => TypeStoreTop
   }
 
   private
@@ -605,7 +603,9 @@ case class AbstractTypeExecutor(module: Module) {
                       Set(SuccessResult(typ))
                     } else {
                       getVar(store_, path.varName).fold[Set[TypeResult[Type]]](Set(ExceptionalResult(Error(UnassignedVarError(path.varName))))) {
-                        case (_, otyp) => updatePath(otyp, path.accessPaths, typ)
+                        case (possUnassigned, otyp) =>
+                          (if (possUnassigned) Set(ExceptionalResult(Error(UnassignedVarError(path.varName)))) else Set()) ++
+                            updatePath(otyp, path.accessPaths, typ)
                       }
                     }
                   newTypRes.flatMap {
@@ -721,11 +721,66 @@ case class AbstractTypeExecutor(module: Module) {
             case ExceptionalResult(exres) => TypeMemory[Set[Set[Map[VarName, Type]]]](ExceptionalResult(exres), store_)
           }
         })
-      case EnumAssign(varname, target) => ???
+      case EnumAssign(varname, target) =>
+        val tmems = evalLocal(localVars, store, target)
+        val flatmems = Lattice[TypeMemories[Flat[Set[Set[Map[VarName, Type]]]]]].lub(
+          tmems.memories.flatMap[TypeMemories[Flat[Set[Set[Map[VarName, Type]]]]], Set[TypeMemories[Flat[Set[Set[Map[VarName, Type]]]]]]] {
+            case TypeMemory(tres, store_) =>
+              tres match {
+                case SuccessResult(ttyp) =>
+                  ttyp match {
+                    case ListType(elementType) =>
+                      Set(TypeMemories(Set(TypeMemory(SuccessResult(FlatValue(Set(Set(Map(varname -> elementType))))), store_))))
+                    case SetType(elementType) =>
+                      Set(TypeMemories(Set(TypeMemory(SuccessResult(FlatValue(Set(Set(Map(varname -> elementType))))), store_))))
+                    case MapType(keyType, _) =>
+                      Set(TypeMemories(Set(TypeMemory(SuccessResult(FlatValue(Set(Set(Map(varname -> keyType))))), store_))))
+                    case ValueType =>
+                      Set(TypeMemories(Set(TypeMemory(ExceptionalResult(Error(NotEnumerableError(ttyp))), store_),
+                        TypeMemory(SuccessResult(FlatValue(Set(Set(Map(varname -> ValueType))))), store_))))
+                    case _ =>
+                      Set(TypeMemories(Set(TypeMemory(ExceptionalResult(Error(NotEnumerableError(ttyp))), store_))))
+                  }
+                case ExceptionalResult(exres) =>
+                  Set(TypeMemories[Flat[Set[Set[Map[VarName, Type]]]]](Set(TypeMemory(ExceptionalResult(exres), store_))))
+              }
+        })
+        unflatMems(flatmems)
     }
   }
 
-  def evalEach(localVars: Map[VarName, Type], store: TypeStore, envs: Set[Set[Map[VarName, Type]]], body: Expr): TypeMemories[Type] = ???
+  def evalEach(localVars: Map[VarName, Type], store: TypeStore, envss: Set[Set[Map[VarName, Type]]], body: Expr): TypeMemories[Type] = {
+    def memoFix(envs: Set[Map[VarName, Type]]): TypeMemories[Type] = {
+      def go(prevStore: TypeStore): TypeMemories[Type] = {
+        def itermems: TypeMemories[Type] = {
+          // We overapproximate order, cardinality and content, so we have to try all possible combinations in parallel
+          val bodymems = Lattice[TypeMemories[Type]].lub(envs.map { env =>
+            evalLocal(localVars, setVars(prevStore, env), body)
+          })
+          Lattice[TypeMemories[Type]].lub(bodymems.memories.flatMap { case TypeMemory(bodyres, store_) =>
+            val widenStore = Lattice[TypeStore].widen(prevStore, store_, 10)
+            def goMore = if (Lattice[TypeStore].<=(widenStore, prevStore))
+                            TypeMemories[Type](Set(TypeMemory(SuccessResult(VoidType), widenStore)))
+                         else go(widenStore)
+            bodyres match {
+              case SuccessResult(_) => Set(goMore)
+              case ExceptionalResult(exres) =>
+                exres match {
+                  case Break => Set(TypeMemories[Type](Set(TypeMemory(SuccessResult(VoidType), store_))))
+                  case Continue => Set(goMore)
+                  // We have to try everything again because of possible duplicates (although perhaps, it should only be
+                  // envs, because it is not possible to change alternative through an iteration
+                  case _ => Set(TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_))))
+                }
+            }
+          })
+        }
+        Lattice[TypeMemories[Type]].lub(TypeMemories[Type](Set(TypeMemory(SuccessResult(VoidType), prevStore))), itermems)
+      }
+      go(store)
+    }
+    Lattice[TypeMemories[Type]].lub(envss.map { envs => memoFix(envs) })
+  }
 
   def evalFor(localVars: Map[VarName, Type], store: TypeStore, gen: Generator, body: Expr): TypeMemories[Type] = {
     val genmems = evalGenerator(localVars, store, gen)

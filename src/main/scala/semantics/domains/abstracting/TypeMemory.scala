@@ -1,16 +1,71 @@
 package semantics.domains.abstracting
 
-import semantics.domains.abstracting.TypeMemory.{TypeResult, TypeStore}
+import semantics.domains.abstracting.TypeMemory.{TypeResult}
 import semantics.domains.common._
 import syntax.{Type, VarName}
 import semantics.domains.concrete.TypeOps._
+
+sealed trait TypeStore
+case object TypeStoreTop extends TypeStore
+case class TypeStoreV(vals: Map[VarName, (Boolean, Type)]) extends TypeStore
 
 case class TypeMemory[T](result: TypeResult[T], store: TypeStore)
 case class TypeMemories[T](memories: Set[TypeMemory[T]])
 
 object TypeMemory {
   type TypeResult[T] = ResultV[Type, T]
-  type TypeStore = Flat[Map[VarName, (Boolean, Type)]] // TODO Use custom merge operation instead of Flat
+
+  implicit def TypeStoreLattice = new Lattice[TypeStore] {
+    override def bot: TypeStore = TypeStoreV(Map())
+
+    override def top: TypeStore = TypeStoreTop
+
+    private def upperBound(a1: TypeStore, a2: TypeStore, tOp : (Type, Type) => Type) = {
+      (a1, a2) match {
+        case (TypeStoreTop, _) | (_, TypeStoreTop) => TypeStoreTop
+        case (TypeStoreV(vals1), TypeStoreV(vals2)) =>
+          val allVars = vals1.keySet ++ vals2.keySet
+          TypeStoreV(allVars.map { x =>
+            vals1.get(x).fold(x -> (true, vals2(x)._2)) { case (pu1, ty1) =>
+              vals2.get(x).fold(x -> (true, ty1)) { case (pu2, ty2) =>
+                x -> (pu1 || pu2, tOp(ty1, ty2))
+              }
+            }
+          }.toMap)
+      }
+    }
+
+    override def lub(a1: TypeStore, a2: TypeStore): TypeStore = upperBound(a1, a2, Lattice[Type].lub)
+
+    override def glb(a1: TypeStore, a2: TypeStore): TypeStore = {
+      (a1, a2) match {
+        case (TypeStoreTop, _) => a2
+        case (_, TypeStoreTop) => a1
+        case (TypeStoreV(vals1), TypeStoreV(vals2)) =>
+          val sharedVars = vals1.keySet intersect vals2.keySet
+          TypeStoreV(sharedVars.map { x =>
+            val (pu1, ty1) = vals1(x)
+            val (pu2, ty2) = vals2(x)
+            x -> (pu1 && pu2, Lattice[Type].glb(ty1, ty2))
+          }.toMap)
+      }
+    }
+
+    override def <=(a1: TypeStore, a2: TypeStore): Boolean = (a1, a2) match {
+      case (_, TypeStoreTop) => true
+      case (TypeStoreV(vals1), TypeStoreV(vals2)) =>
+        vals1.keySet.forall { x =>
+          val (pu1, ty1) = vals1(x)
+          vals2.get(x).fold(false) { case (pu2, ty2) =>
+              pu1 <= pu2 && Lattice[Type].<=(ty1, ty2)
+          }
+        }
+      case _ => false
+    }
+
+    override def widen(a1: TypeStore, a2: TypeStore, depth: Int): TypeStore =
+      upperBound(a1, a2, Lattice[Type].widen(_, _, depth))
+  }
 
   implicit def TypeMemoriesLattice[T : Lattice] = new Lattice[TypeMemories[T]] {
     override def bot: TypeMemories[T] = TypeMemories(Set())
