@@ -49,10 +49,10 @@ case class Executor(module: Module) {
       case (BasicValue(IntLit(i1)), "-", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 - i2)).point[Result]
       case (BasicValue(IntLit(i1)), "*", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 * i2)).point[Result]
       case (BasicValue(IntLit(i1)), "/", BasicValue(IntLit(i2)))  =>
-        if (i2 == 0) ExceptionalResult(Throw(ConstructorValue("DivByZero", List())))
+        if (i2 == 0) ExceptionalResult(Throw(ConstructorValue("divByZero", List())))
         else BasicValue(IntLit(i1 / i2)).point[Result]
       case (BasicValue(IntLit(i1)), "%", BasicValue(IntLit(i2))) =>
-        if (i2 <= 0) ExceptionalResult(Throw(ConstructorValue("ModNonPos", List())))
+        if (i2 <= 0) ExceptionalResult(Throw(ConstructorValue("modNonPos", List())))
         else BasicValue(IntLit(i1 % i2)).point[Result]
       case _ => ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))
     }
@@ -496,13 +496,21 @@ case class Executor(module: Module) {
       val (bodyres, store_) = evalLocal(localVars, store, body)
       bodyres match {
         case SuccessResult(v) =>
-          if (vars.toList.map(store.map).zip(vars.toList.map(store_.map)).forall { case (v1, v2) => v1 == v2 })
-            (SuccessResult(v), store_)
-          else loopSolve(store_)
+          // TODO Fix Rascal Light paper to take into account non-existence of variables
+          val posNonDefinedPrevVar = vars.find(!store.map.contains(_))
+          val posNonDefinedNewVar = vars.find(!store_.map.contains(_))
+          if (posNonDefinedPrevVar.isDefined)
+            (ExceptionalResult(Error(UnassignedVarError(posNonDefinedPrevVar.get))), store_)
+          else if (posNonDefinedNewVar.isDefined)
+            (ExceptionalResult(Error(UnassignedVarError(posNonDefinedNewVar.get))), store_)
+          else {
+            if (vars.toList.map(store.map).zip(vars.toList.map(store_.map)).forall { case (v1, v2) => v1 == v2 })
+              (SuccessResult(v), store_)
+            else loopSolve(store_)
+          }
         case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
       }
     }
-
     loopSolve(store)
   }
 
@@ -513,8 +521,8 @@ case class Executor(module: Module) {
         case SuccessResult(condval) =>
           condval match {
             case ConstructorValue("true", Seq()) =>
-              val (condres, store_) = evalLocal(localVars, store__, body)
-              condres match {
+              val (bodyres, store_) = evalLocal(localVars, store__, body)
+              bodyres match {
                 case SuccessResult(_) =>
                   loopWhile(store_)
                 case ExceptionalResult(exres) =>
@@ -530,7 +538,6 @@ case class Executor(module: Module) {
         case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
       }
     }
-
     val (res, store_) = loopWhile(store)
     (res.map(_ => BottomValue), store_)
   }

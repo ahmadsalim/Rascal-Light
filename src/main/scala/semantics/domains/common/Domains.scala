@@ -47,7 +47,8 @@ object Domains {
          List(Parameter(MapType(ValueType, ValueType),"emap"),
              Parameter(ValueType,"ekey")), PrimitiveFunBody)
        ,"toString" -> (BaseType(StringType), List(Parameter(ValueType, "earg")), PrimitiveFunBody)),
-    Map("Bool" -> List("true", "false"), "NoKey" -> List("nokey"), "Pair" -> List("pair")),
+    Map("Bool" -> List("true", "false"), "NoKey" -> List("nokey"), "Pair" -> List("pair"),
+      "DivByZero" -> List("divByZero"), "ModNonPos" -> List("modNonPos")),
     Map("true" -> ("Bool", List()),
         "false" -> ("Bool", List()),
         "nokey" -> ("NoKey", List(Parameter(ValueType, "key"))),
