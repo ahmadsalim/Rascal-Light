@@ -94,7 +94,7 @@ map[Ident,int] getConstants(list[ConstDecl] constants, map[Ident,int] constantMa
 
 Expression evaluate(map[Ident,int] constants, Expression exp){
 	return innermost visit(exp){
-		case e : lookup(var,[])      => 
+		case e : lookup(var)      =>
 			(var in constants) ? nat(constants[var]) : e 
 		case amp(_, \false()) 		=> \false()
 		case amp(\false(), _) 		=> \false()

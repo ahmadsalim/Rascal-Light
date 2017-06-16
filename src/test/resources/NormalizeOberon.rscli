@@ -3,46 +3,49 @@ module NormalizeOberon
 *  Based on https://github.com/cwi-swat/oberon0/blob/7bed47c2098c7335a6b47c3bed1329795211b53f/src/lang/oberon0/l4/normalize/NormalizeL4.rsc
 */
 
+import String;
+import List;
+import Set;
 
-data Module = 
+data Module =
 	\mod(Ident name, Declarations decls, list[Statement] body, Ident endName)
 	;
 
-data Declarations 
+data Declarations
 	= decls(list[ConstDecl] consts, list[TypeDecl] types, list[VarDecl] vars, list[Procedure] procs)
 	;
 
-data ConstDecl 
+data ConstDecl
 	= constDecl(Ident name, Expression \value)
 	;
-	
-data TypeDecl 
+
+data TypeDecl
 	= typeDecl(Ident name, Type \type)
 	;
-	
-data VarDecl 
+
+data VarDecl
 	= varDecl(list[Ident] names, Type \type)
 	;
 
-data Type 
+data Type
 	= user(Ident name)
 	| array(Expression exp, Type \type)
     | record(list[Field] fields)
 	;
 
-data Field 
+data Field
 	= field(list[Ident] names, Type \type)
 ;
 
-data Procedure 
+data Procedure
 	= proc(Ident name, list[Formal] formals, Declarations decls, list[Statement] body, Ident endName)
 ;
 
-data Formal 
+data Formal
 	= formal(bool hasVar, list[Ident] names, Type \type)
 ;
-	
-data Statement 
+
+data Statement
 	= assign(Ident var, list[Selector] selectors, Expression exp)
 	| ifThen(Expression condition, list[Statement] body, list[ElseIf] elseIfs, list[Statement] elsePart)
 	| whileDo(Expression condition, list[Statement] body)
@@ -54,7 +57,7 @@ data Statement
     | begin(list[Statement] body) // Is only there for transformation
 	;
 
-data Expression 
+data Expression
 	= nat(int val)
 	| \true()
 	| \false()
@@ -77,11 +80,11 @@ data Expression
 	| geq(Expression lhs, Expression rhs)
 	;
 
-data Ident 
+data Ident
 	= id(str name)
 ;
 
-data Selector 
+data Selector
 	= field(Ident field)
 	| subscript(Expression exp)
 ;
@@ -100,7 +103,7 @@ public Module normalizeBooleans(Module m) {
 
 public Module flattenBegins(Module m) {
 	return innermost visit (m) {
-		case [s1*, begin(b), s2*] => [s1, b, s2]
+		case [*Statement s1, begin(b), *Statement s2] => s1 + b + s2
 	}
 }
 
@@ -108,7 +111,7 @@ public Module liftLets(Module m) {
     m = visit (m) {
 		case Procedure p => ({
 			switch (liftLet(p.decls, p.body)) {
-				case declsbody(pdecls, pbody): {	
+				case declsbody(pdecls, pbody): {
 					p.decls = pdecls;
 					p.body = pbody;
 				}
@@ -131,7 +134,7 @@ Statement while2let(Statement s) {
 		case whileDo(c, b): {
 			x = uniqueName(s);
 			return let([varDecl([x], user(id("BOOLEAN")))], [assign(x, [], c),
-				whileDo(lookup(x, []), [b, assign(x, [], c)])]);
+				whileDo(lookup(x, []), b + [assign(x, [], c)])]);
 		}
 	}
 }
@@ -188,8 +191,8 @@ public Module desugarBooleans(Module m) {
 		case s:whileDo(cond, _) => while2let(s)
 
 		// Normalize elsifs
-		case ifThen(c, b, [elseif(ec, eb), eis*], es) =>
-				ifThen(c, b, [], [ifThen(ec, eb, [eis], es)]) 
+		case ifThen(c, b, [elseif(ec, eb), *eis], es) =>
+				ifThen(c, b, [], [ifThen(ec, eb, eis, es)])
 	}	
 }
 

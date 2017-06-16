@@ -80,9 +80,17 @@ object RascalWrapper {
 
   private
   def translateStarPattern(pattern: Expression): String \/ StarPatt = {
-    if (pattern.isMultiVariable) {
-      val varName = qualifiedNameToString(pattern.getQualifiedName)
-      ArbitraryPatt(varName).right
+    if (pattern.isSplice) {
+      val argument = pattern.getArgument
+      if (argument.isQualifiedName) {
+        val varName = qualifiedNameToString(argument.getQualifiedName)
+        ArbitraryPatt(varName).right
+      } else if (argument.isTypedVariable) {
+        val varName = nameToString(argument.getName)
+        ArbitraryPatt(varName).right
+      } else {
+        s"Unsupported star parttern: $argument".left
+      }
     } else {
       translatePattern(pattern).map(OrdinaryPatt)
     }

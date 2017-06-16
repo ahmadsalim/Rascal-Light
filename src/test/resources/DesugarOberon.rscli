@@ -78,18 +78,17 @@ public Module desugar(Module \mod) {
 }
 
 Statement cases2if(Expression e, list[Case] cs, list[Statement] es) {
-    switch (cs) {
-      case [c, cs2*]: {
-            list[ElseIf] eis = [];
-            for (c2 <- cs2)
-               eis = eis + [elseif(eq(e, c2.guard), c.body)];
-            return ifThen(eq(e, c.guard), c.body, eis, es);
-        }
-    };
+	switch (cs) {
+      case [c, *cs2]: {
+			list[ElseIf] eis = [];
+			for (c2 <- cs2)
+			   eis = eis + [elseif(eq(e, c2.guard), c.body)];
+			return ifThen(eq(e, c.guard), c.body, eis, es);
+		}
+	};
 }
 
 public list[Statement] case2ifs(list[Statement] stats) {
-
 	return visit (stats) {
 		case caseOf(e, [], es) => begin(es)
 		case caseOf(e, cs, es) => cases2if(e, cs, es)
@@ -98,17 +97,17 @@ public list[Statement] case2ifs(list[Statement] stats) {
 
 public list[Statement] for2while(list[Statement] stats) {
 	return visit (stats) {
-		case forDo(n, f, t, [by], b) => 
-			begin([assign(n, f), whileDo(geq(lookup(n), t), 
-					[b, assign(n, add(lookup(n), by))])]) 
-		case forDo(n, f, t, [], b) => 
-			begin([assign(n, f), whileDo(geq(lookup(n), t), 
-					[b, assign(n, add(lookup(n), nat(1)))])]) 
+		case forDo(n, f, t, [by], b) =>
+			begin([assign(n, f), whileDo(geq(lookup(n), t),
+					b + [assign(n, add(lookup(n), by))])])
+		case forDo(n, f, t, [], b) =>
+			begin([assign(n, f), whileDo(geq(lookup(n), t),
+					b + [assign(n, add(lookup(n), nat(1)))])])
 	}
 }
 
 public list[Statement] flattenBegin(list[Statement] stats) {
 	return innermost visit (stats) {
-		case [s1*, begin(b), s2*] => [s1, b, s2]
+		case [*Statement s1, begin(b), *Statement s2] => s1 + b + s2
 	}
 }
