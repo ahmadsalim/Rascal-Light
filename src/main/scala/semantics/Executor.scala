@@ -249,33 +249,33 @@ case class Executor(module: Module) {
 
   private
   def evalTD(localVars: Map[VarName, Type], store: Store, scrutineeval: Value, cases: List[Case], break: Boolean): (Result[Value], Store) = {
-      def evalTDAll(vals: List[Value], store: Store): (Result[List[Value]], Store) =
-        vals match {
-          case Nil => (List().point[Result], store)
-          case cvl::cvls =>
-            val (cvres, store___) = evalTD(localVars, store, cvl, cases, break)
-            ifFail(cvres, cvl) match {
-              case SuccessResult(cvl_) =>
-                if (break && cvres != ExceptionalResult(Fail)) ((cvl_ :: cvls).point[Result], store___)
-                else {
-                  val (cvsres, store_) = evalTDAll(cvls, store___)
-                  (cvsres.map(cvls_ => cvl_ :: cvls_), store_)
-                }
-              case ExceptionalResult(exres) => (ExceptionalResult(exres), store___)
-            }
-        }
-      // TODO optimize traversal by checking types
-       val (scres, store__) = evalCases(localVars, store, scrutineeval, cases)
-       ifFail(scres, scrutineeval) match {
-        case SuccessResult(vl) =>
-          if (break && scres != ExceptionalResult(Fail)) (vl.point[Result], store__)
-          else {
-            val (cvres, store_) = evalTDAll(vl.children, store__)
-            (cvres.flatMap(cvs => reconstruct(vl, cvs)), store_)
+    def evalTDAll(vals: List[Value], store: Store): (Result[List[Value]], Store) =
+      vals match {
+        case Nil => (List().point[Result], store)
+        case cvl::cvls =>
+          val (cvres, store__) = evalTD(localVars, store, cvl, cases, break)
+          ifFail(cvres, cvl) match {
+            case SuccessResult(cvl_) =>
+              if (break && cvres != ExceptionalResult(Fail)) ((cvl_ :: cvls).point[Result], store__)
+              else {
+                val (cvsres, store_) = evalTDAll(cvls, store__)
+                (cvsres.map(cvls_ => cvl_ :: cvls_), store_)
+              }
+            case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
-        case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
       }
-    }
+    // TODO optimize traversal by checking types
+     val (scres, store__) = evalCases(localVars, store, scrutineeval, cases)
+     ifFail(scres, scrutineeval) match {
+      case SuccessResult(vl) =>
+        if (break && scres != ExceptionalResult(Fail)) (vl.point[Result], store__)
+        else {
+          val (cvres, store_) = evalTDAll(vl.children, store__)
+          (cvres.flatMap(cvs => reconstruct(vl, cvs)), store_)
+        }
+      case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
+     }
+   }
 
   private
   def evalBU(localVars: Map[VarName, Type], store: Store, scrutineeval: Value, cases: List[Case], break: Boolean): (Result[Value], Store) = {
@@ -283,21 +283,24 @@ case class Executor(module: Module) {
       vals match {
         case Nil => (true, List().point[Result], store)
         case cvl::cvls =>
-          val (cvres, store___) = evalBU(localVars, store, cvl, cases, break)
+          val (cvres, store__) = evalBU(localVars, store, cvl, cases, break)
           ifFail(cvres, cvl) match {
             case SuccessResult(cvl_) =>
-              if (break && cvres != ExceptionalResult(Fail)) (false, (cvl_ :: cvls).point[Result], store___)
+              if (break && cvres != ExceptionalResult(Fail)) (false, (cvl_ :: cvls).point[Result], store__)
               else {
-                val (allfailed, cvsres, store_) = evalBUAll(cvls, store___)
+                val (allfailed, cvsres, store_) = evalBUAll(cvls, store__)
                 (cvres == ExceptionalResult(Fail) && allfailed, cvsres.map(cvls_ => cvl_ :: cvls_), store_)
               }
-            case ExceptionalResult(exres) => (false, ExceptionalResult(exres), store___)
+            case ExceptionalResult(exres) => (false, ExceptionalResult(exres), store__)
           }
       }
     val (allfailed, cvres, store__) = evalBUAll(scrutineeval.children, store)
     cvres match {
       case SuccessResult(cvls) =>
-        if (break && allfailed) evalCases(localVars, store__, scrutineeval, cases)
+        if (break){
+          if (allfailed) evalCases(localVars, store__, scrutineeval, cases)
+          else (reconstruct(scrutineeval, cvls), store__)
+        }
         else reconstruct(scrutineeval, cvls) match {
           case SuccessResult(newval) =>
             val (selfres, store_) =  evalCases(localVars, store__, newval, cases)
@@ -496,7 +499,6 @@ case class Executor(module: Module) {
       val (bodyres, store_) = evalLocal(localVars, store, body)
       bodyres match {
         case SuccessResult(v) =>
-          // TODO Fix Rascal Light paper to take into account non-existence of variables
           val posNonDefinedPrevVar = vars.find(!store.map.contains(_))
           val posNonDefinedNewVar = vars.find(!store_.map.contains(_))
           if (posNonDefinedPrevVar.isDefined)
@@ -625,7 +627,6 @@ case class Executor(module: Module) {
               }
             newValue match {
               case SuccessResult(nvl) =>
-                // TODO provide internal error instead of exception
                 val varty = if (localVars.contains(path.varName)) localVars(path.varName) else module.globalVars(path.varName)
                 if (typing.checkType(nvl, varty)) {
                   (nvl.pure[Result], Store(store_.map.updated(path.varName, nvl)))
