@@ -571,7 +571,7 @@ case class Executor(module: Module) {
           case SuccessResult(caseval) => (caseval.point[Result], store_)
           case ExceptionalResult(exres) =>
             exres match {
-              case Fail => (BottomValue.point[Result], store_)
+              case Fail => (scrval.point[Result], store_)
               case _ => (ExceptionalResult(exres), store_)
             }
         }
