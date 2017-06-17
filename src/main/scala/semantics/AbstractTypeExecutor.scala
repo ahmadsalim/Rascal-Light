@@ -523,7 +523,72 @@ case class AbstractTypeExecutor(module: Module) {
     })
   }
 
-  def evalFunCall(localVars: Map[VarName, Type], store: TypeStore, functionName: VarName, args: Seq[Expr]): TypeMemories[Type] = ???
+  def evalFunCall(localVars: Map[VarName, Type], store: TypeStore, functionName: VarName, args: Seq[Expr]): TypeMemories[Type] = {
+    val argmems = evalLocalAll(localVars, store, args)
+    Lattice[TypeMemories[Type]].lub(argmems.memories.map { case TypeMemory(argres, store__) =>
+      argres match {
+        case SuccessResult(argtys) =>
+          val (funresty, funpars, funbody) = module.funs(functionName)
+          val argpartyps = argtys.zip(funpars.map(_.typ))
+          val errRes = TypeMemory[Type](ExceptionalResult(Error(SignatureMismatch(functionName, argtys, funpars.map(_.typ)))), store__)
+          if (argtys.length == funpars.length &&
+                argpartyps.forall { case (ty1, ty2) => possiblySubtype(ty1, ty2) }) {
+            val posEx = if (argpartyps.exists { case (ty1, ty2) => possibleNotSubtype(ty1, ty2) })
+                            TypeMemories[Type](Set(errRes))
+                        else Lattice[TypeMemories[Type]].bot
+            val callRes: TypeMemories[Type] = {
+              val callstore = TypeStoreV(module.globalVars.map { case (x, _) => x -> getVar(store__, x).get } ++
+                funpars.map(_.name).zip(argtys.map(false -> _)).toMap)
+              val resmems = funbody match {
+                case ExprFunBody(exprfunbody) =>
+                    evalLocal(funpars.map(par => par.name -> par.typ).toMap, callstore, exprfunbody)
+                case PrimitiveFunBody =>
+                  functionName match {
+                    case "delete" =>
+                      val (_, mapty) = callstore.vals("emap")
+                      val (_, keyty) = callstore.vals("ekey")
+                      mapty match {
+                        case MapType(kty, vty) =>
+                          TypeMemories[Type](Set(TypeMemory(SuccessResult(MapType(kty, vty)), callstore)))
+                        case _ => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(Error(OtherError)), callstore)))
+                      }
+                    case "toString" =>
+                      val arg = callstore.vals("earg")
+                      TypeMemories[Type](Set(TypeMemory(SuccessResult(BaseType(StringType)), callstore)))
+                    case _ => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(Error(OtherError)), callstore)))
+                  }
+              }
+              Lattice[TypeMemories[Type]].lub(resmems.memories.map { case TypeMemory(res, resstore) =>
+                val store_ =
+                  Lattice[TypeStore].lub(TypeStoreV(module.globalVars.map { case (x, _) => x -> getVar(resstore, x).get }), store__)
+                def funcallsuccess(restyp: Type): TypeMemories[Type] = {
+                  val errRes = TypeMemory[Type](ExceptionalResult(Error(TypeError(restyp, funresty))), store_)
+                  if (possiblySubtype(restyp, funresty)) {
+                    val posEx = if (possibleNotSubtype(restyp, funresty)) TypeMemories[Type](Set(errRes))
+                                else Lattice[TypeMemories[Type]].bot
+                    Lattice[TypeMemories[Type]].lub(posEx, TypeMemories[Type](Set(TypeMemory(SuccessResult(restyp), store_))))
+                  }
+                  else TypeMemories[Type](Set(errRes))
+                }
+                res match {
+                  case SuccessResult(restyp) => funcallsuccess(restyp)
+                  case ExceptionalResult(exres) =>
+                    exres match {
+                      case Return(restyp) => funcallsuccess(restyp)
+                      case Break | Continue | Fail =>
+                        TypeMemories[Type](Set(TypeMemory(ExceptionalResult(Error(EscapedControlOperator)), store_)))
+                      case _ => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_)))
+                    }
+                }
+              })
+            }
+            Lattice[TypeMemories[Type]].lub(posEx, callRes)
+          }
+          else TypeMemories[Type](Set(errRes))
+        case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__)))
+      }
+    })
+  }
 
   def evalReturn(localVars: Map[VarName, Type], store: TypeStore, evl: Expr): TypeMemories[Type] = {
     val valmems = evalLocal(localVars, store, evl)
@@ -740,11 +805,11 @@ case class AbstractTypeExecutor(module: Module) {
   }
 
   def evalTD(localVars: Map[VarName, Type], store: TypeStore, scrtyp: Type, cases: List[Case], break: Boolean): TypeMemories[Type] = {
-    def evalTDAll(types: List[Type], store: TypeStore): TypeMemories[List[Type]] = {
+    def evalTDAll(types: List[Type], store: TypeStore, memo: Map[Type, TypeMemories[Type]]): TypeMemories[List[Type]] = {
       types match {
         case Nil => TypeMemories[List[Type]](Set(TypeMemory(SuccessResult(List()), store)))
         case cty::ctys =>
-          val ctymems = evalTD(localVars, store, cty, cases, break)
+          val ctymems = memoFix(cty, store, memo)
           val flatmems = Lattice[TypeMemories[Flat[List[Type]]]].lub(ctymems.memories.map {
             case TypeMemory(ctyres, store__) =>
               ifFail(ctyres, cty) match {
@@ -752,7 +817,7 @@ case class AbstractTypeExecutor(module: Module) {
                   if (break && ctyres != ExceptionalResult(Fail))
                     TypeMemories[Flat[List[Type]]](Set(TypeMemory(SuccessResult(FlatValue(cty_ :: ctys)), store__)))
                   else {
-                    val ctysmems = evalTDAll(ctys, store__)
+                    val ctysmems = evalTDAll(ctys, store__, memo)
                     TypeMemories(ctysmems.memories.map { case TypeMemory(ctysres, store_) =>
                         ctysres match {
                           case SuccessResult(ctys_) =>
@@ -769,37 +834,45 @@ case class AbstractTypeExecutor(module: Module) {
           unflatMems(flatmems)
       }
     }
-    val scmems = evalCases(localVars, store, scrtyp, cases)
-    Lattice[TypeMemories[Type]].lub(scmems.memories.map { case TypeMemory(scres, store__) =>
-      ifFail(scres, scrtyp) match {
-        case SuccessResult(typ) =>
-          if (break && scres != ExceptionalResult(Fail)) {
-            TypeMemories[Type](Set(TypeMemory(SuccessResult(typ), store__)))
-          } else {
-            val cvmems: Set[TypeMemories[List[Type]]] = typeChildren(typ).map(cts => evalTDAll(cts, store))
-            Lattice[TypeMemories[Type]].lub(cvmems.flatMap (_.memories.map { case TypeMemory(cvres, store_) =>
-                cvres match {
-                  case SuccessResult(cvtys) =>
-                    val recons: Set[TypeResult[Type]] = reconstruct(scrtyp, cvtys)
-                    Lattice[TypeMemories[Type]].lub(recons.map { tyres =>
-                      TypeMemories[Type](Set(TypeMemory(tyres, store_)))
-                    })
-                  case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_)))
-                }
-            }))
+    def memoFix(scrtyp: Type, store: TypeStore, memo: Map[Type, TypeMemories[Type]]): TypeMemories[Type] = {
+      def go(prevRes: TypeMemories[Type]): TypeMemories[Type] = {
+        val scmems = evalCases(localVars, store, scrtyp, cases)
+        val newRes = Lattice[TypeMemories[Type]].lub(scmems.memories.map { case TypeMemory(scres, store__) =>
+          ifFail(scres, scrtyp) match {
+            case SuccessResult(typ) =>
+              if (break && scres != ExceptionalResult(Fail)) {
+                TypeMemories[Type](Set(TypeMemory(SuccessResult(typ), store__)))
+              } else {
+                val cvmems: Set[TypeMemories[List[Type]]] = typeChildren(typ).map(cts => evalTDAll(cts, store, memo.updated(scrtyp, prevRes)))
+                Lattice[TypeMemories[Type]].lub(cvmems.flatMap(_.memories.map { case TypeMemory(cvres, store_) =>
+                  cvres match {
+                    case SuccessResult(cvtys) =>
+                      val recons: Set[TypeResult[Type]] = reconstruct(scrtyp, cvtys)
+                      Lattice[TypeMemories[Type]].lub(recons.map { tyres =>
+                        TypeMemories[Type](Set(TypeMemory(tyres, store_)))
+                      })
+                    case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_)))
+                  }
+                }))
+              }
+            case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__)))
           }
-        case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__)))
+        })
+        if (Lattice[TypeMemories[Type]].<=(newRes, prevRes)) newRes
+        else go(Lattice[TypeMemories[Type]].widen(prevRes, newRes, 10))
       }
-    })
+      memo.getOrElse(scrtyp, go(Lattice[TypeMemories[Type]].bot))
+    }
+    memoFix(scrtyp, store, Map())
   }
 
 
   def evalBU(localVars: Map[VarName, Type], store: TypeStore, scrtyp: Type, cases: List[Case], break: Boolean): TypeMemories[Type] = {
-    def evalBUAll(tys: List[Type], store: TypeStore): TypeMemories[(Boolean, List[Type])] = {
+    def evalBUAll(tys: List[Type], store: TypeStore, memo: Map[Type, TypeMemories[Type]]): TypeMemories[(Boolean, List[Type])] = {
       tys match {
         case Nil => TypeMemories[(Boolean, List[Type])](Set(TypeMemory(SuccessResult((true, List())), store)))
         case cty::ctys =>
-          val ctymems = evalBU(localVars, store, cty, cases, break)
+          val ctymems = memoFix(store, cty, memo)
           val flatmems = Lattice[TypeMemories[Flat[(Boolean, List[Type])]]].lub(ctymems.memories.map {
             case TypeMemory(ctyres, store__) =>
               ifFail(ctyres, cty) match {
@@ -808,7 +881,7 @@ case class AbstractTypeExecutor(module: Module) {
                     TypeMemories[Flat[(Boolean, List[Type])]](
                       Set(TypeMemory(SuccessResult(FlatValue((false, cty_ :: ctys))), store__)))
                   else {
-                    val ctysmems = evalBUAll(ctys, store__)
+                    val ctysmems = evalBUAll(ctys, store__, memo)
                     TypeMemories[Flat[(Boolean, List[Type])]](ctysmems.memories.map { case TypeMemory(ctysres, store_) =>
                       ctysres match {
                         case SuccessResult((allfailed, ctys_)) =>
@@ -826,46 +899,65 @@ case class AbstractTypeExecutor(module: Module) {
           unflatMems(flatmems)
       }
     }
-    val ctymems: Set[TypeMemories[(Boolean, List[Type])]] = typeChildren(scrtyp).map(ctys => evalBUAll(ctys, store))
-    Lattice[TypeMemories[Type]].lub(ctymems.flatMap(_.memories.map { case TypeMemory(ccres, store__) =>
-        ccres match {
-          case SuccessResult((allfailed, ctys)) =>
-            if (break) {
-              if (allfailed) evalCases(localVars, store__, scrtyp, cases)
-              else Lattice[TypeMemories[Type]].lub(reconstruct(scrtyp, ctys).map(rcres =>
-                TypeMemories[Type](Set(TypeMemory(rcres, store__)))))
-            } else Lattice[TypeMemories[Type]].lub(reconstruct(scrtyp, ctys).map {
-              case SuccessResult(newty) =>
-                val selfmems = evalCases(localVars, store__, newty, cases)
-                Lattice[TypeMemories[Type]].lub(selfmems.memories.map { case TypeMemory(selfres, store_) =>
+    // TODO Types can possibly be infinitely wide, consider bounding parameter sizes of lists maps sets
+    // TODO Maybe it is fine, since number of types in a particular program is bounded?
+    def memoFix(store: TypeStore, scrtyp: Type, memo: Map[Type, TypeMemories[Type]]) = {
+      def go(prevRes: TypeMemories[Type]): TypeMemories[Type] = {
+        val ctymems: Set[TypeMemories[(Boolean, List[Type])]] = typeChildren(scrtyp).map(ctys =>
+          evalBUAll(ctys, store, memo.updated(scrtyp, prevRes)))
+        val newRes = Lattice[TypeMemories[Type]].lub(ctymems.flatMap(_.memories.map { case TypeMemory(ccres, store__) =>
+          ccres match {
+            case SuccessResult((allfailed, ctys)) =>
+              if (break) {
+                if (allfailed) evalCases(localVars, store__, scrtyp, cases)
+                else Lattice[TypeMemories[Type]].lub(reconstruct(scrtyp, ctys).map(rcres =>
+                  TypeMemories[Type](Set(TypeMemory(rcres, store__)))))
+              } else Lattice[TypeMemories[Type]].lub(reconstruct(scrtyp, ctys).map {
+                case SuccessResult(newty) =>
+                  val selfmems = evalCases(localVars, store__, newty, cases)
+                  Lattice[TypeMemories[Type]].lub(selfmems.memories.map { case TypeMemory(selfres, store_) =>
                     selfres match {
                       case ExceptionalResult(Fail) => TypeMemories[Type](Set(TypeMemory(SuccessResult(newty), store_)))
                       case _ => TypeMemories[Type](Set(TypeMemory(selfres, store_)))
                     }
-                })
-              case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__)))
-            })
-          case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__)))
-        }
-    }))
+                  })
+                case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__)))
+              })
+            case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store__)))
+          }
+        }))
+        if (Lattice[TypeMemories[Type]].<=(newRes, prevRes)) newRes
+        else go(Lattice[TypeMemories[Type]].widen(prevRes, newRes, 10))
+      }
+      memo.getOrElse(scrtyp, go(Lattice[TypeMemories[Type]].bot))
+    }
+    memoFix(store, scrtyp, Map())
   }
 
   def evalVisitStrategy(strategy: Strategy, localVars: Map[VarName, Type], store: TypeStore, scrtyp: Type, cases: List[Case]): TypeMemories[Type] = {
-    def fix(store: TypeStore, scrtyp: Type, evalIn : (Map[VarName, Type], TypeStore, Type, List[Case], Boolean) => TypeMemories[Type]): TypeMemories[Type] = {
-      val resmems = evalIn(localVars, store, scrtyp, cases, /* break = */ false)
-      Lattice[TypeMemories[Type]].lub(resmems.memories.map { case TypeMemory(res, store_) =>
-        res match {
-          case SuccessResult(resty) =>
-            if (possiblyEqTyps(scrtyp, resty)) {
-              Lattice[TypeMemories[Type]].lub(TypeMemories[Type](
-                Set(TypeMemory(SuccessResult(resty), store_))),
-                fix(store_, resty, evalIn))
-            } else {
-              fix(store_, resty, evalIn)
+    def loop(store: TypeStore, scrtyp: Type, evalIn : (Map[VarName, Type], TypeStore, Type, List[Case], Boolean) => TypeMemories[Type]): TypeMemories[Type] = {
+      def memoFix(store: TypeStore, scryp: Type, memo: Map[TypeStore, TypeMemories[Type]]): TypeMemories[Type] = {
+        def go(prevRes: TypeMemories[Type]): TypeMemories[Type] = {
+          val resmems = evalIn(localVars, store, scrtyp, cases, /* break = */ false)
+          val newRes = Lattice[TypeMemories[Type]].lub(resmems.memories.map { case TypeMemory(res, store_) =>
+            res match {
+              case SuccessResult(resty) =>
+                if (possiblyEqTyps(scrtyp, resty)) {
+                  Lattice[TypeMemories[Type]].lub(TypeMemories[Type](
+                    Set(TypeMemory(SuccessResult(resty), store_))),
+                    memoFix(Lattice[TypeStore].widen(store, store_, 10), resty, memo.updated(store, prevRes)))
+                } else {
+                   memoFix(Lattice[TypeStore].widen(store, store_, 10), resty, memo.updated(store, prevRes))
+                }
+              case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_)))
             }
-          case ExceptionalResult(exres) => TypeMemories[Type](Set(TypeMemory(ExceptionalResult(exres), store_)))
+          })
+          if (Lattice[TypeMemories[Type]].<=(newRes, prevRes)) newRes
+          else go(Lattice[TypeMemories[Type]].widen(prevRes, newRes, 10))
         }
-      })
+        memo.getOrElse(store, go(Lattice[TypeMemories[Type]].bot))
+      }
+      memoFix(store, scrtyp, Map())
     }
     strategy match {
       case TopDown => evalTD(localVars, store, scrtyp, cases, break = false)
@@ -873,9 +965,9 @@ case class AbstractTypeExecutor(module: Module) {
       case BottomUp => evalBU(localVars, store, scrtyp, cases, break = false)
       case BottomUpBreak => evalBU(localVars, store, scrtyp, cases, break = true)
       case Innermost =>
-        fix(store, scrtyp, evalBU)
+        loop(store, scrtyp, evalBU)
       case Outermost =>
-        fix(store, scrtyp, evalTD)
+        loop(store, scrtyp, evalTD)
     }
   }
 
