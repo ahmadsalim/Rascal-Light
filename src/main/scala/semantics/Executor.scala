@@ -19,7 +19,7 @@ case class Executor(module: Module) {
     case ("-", BasicValue(IntLit(i))) => BasicValue(IntLit(-i)).point[Result]
     case ("!", ConstructorValue("true", Seq())) => ConstructorValue("false", Seq()).point[Result]
     case ("!", ConstructorValue("false", Seq())) => ConstructorValue("true", Seq()).point[Result]
-    case _ => ExceptionalResult(Error(InvalidOperationError(op, List(vl))))
+    case _ => ExceptionalResult(Error(Set(InvalidOperationError(op, List(vl)))))
   }
 
   private
@@ -54,7 +54,7 @@ case class Executor(module: Module) {
       case (BasicValue(IntLit(i1)), "%", BasicValue(IntLit(i2))) =>
         if (i2 <= 0) ExceptionalResult(Throw(ConstructorValue("modNonPos", List())))
         else BasicValue(IntLit(i1 % i2)).point[Result]
-      case _ => ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))
+      case _ => ExceptionalResult(Error(Set(InvalidOperationError(op, List(lhvl, rhvl)))))
     }
 
   private
@@ -191,8 +191,8 @@ case class Executor(module: Module) {
     case ConstructorValue(name, vals) =>
       val (_, pars) = module.constructors(name)
       val index = pars.indexWhere(_.name == fieldName)
-      if (index < 0) { ExceptionalResult(Error(FieldError(tv, fieldName))) } else vals(index).point[Result]
-    case _ => ExceptionalResult(Error(FieldError(tv, fieldName)))
+      if (index < 0) { ExceptionalResult(Error(Set(FieldError(tv, fieldName)))) } else vals(index).point[Result]
+    case _ => ExceptionalResult(Error(Set(FieldError(tv, fieldName))))
   }
 
   private
@@ -207,24 +207,24 @@ case class Executor(module: Module) {
                 updatePath(vals(kvl), rpaths, tvl).map(nvl => MapValue(vals.updated(kvl, nvl)))
               }
               else ExceptionalResult(Throw(ConstructorValue("NoKey", Seq(kvl))))
-            case _ => ExceptionalResult(Error(TypeError(ovl, MapType(typing.inferType(kvl).get, typing.inferType(tvl).get))))
+            case _ => ExceptionalResult(Error(Set(TypeError(ovl, MapType(typing.inferType(kvl).get, typing.inferType(tvl).get)))))
           }
         case FieldAccessPath(fieldName) =>
           ovl match {
             case ConstructorValue(name, vals) =>
               val (_, pars) = module.constructors(name)
               val index = pars.indexWhere(_.name == fieldName)
-              if (index < 0) { ExceptionalResult(Error(FieldError(ovl, fieldName))) }
+              if (index < 0) { ExceptionalResult(Error(Set(FieldError(ovl, fieldName)))) }
               else {
                 updatePath(vals(index), rpaths, tvl).flatMap { nvl =>
                   if (typing.checkType(nvl, pars(index).typ)) {
                     ConstructorValue(name, vals.updated(index, nvl)).point[Result]
                   } else {
-                    ExceptionalResult(Error(TypeError(nvl, pars(index).typ)))
+                    ExceptionalResult(Error(Set(TypeError(nvl, pars(index).typ))))
                   }
                 }
               }
-            case _ => ExceptionalResult(Error(FieldError(ovl, fieldName)))
+            case _ => ExceptionalResult(Error(Set(FieldError(ovl, fieldName))))
           }
       }
   }
@@ -233,17 +233,17 @@ case class Executor(module: Module) {
   def reconstruct(vl: Value, cvs: List[Value]): Result[Value] = {
     vl match {
       case BasicValue(b) =>
-        if (cvs.isEmpty) BasicValue(b).point[Result] else ExceptionalResult(Error(ReconstructError(vl, cvs)))
+        if (cvs.isEmpty) BasicValue(b).point[Result] else ExceptionalResult(Error(Set(ReconstructError(vl, cvs))))
       case ConstructorValue(name, _) =>
         val (_, parameters) = module.constructors(name)
         if (cvs.length == parameters.length &&
               cvs.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled)) ConstructorValue(name, cvs).point[Result]
-        else ExceptionalResult(Error(ReconstructError(vl, cvs)))
+        else ExceptionalResult(Error(Set(ReconstructError(vl, cvs))))
       case ListValue(_) => ListValue(cvs).point[Result]
       case SetValue(_) => SetValue(cvs.toSet).point[Result]
       case MapValue(_) => MapValue(cvs.take(cvs.length/2).zip(cvs.drop(cvs.length/2)).toMap).point[Result]
       case BottomValue =>
-        if (cvs.isEmpty) BottomValue.point[Result] else ExceptionalResult(Error(ReconstructError(vl, cvs)))
+        if (cvs.isEmpty) BottomValue.point[Result] else ExceptionalResult(Error(Set(ReconstructError(vl, cvs))))
     }
   }
 
@@ -416,7 +416,7 @@ case class Executor(module: Module) {
               case ListValue(vals) => (Stream.emits(vals.map(vl => Map(varname -> vl))).point[Result], store_)
               case SetValue(vals) => (Stream.emits(vals.toList.map(vl => Map(varname -> vl))).point[Result], store_)
               case MapValue(vals) => (Stream.emits(vals.keys.toList.map(vl => Map(varname -> vl))).point[Result], store_)
-              case _ => (ExceptionalResult(Error(NotEnumerableError(tval))), store_)
+              case _ => (ExceptionalResult(Error(Set(NotEnumerableError(tval)))), store_)
             }
           case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
         }
@@ -448,8 +448,8 @@ case class Executor(module: Module) {
       case SuccessResult(condval) =>
         condval match {
           case ConstructorValue("true", Seq()) => (condres, store_)
-          case ConstructorValue("false", Seq()) => (ExceptionalResult(Error(AssertionError(cond))), store_)
-          case _ => (ExceptionalResult(Error(TypeError(condval, DataType("Bool")))), store_)
+          case ConstructorValue("false", Seq()) => (ExceptionalResult(Error(Set(AssertionError(cond)))), store_)
+          case _ => (ExceptionalResult(Error(Set(TypeError(condval, DataType("Bool"))))), store_)
         }
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
     }
@@ -502,9 +502,9 @@ case class Executor(module: Module) {
           val posNonDefinedPrevVar = vars.find(!store.map.contains(_))
           val posNonDefinedNewVar = vars.find(!store_.map.contains(_))
           if (posNonDefinedPrevVar.isDefined)
-            (ExceptionalResult(Error(UnassignedVarError(posNonDefinedPrevVar.get))), store_)
+            (ExceptionalResult(Error(Set(UnassignedVarError(posNonDefinedPrevVar.get)))), store_)
           else if (posNonDefinedNewVar.isDefined)
-            (ExceptionalResult(Error(UnassignedVarError(posNonDefinedNewVar.get))), store_)
+            (ExceptionalResult(Error(Set(UnassignedVarError(posNonDefinedNewVar.get)))), store_)
           else {
             if (vars.toList.map(store.map).zip(vars.toList.map(store_.map)).forall { case (v1, v2) => v1 == v2 })
               (SuccessResult(v), store_)
@@ -535,7 +535,7 @@ case class Executor(module: Module) {
                   }
               }
             case ConstructorValue("false", Seq()) => (().point[Result], store__)
-            case _ => (ExceptionalResult(Error(TypeError(condval, DataType("Bool")))), store__)
+            case _ => (ExceptionalResult(Error(Set(TypeError(condval, DataType("Bool"))))), store__)
           }
         case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
       }
@@ -606,7 +606,7 @@ case class Executor(module: Module) {
         condv match {
           case ConstructorValue("true", Seq()) => evalLocal(localVars, store__, thenB)
           case ConstructorValue("false", Seq()) => evalLocal(localVars, store__, elseB)
-          case _ => (ExceptionalResult(Error(TypeError(condv, DataType("Bool")))), store__)
+          case _ => (ExceptionalResult(Error(Set(TypeError(condv, DataType("Bool"))))), store__)
         }
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
     }
@@ -622,7 +622,7 @@ case class Executor(module: Module) {
             val newValue =
               if (path.accessPaths.isEmpty) {
                 vl.point[Result]
-              } else store_.map.get(path.varName).fold[Result[Value]](ExceptionalResult(Error(UnassignedVarError(path.varName)))) {
+              } else store_.map.get(path.varName).fold[Result[Value]](ExceptionalResult(Error(Set(UnassignedVarError(path.varName))))) {
                 ovl => updatePath(ovl, path.accessPaths, vl)
               }
             newValue match {
@@ -631,7 +631,7 @@ case class Executor(module: Module) {
                 if (typing.checkType(nvl, varty)) {
                   (nvl.pure[Result], Store(store_.map.updated(path.varName, nvl)))
                 }
-                else (ExceptionalResult(Error(TypeError(nvl, varty))), store_)
+                else (ExceptionalResult(Error(Set(TypeError(nvl, varty)))), store_)
               case _ => (newValue, store_)
             }
           case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
@@ -668,19 +668,19 @@ case class Executor(module: Module) {
                   val key = callstore.map("ekey")
                   map match {
                     case MapValue(vals) => (SuccessResult(MapValue(vals - key)), callstore)
-                    case _ => (ExceptionalResult(Error(OtherError)), callstore)
+                    case _ => (ExceptionalResult(Error(Set(OtherError))), callstore)
                   }
                 case "toString" =>
                   val arg = callstore.map("earg")
                   (SuccessResult(BasicValue(StringLit(arg.toString))), callstore) // TO DO - Use pretty printing instead
-                case _ => (ExceptionalResult(Error(OtherError)), callstore)
+                case _ => (ExceptionalResult(Error(Set(OtherError))), callstore)
               }
           }
           val store_ = Store(module.globalVars.map { case (x, _) => (x, resstore.map(x)) } ++ store__.map)
 
           def funcallsuccess(resval: Value): (Result[Value], Store) = {
             if (typing.checkType(resval, funresty)) (resval.point[Result], store_)
-            else (ExceptionalResult(Error(TypeError(resval, funresty))), store_)
+            else (ExceptionalResult(Error(Set(TypeError(resval, funresty)))), store_)
           }
 
           res match {
@@ -689,12 +689,12 @@ case class Executor(module: Module) {
               exres match {
                 case Return(value) => funcallsuccess(value)
                 case Throw(value) => (ExceptionalResult(Throw(value)), store_)
-                case Break | Continue | Fail => (ExceptionalResult(Error(EscapedControlOperator)), store_)
+                case Break | Continue | Fail => (ExceptionalResult(Error(Set(EscapedControlOperator))), store_)
                 case _ => (ExceptionalResult(exres), store_)
               }
           }
         }
-        else (ExceptionalResult(Error(SignatureMismatch(functionName, argvals, funpars.map(_.typ)))), store__)
+        else (ExceptionalResult(Error(Set(SignatureMismatch(functionName, argvals, funpars.map(_.typ))))), store__)
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
     }
   }
@@ -715,7 +715,7 @@ case class Executor(module: Module) {
                 }
               case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
             }
-          case _ => (ExceptionalResult(Error(TypeError(mapv, MapType(ValueType, ValueType)))), store___)
+          case _ => (ExceptionalResult(Error(Set(TypeError(mapv, MapType(ValueType, ValueType))))), store___)
         }
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store___)
     }
@@ -734,7 +734,7 @@ case class Executor(module: Module) {
                 else (ExceptionalResult(Throw(ConstructorValue("NoKey", Seq(keyv)))), store_)
               case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
             }
-          case _ => (ExceptionalResult(Error(TypeError(mapv, MapType(ValueType, ValueType)))), store__)
+          case _ => (ExceptionalResult(Error(Set(TypeError(mapv, MapType(ValueType, ValueType))))), store__)
         }
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
     }
@@ -779,7 +779,7 @@ case class Executor(module: Module) {
         if (vals.length == parameters.length &&
           vals.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled))
           (ConstructorValue(name, vals).pure[Result], store_)
-        else (ExceptionalResult(Error(SignatureMismatch(name, vals, parameters.map(_.typ)))), store_)
+        else (ExceptionalResult(Error(Set(SignatureMismatch(name, vals, parameters.map(_.typ))))), store_)
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
     }
   }
@@ -809,7 +809,7 @@ case class Executor(module: Module) {
 
   private def evalVar(store: Store, x: VarName) = {
     if (store.map.contains(x)) (store.map(x).pure[Result], store)
-    else (ExceptionalResult(Error(UnassignedVarError(x))), store)
+    else (ExceptionalResult(Error(Set(UnassignedVarError(x)))), store)
   }
 
   private
@@ -847,63 +847,9 @@ case class Executor(module: Module) {
   }
 
   def eval(store: Store, expr: Expr): (Result[Value], Store) = evalLocal(Map.empty, store, expr)
-
 }
 
 object Executor {
-  private
-  def alreadyDefined(name: Name, outmod: Module): Boolean = {
-    outmod.funs.contains(name) || outmod.globalVars.contains(name) ||
-      outmod.datatypes.contains(name) || outmod.constructors.contains(name)
-  }
-
-  private
-  def alreadyDefinedErrMsg(name: Name) = s"duplicate definition in module of name: $name"
-
-  private
-  def constructorTypeSameNameErrMsg(name: Name) = s"constructor $name has the same name as the data type"
-
-  /**
-    * Translate a syntactic Rascal Light module to a semantic one
-    * @param module Definitionf syntactic Rascal Light module
-    * @return List of unevaluated global variables, tests and the semantic equivalent module if successful,
-    *         and otherwise a string describing an error during translation
-    */
-  private
-  def translateModule(module: ModuleDef): String \/ (List[(VarName, Expr)], List[TestDef], Module) = {
-    module.defs.toList.foldLeftM[String \/ ?, (List[(VarName, Expr)], List[TestDef], Module)](
-      (List.empty, List.empty, Domains.prelude)) { (st, df) =>
-      val (unevalglobvars, tests, outmod) = st
-      df match {
-        case GlobalVarDef(typ, name, initialValue) =>
-          if (alreadyDefined(name, outmod)) alreadyDefinedErrMsg(name).left
-          else ((name, initialValue) :: unevalglobvars, tests,
-            outmod.copy(globalVars = outmod.globalVars.updated(name, typ))).right
-        case FunDef(returntype, name, parameters, body) =>
-          if (alreadyDefined(name, outmod)) alreadyDefinedErrMsg(name).left
-          else (unevalglobvars, tests,
-            outmod.copy(funs = outmod.funs.updated(name, (returntype, parameters.toList, ExprFunBody(body))))).right
-        case DataDef(tyname, constructors) =>
-          if (alreadyDefined(tyname, outmod)) alreadyDefinedErrMsg(tyname).left
-          else {
-            val consmapr = constructors.toList.foldLeftM[String \/ ?, Map[ConsName, (TypeName, List[Parameter])]](
-              Map.empty
-            ) { (consmap, cdf) =>
-              if (alreadyDefined(cdf.name, outmod)) alreadyDefinedErrMsg(cdf.name).left
-              else if (cdf.name == tyname) constructorTypeSameNameErrMsg(cdf.name).left
-              else consmap.updated(cdf.name, (tyname, cdf.parameters.toList)).right
-            }
-            consmapr.map { consmap =>
-              (unevalglobvars, tests,
-                outmod.copy(datatypes = outmod.datatypes.updated(tyname, constructors.map(_.name).toList),
-                  constructors = outmod.constructors ++ consmap))
-            }
-          }
-        case td: TestDef => (unevalglobvars, tests :+ td, outmod).right
-      }
-    }
-  }
-
   private
   def evaluateGlobalVariables(executor: Executor, globVars: List[(VarName, Expr)]) = {
     val initStore = Store(globVars.toMap.mapValues(_ => BottomValue))
@@ -917,7 +863,6 @@ object Executor {
         }
     }
   }
-
 
   private
   def executeTests(executor: Executor, tests: List[TestDef], store: Store) = {
@@ -934,12 +879,11 @@ object Executor {
   }
 
   def execute(module: syntax.ModuleDef): String \/ ExecutionResult = {
-    for (transr <- translateModule(module);
-         (unevalglobvars, tests, semmod) = transr;
-         executor = Executor(semmod);
-         store <- evaluateGlobalVariables(executor, unevalglobvars);
-         testr <- executeTests(executor, tests, store);
+    for (transr <- ModuleTranslator.translateModule(module);
+         executor = Executor(transr.semmod);
+         store <- evaluateGlobalVariables(executor, transr.globalVarDefs);
+         testr <- executeTests(executor, transr.tests, store);
          (store_, failed) = testr
-    ) yield ExecutionResult(store_, semmod, failed)
+    ) yield ExecutionResult(store_, transr.semmod, failed)
   }
 }

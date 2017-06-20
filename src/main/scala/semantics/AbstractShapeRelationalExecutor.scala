@@ -47,7 +47,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
       case FlatBot => Lattice[AMemories[AValue]].bot
       case FlatValue(store) =>
         if (store.contains(x)) AMemories[AValue](Set((SuccessResult(store(x)), acstore)))
-        else AMemories[AValue](Set((ExceptionalResult(Error(UnassignedVarError(x))), acstore)))
+        else AMemories[AValue](Set((ExceptionalResult(Error(Set(UnassignedVarError(x)))), acstore)))
       case FlatTop => AMemories[AValue](Set((SuccessResult(Lattice[AValue].top), acstore)))
     }
   }
@@ -59,9 +59,9 @@ case class AbstractShapeRelationalExecutor(module: Module) {
       case "-" =>
         ValueShape.toSign(avs).fold[Set[AResult[AValue]]] {
           if(ValueShape.isTop(avs))
-            Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))),
+            Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(av))))),
               SuccessResult((ValueShape.fromSign(SignTop), genSymbol)))
-          else Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
+          else Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(av))))))
         } {
           case SignBot => Set(SuccessResult((ValueShape.fromSign(SignBot), Lattice[Flat[VarName \/ RelCt]].bot)))
           case Neg => Set(SuccessResult((ValueShape.fromSign(Pos), genSymbol)))
@@ -74,9 +74,9 @@ case class AbstractShapeRelationalExecutor(module: Module) {
       case "!" =>
         ValueShape.toDataShape(avs).fold[Set[AResult[AValue]]] {
           if(ValueShape.isTop(avs))
-            Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))),
+            Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(av))))),
               SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), genSymbol)))
-          else Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
+          else Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(av))))))
         } {
           case DataBot() => Set(SuccessResult((ValueShape.fromDataShape(DataBot()), genSymbol)))
           case DataElements("Bool", consShape) =>
@@ -89,10 +89,10 @@ case class AbstractShapeRelationalExecutor(module: Module) {
             Set(SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), genSymbol)))
           case DataTop() =>
             Set(SuccessResult((ValueShape.fromDataShape(DataAny("Bool")), genSymbol)),
-              ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
-          case _ =>  Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
+              ExceptionalResult(Error(Set(InvalidOperationError(op, List(av))))))
+          case _ =>  Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(av))))))
         }
-      case _ => Set(ExceptionalResult(Error(InvalidOperationError(op, List(av)))))
+      case _ => Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(av))))))
     }
   }
 
@@ -147,26 +147,26 @@ case class AbstractShapeRelationalExecutor(module: Module) {
         \t   | \b  | \t | \t/ex | ex  | \t/ex | \t | \t/ex
      */
     (lhvl, rhvl) match {
-      case (_, Zero) =>  Set(ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+      case (_, Zero) =>  Set(ExceptionalResult(Error(Set(InvalidOperationError("/", List(lhvl, rhvl))))))
       case (SignBot, SignTop) =>
-        Set(SuccessResult(SignBot), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+        Set(SuccessResult(SignBot), ExceptionalResult(Error(Set(InvalidOperationError("/", List(lhvl, rhvl))))))
       case (SignBot, _) | (_, SignBot) => Set(SuccessResult(SignBot))
       case (Zero, SignTop) | (Zero, NonNeg) | (Zero, NonPos) =>
-        Set(SuccessResult(Zero), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+        Set(SuccessResult(Zero), ExceptionalResult(Error(Set(InvalidOperationError("/", List(lhvl, rhvl))))))
       case  (Zero, Neg) | (Zero, Pos) =>
         Set(SuccessResult(Zero))
       case (_, SignTop) | (SignTop, NonPos) | (SignTop, NonNeg)  =>
-        Set(SuccessResult(SignTop), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+        Set(SuccessResult(SignTop), ExceptionalResult(Error(Set(InvalidOperationError("/", List(lhvl, rhvl))))))
       case (Neg, Pos) | (Pos, Neg) => Set(SuccessResult(Neg))
       case (Pos, Pos) | (Neg, Neg) => Set(SuccessResult(Pos))
       case (Neg, NonNeg) | (Pos, NonPos) =>
-        Set(SuccessResult(Neg), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+        Set(SuccessResult(Neg), ExceptionalResult(Error(Set(InvalidOperationError("/", List(lhvl, rhvl))))))
       case (Neg, NonPos) | (Pos, NonNeg) =>
-        Set(SuccessResult(Pos), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+        Set(SuccessResult(Pos), ExceptionalResult(Error(Set(InvalidOperationError("/", List(lhvl, rhvl))))))
       case (NonNeg, NonNeg) | (NonPos, NonPos) =>
-        Set(SuccessResult(NonNeg), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+        Set(SuccessResult(NonNeg), ExceptionalResult(Error(Set(InvalidOperationError("/", List(lhvl, rhvl))))))
       case (NonNeg, NonPos) | (NonPos, NonNeg) =>
-        Set(SuccessResult(NonPos), ExceptionalResult(Error(InvalidOperationError("/", List(lhvl, rhvl)))))
+        Set(SuccessResult(NonPos), ExceptionalResult(Error(Set(InvalidOperationError("/", List(lhvl, rhvl))))))
       case (NonNeg, Neg) | (NonPos, Pos) => Set(SuccessResult(NonPos))
       case (NonNeg, Pos) | (NonPos, Neg) => Set(SuccessResult(NonNeg))
       case (SignTop, _) => Set(SuccessResult(SignTop))
@@ -235,10 +235,10 @@ case class AbstractShapeRelationalExecutor(module: Module) {
         case FlatTop => TrueCt
       }
       if (ValueShape.isTop(vls)) {
-        Set(ExceptionalResult(Error(TypeError(vl, DataType("bool")))),
+        Set(ExceptionalResult(Error(Set(TypeError(vl, DataType("bool"))))),
           SuccessResult((true, rr)), SuccessResult((false, rr)))
       } else {
-        ValueShape.toDataShape(vls).fold(Set[AResult[(Boolean, RelCt)]](ExceptionalResult(Error(TypeError(vl, DataType("bool")))))) {
+        ValueShape.toDataShape(vls).fold(Set[AResult[(Boolean, RelCt)]](ExceptionalResult(Error(Set(TypeError(vl, DataType("bool"))))))) {
           case DataBot() => Set()
           case DataElements(typeName, consShape) if typeName == "bool" =>
             consShape.toList.map {
@@ -248,9 +248,9 @@ case class AbstractShapeRelationalExecutor(module: Module) {
             }.toSet
           case DataAny(typeName) if typeName == "bool" =>
             Set(SuccessResult((true, rr)), SuccessResult((false, rr)))
-          case DataTop() => Set(ExceptionalResult(Error(TypeError(vl, DataType("bool")))),
+          case DataTop() => Set(ExceptionalResult(Error(Set(TypeError(vl, DataType("bool"))))),
             SuccessResult((true, rr)), SuccessResult((false, rr)))
-          case _ => Set(ExceptionalResult(Error(TypeError(vl, DataType("bool")))))
+          case _ => Set(ExceptionalResult(Error(Set(TypeError(vl, DataType("bool"))))))
         }
       }
     }
@@ -421,7 +421,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
       case "/" =>
         AMemories(evalSignOp(lhvl, op, rhvl, evalDiv).map((_, acstore)))
       case "%" => ???
-      case _ => AMemories(Set((ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))), acstore)))
+      case _ => AMemories(Set((ExceptionalResult(Error(Set(InvalidOperationError(op, List(lhvl, rhvl))))), acstore)))
     }
   }
 
@@ -435,21 +435,21 @@ case class AbstractShapeRelationalExecutor(module: Module) {
           lhrelcmp2 == Lattice[Flat[VarName \/ RelCt]].bot) {
       Set[AResult[AValue]]()
     } else if (ValueShape.isTop(lhvs) && ValueShape.isTop(rhvs)) {
-      Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))) ++
+      Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(lhvl, rhvl)))))) ++
         evalSign(SignTop, SignTop).map(_.map(sgnres => (ValueShape.fromSign(sgnres), genSymbol)))
     } else if (ValueShape.isTop(lhvs)) {
-      Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))) ++
+      Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(lhvl, rhvl)))))) ++
         ValueShape.toSign(rhvs).fold(Set[AResult[AValue]]()) { rsgn =>
           evalSign(SignTop, rsgn).map(_.map(sgnres => (ValueShape.fromSign(sgnres), genSymbol)))
         }
     } else if (ValueShape.isTop(rhvs)) {
-      Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl))))) ++
+      Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(lhvl, rhvl)))))) ++
         ValueShape.toSign(lhvs).fold(Set[AResult[AValue]]()) { lsgn =>
           evalSign(lsgn, SignTop).map(_.map(sgnres => (ValueShape.fromSign(sgnres), genSymbol)))
         }
     } else {
-      ValueShape.toSign(lhvs).fold[Set[AResult[AValue]]](Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))))) { lsgn =>
-        ValueShape.toSign(rhvs).fold[Set[AResult[AValue]]](Set(ExceptionalResult(Error(InvalidOperationError(op, List(lhvl, rhvl)))))) { rsgn =>
+      ValueShape.toSign(lhvs).fold[Set[AResult[AValue]]](Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(lhvl, rhvl))))))) { lsgn =>
+        ValueShape.toSign(rhvs).fold[Set[AResult[AValue]]](Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(lhvl, rhvl))))))) { rsgn =>
           evalSign(lsgn, rsgn).map(_.map(sgnres => (ValueShape.fromSign(sgnres), genSymbol)))
         }
       }
@@ -491,7 +491,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
             // TODO Abstract relational constraints via paths
               AMemories(Set[AMemory[AValue]]((SuccessResult((fromDataShape(ValueShape.DataShape.dataElements(typ,
                Map(name -> vals.map(_._1)))), genSymbol)), acstore_)))
-            else AMemories(Set[AMemory[AValue]]((ExceptionalResult(Error(SignatureMismatch(name, vals, parameters.map(_.typ)))), acstore_)))
+            else AMemories(Set[AMemory[AValue]]((ExceptionalResult(Error(Set(SignatureMismatch(name, vals, parameters.map(_.typ))))), acstore_)))
           case ExceptionalResult(exres) => AMemories(Set[AMemory[AValue]]((ExceptionalResult(exres), acstore_)))
         }
     })

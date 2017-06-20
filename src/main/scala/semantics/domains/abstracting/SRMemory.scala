@@ -42,7 +42,7 @@ case class SRMemoryOf(module: Module) {
         , ExceptionalResult(Break)
         , ExceptionalResult(Continue)
         , ExceptionalResult(Fail)
-        , ExceptionalResult(Error(OtherError))
+        , ExceptionalResult(Error(Set(OtherError)))
       ).map(res => (res, ACStore(Lattice[AStore].top, Lattice[RelCt].top))))
     }
 
@@ -69,7 +69,9 @@ case class SRMemoryOf(module: Module) {
                 case Break => ExceptionalResult(Break)
                 case Continue => ExceptionalResult(Continue)
                 case Fail => ExceptionalResult(Fail)
-                case Error(kind) => ExceptionalResult(Error(OtherError))
+                case Error(kinds1) =>
+                  val ExceptionalResult(Error(kinds2)) = res2
+                  ExceptionalResult(Error(kinds1 union kinds2))
               }
           }
           val nstore = Lattice[AStore].lub(store1, store2)
@@ -118,7 +120,9 @@ case class SRMemoryOf(module: Module) {
                 case Break => ExceptionalResult(Break)
                 case Continue => ExceptionalResult(Continue)
                 case Fail => ExceptionalResult(Fail)
-                case Error(kind) => ExceptionalResult(Error(OtherError))
+                case Error(kinds1) =>
+                  val ExceptionalResult(Error(kinds2)) = res2
+                  ExceptionalResult(Error(kinds1 intersect kinds2))
               }
           }
           val nstore = Lattice[AStore].lub(store1, store2)

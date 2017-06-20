@@ -17,7 +17,7 @@ case class Throw[T](value: T) extends Exceptional[T]
 case object Break extends Exceptional[Nothing]
 case object Continue extends Exceptional[Nothing]
 case object Fail extends Exceptional[Nothing]
-case class Error(kind: ErrorKind) extends Exceptional[Nothing]
+case class Error(kinds: Set[ErrorKind]) extends Exceptional[Nothing]
 
 sealed trait ErrorKind
 case class TypeError(value: Any, typ: Type) extends ErrorKind

@@ -1,6 +1,6 @@
 package semantics.domains.abstracting
 
-import semantics.domains.abstracting.TypeMemory.{TypeResult}
+import semantics.domains.abstracting.TypeMemory.TypeResult
 import semantics.domains.common._
 import syntax.{Type, VarName}
 import semantics.domains.concrete.TypeOps._
@@ -8,6 +8,7 @@ import semantics.domains.concrete.TypeOps._
 sealed trait TypeStore
 case object TypeStoreTop extends TypeStore
 case class TypeStoreV(vals: Map[VarName, (Boolean, Type)]) extends TypeStore
+case object TypeStoreBot extends TypeStore
 
 case class TypeMemory[T](result: TypeResult[T], store: TypeStore)
 case class TypeMemories[T](memories: Set[TypeMemory[T]])
@@ -23,6 +24,8 @@ object TypeMemory {
     private def upperBound(a1: TypeStore, a2: TypeStore, tOp : (Type, Type) => Type) = {
       (a1, a2) match {
         case (TypeStoreTop, _) | (_, TypeStoreTop) => TypeStoreTop
+        case (TypeStoreBot, a2) => a2
+        case (a1, TypeStoreBot) => a1
         case (TypeStoreV(vals1), TypeStoreV(vals2)) =>
           val allVars = vals1.keySet ++ vals2.keySet
           TypeStoreV(allVars.map { x =>
@@ -35,10 +38,13 @@ object TypeMemory {
       }
     }
 
-    override def lub(a1: TypeStore, a2: TypeStore): TypeStore = upperBound(a1, a2, Lattice[Type].lub)
+    override def lub(a1: TypeStore, a2: TypeStore): TypeStore = {
+      upperBound(a1, a2, Lattice[Type].lub)
+    }
 
     override def glb(a1: TypeStore, a2: TypeStore): TypeStore = {
       (a1, a2) match {
+        case (TypeStoreBot, _) | (_, TypeStoreBot) => TypeStoreBot
         case (TypeStoreTop, _) => a2
         case (_, TypeStoreTop) => a1
         case (TypeStoreV(vals1), TypeStoreV(vals2)) =>
@@ -78,14 +84,14 @@ object TypeMemory {
        , TypeMemory(ExceptionalResult(Break), Lattice[TypeStore].top)
        , TypeMemory(ExceptionalResult(Continue), Lattice[TypeStore].top)
        , TypeMemory(ExceptionalResult(Fail), Lattice[TypeStore].top)
-       , TypeMemory(ExceptionalResult(Error(OtherError)), Lattice[TypeStore].top)
+       , TypeMemory(ExceptionalResult(Error(Set(OtherError))), Lattice[TypeStore].top)
     ))
 
     private
     def groupMemories(a1: TypeMemories[T], a2: TypeMemories[T]): Set[List[TypeMemory[T]]] = {
       val grouped = (a1.memories.toList ++ a2.memories.toList).groupBy[String] {
         _.result match {
-          case SuccessResult(t) => "SuccessResult"
+          case SuccessResult(_) => "SuccessResult"
           case ExceptionalResult(exres) =>
             exres match {
               case Return(_) => "Return"
@@ -120,7 +126,9 @@ object TypeMemory {
                 case Break => ExceptionalResult(Break)
                 case Continue => ExceptionalResult(Continue)
                 case Fail => ExceptionalResult(Fail)
-                case Error(kind) => ExceptionalResult(Error(OtherError))
+                case Error(kinds1) =>
+                  val ExceptionalResult(Error(kinds2)) = tmem2.result
+                  ExceptionalResult(Error(kinds1 union kinds2))
               }
           }
           val nstore = Lattice[TypeStore].lub(tmem1.store, tmem2.store)
@@ -148,7 +156,9 @@ object TypeMemory {
                 case Break => ExceptionalResult(Break)
                 case Continue => ExceptionalResult(Continue)
                 case Fail => ExceptionalResult(Fail)
-                case Error(kind) => ExceptionalResult(Error(OtherError))
+                case Error(kinds1) =>
+                  val ExceptionalResult(Error(kinds2)) = tmem2.result
+                  ExceptionalResult(Error(kinds1 intersect kinds2))
               }
           }
           val nstore = Lattice[TypeStore].lub(tmem1.store, tmem2.store)
