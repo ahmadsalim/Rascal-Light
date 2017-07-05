@@ -633,7 +633,7 @@ case class AbstractRefinementTypeExecutor(module: Module) {
               else Set()
             val posSuc: Set[TypeMemory[VoideableRefinementType]] =
               if (vrtys.length == parameters.length &&
-                  tysparszipped.forall { case (vrty, party) => atyping.checkType(vrty.refinementType, party).contains(false) }) {
+                  tysparszipped.forall { case (vrty, party) => atyping.checkType(vrty.refinementType, party).contains(true) }) {
                 val newRn = newRefinement(tyname)
                 val newrhs = Map(consname -> vrtys.map(_.refinementType))
                 val (newrefinements, nrno) = addRefinement(typememoriesops.datatypes, !refinements, tyname, newRn, newrhs)
@@ -1264,8 +1264,11 @@ case class AbstractRefinementTypeExecutor(module: Module) {
     def memoFix(scrtyp: VoideableRefinementType, store: TypeStore, memo: Map[(Type, Set[ConsName]), (VoideableRefinementType, TypeMemories[VoideableRefinementType])]): TypeMemories[VoideableRefinementType] = {
       def go(scrtyp: VoideableRefinementType, prevRes: TypeMemories[VoideableRefinementType], loopcount: Int): TypeMemories[VoideableRefinementType] = {
         val (failresty, scmems) = evalCases(localVars, store, scrtyp, cases, funMemo)
-        val newRes = Lattice[TypeMemories[VoideableRefinementType]].lubs(scmems.memories.map { case TypeMemory(scres, store__) =>
-            ifFail(scres, failresty) match {
+        val unfailscmems = Lattice[TypeMemories[VoideableRefinementType]].lubs(scmems.memories.map { case TypeMemory(scres, store__) =>
+            TypeMemories[VoideableRefinementType](Set(TypeMemory(ifFail(scres, failresty), store__)))
+        })
+        val newRes = Lattice[TypeMemories[VoideableRefinementType]].lubs(unfailscmems.memories.map { case TypeMemory(scres, store__) =>
+            scres match {
               case SuccessResult(nscrtyp) =>
                 if (break && scres != ExceptionalResult(Fail)) {
                   TypeMemories[VoideableRefinementType](Set(TypeMemory(SuccessResult(nscrtyp), store__)))

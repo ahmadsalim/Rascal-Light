@@ -18,7 +18,10 @@ case class AbstractTyping(module: Module) {
     case ValueRefinementType => ValueType
   }
 
-  def checkType(rtyp: RefinementType, typ: Type): Set[Boolean] = isSubtype(inferType(rtyp), typ)
+  def checkType(rtyp: RefinementType, typ: Type): Set[Boolean] = {
+    val inferredtyp = inferType(rtyp)
+    isSubtype(inferredtyp, typ)
+  }
 
   def isSubtype(ty1: Type, ty2: Type): Set[Boolean] = {
     //Assumes target type is not overapproximated
