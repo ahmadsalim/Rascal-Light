@@ -56,7 +56,7 @@ object ListShape {
 
     override def alpha(dcs: Set[List[CE]]): ListShape[E] = {
       implicit val latticeE = galois[CE, E].latticeA
-      listElements(Lattice[E].lub(dcs.map(dc => galois[CE, E].alpha(dc.toSet))))
+      listElements(Lattice[E].lubs(dcs.map(dc => galois[CE, E].alpha(dc.toSet))))
     }
 
     override def gamma(da: ListShape[E], bound: Int): Set[List[CE]] = {

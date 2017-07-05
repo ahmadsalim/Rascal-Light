@@ -2,7 +2,9 @@ package util
 
 class Ref[T](private var value : T) {
   def unary_! : T = value
-  def :=(newvalue : T) = this.value = newvalue
+  def :=(newvalue : T) = {
+    this.value = newvalue
+  }
 }
 
 object Ref {

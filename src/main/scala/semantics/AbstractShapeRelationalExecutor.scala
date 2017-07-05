@@ -99,7 +99,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   private
   def evalUnary(localVars: Map[VarName, Type], acstore: ACStore, operator: OpName, operand: Expr): AMemories[AValue] = {
     val mems = evalLocal(localVars, acstore, operand)
-    Lattice[AMemories[AValue]].lub(mems.memories.map { case (res, acstore_) =>
+    Lattice[AMemories[AValue]].lubs(mems.memories.map { case (res, acstore_) =>
       res match {
         case SuccessResult(avl) => AMemories[AValue](evalUnaryOp(operator, avl).map((_, acstore_)))
         case ExceptionalResult(exres) => AMemories[AValue](Set((ExceptionalResult(exres), acstore_)))
@@ -267,9 +267,9 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   private
   def evalBinaryOp(lhvl: AValue, op: OpName, rhvl: AValue, acstore: ACStore): AMemories[AValue] = {
     def evalBinBoolOp(bop: (Boolean, Boolean) => Boolean) = {
-      Lattice[AMemories[AValue]].lub(getBool(lhvl).map {
+      Lattice[AMemories[AValue]].lubs(getBool(lhvl).map {
         case SuccessResult((lhb, lhrelcmp)) =>
-          Lattice[AMemories[AValue]].lub(getBool(rhvl).map {
+          Lattice[AMemories[AValue]].lubs(getBool(rhvl).map {
             case SuccessResult((rhb, rhrelcmp)) =>
               AMemories[AValue](Set((SuccessResult((ValueShape.fromDataShape(toBoolDataShape(bop(lhb, rhb))),
                 FlatValue(AndCt(lhrelcmp, lhrelcmp).right))), acstore)))
@@ -335,7 +335,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
             case (ListTop(), _) | (_, ListTop()) =>
               AMemories[AValue](Set((SuccessResult((ValueShape.fromDataShape(DataAny("bool")), opct(pathsorct))), acstore)))
             case (ListElements(e1), ListElements(e2)) =>
-              Lattice[AMemories[AValue]].lub(doValue(e1, e2, FlatValue(TrueCt).right).memories.map { case (ares, acs) =>
+              Lattice[AMemories[AValue]].lubs(doValue(e1, e2, FlatValue(TrueCt).right).memories.map { case (ares, acs) =>
                   ares match {
                     case SuccessResult((vs, vrelcmp)) =>
                       if (Lattice[ValueShape].<=(ValueShape.fromDataShape(DataElements("bool", Map("true" -> List()))), vs)) {
@@ -460,11 +460,11 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   def evalBinaryHelper[E1 : Lattice, E2: Lattice](localVars: Map[VarName, Type], acstore: ACStore, left: Expr, op: OpName, right: Expr,
                           evalsub : (Map[VarName, Type], ACStore, Expr) => AMemories[E1], semop: (E1, OpName, E1, ACStore) => AMemories[E2]): AMemories[E2] = {
     val lhsmems = evalsub(localVars, acstore, left)
-    Lattice[AMemories[E2]].lub(lhsmems.memories.map { case (lhres, acstore__) =>
+    Lattice[AMemories[E2]].lubs(lhsmems.memories.map { case (lhres, acstore__) =>
         lhres match {
           case SuccessResult(lhval) =>
             val rhmems = evalsub(localVars, acstore__, right)
-            Lattice[AMemories[E2]].lub(lhsmems.memories.map { case (rhres, acstore_) =>
+            Lattice[AMemories[E2]].lubs(lhsmems.memories.map { case (rhres, acstore_) =>
                 rhres match {
                   case SuccessResult(rhval) => semop(lhval, op, rhval, acstore_)
                   case ExceptionalResult(exres) => AMemories[E2](Set((ExceptionalResult(exres), acstore_)))
@@ -482,7 +482,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   private
   def evalConstructor(localVars: Map[VarName, Type], acstore: ACStore, name: ConsName, args: Seq[Expr]): AMemories[AValue] = {
     val argsresmems = evalLocalAll(localVars, acstore, args)
-    Lattice[AMemories[AValue]].lub(argsresmems.memories.map { case (argres, acstore_) =>
+    Lattice[AMemories[AValue]].lubs(argsresmems.memories.map { case (argres, acstore_) =>
         argres match {
           case SuccessResult(vals) =>
             val (typ, parameters) = module.constructors(name)
@@ -500,10 +500,10 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   private
   def evalList(localVars: Map[VarName, Type], acstore: ACStore, elements: Seq[Expr]): AMemories[AValue] = {
     val eresmems = evalLocalAll(localVars, acstore, elements)
-    Lattice[AMemories[AValue]].lub(eresmems.memories.map { case (res, acstore_) =>
+    Lattice[AMemories[AValue]].lubs(eresmems.memories.map { case (res, acstore_) =>
         res match {
           case SuccessResult(vals) =>
-            AMemories(Set[AMemory[AValue]]((SuccessResult((fromListShape(ListShape.listElements(Lattice[ValueShape].lub(vals.map(_._1).toSet))),genSymbol)), acstore_)))
+            AMemories(Set[AMemory[AValue]]((SuccessResult((fromListShape(ListShape.listElements(Lattice[ValueShape].lubs(vals.map(_._1).toSet))),genSymbol)), acstore_)))
           case ExceptionalResult(exres) => AMemories(Set[AMemory[AValue]]((ExceptionalResult(exres), acstore_)))
         }
     })
@@ -527,7 +527,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   private
   def evalReturn(localVars: Map[VarName, Type], acstore: ACStore, result: Expr): AMemories[AValue] = {
     val resmems = evalLocal(localVars, acstore, result)
-    Lattice[AMemories[AValue]].lub(resmems.memories.map { case (res, acstore_) =>
+    Lattice[AMemories[AValue]].lubs(resmems.memories.map { case (res, acstore_) =>
         res match {
           case SuccessResult(vl) =>
             AMemories(Set[AMemory[AValue]]((ExceptionalResult(Return(vl)), acstore_)))
@@ -554,7 +554,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   def evalBlock(localVars: Map[VarName, Type], acstore: ACStore, vardefs: Seq[Parameter], exprs: Seq[Expr]): AMemories[AValue] = {
     val localVars_ = localVars ++ vardefs.map(par => par.name -> par.typ)
     val seqmems = evalLocalAll(localVars_, acstore, exprs)
-    Lattice[AMemories[AValue]].lub(seqmems.memories.map { case (res, acstore__) =>
+    Lattice[AMemories[AValue]].lubs(seqmems.memories.map { case (res, acstore__) =>
       val acstore_ = dropStoreVars(acstore__, vardefs.map(_.name))
       res match {
         case SuccessResult(vals) =>
@@ -576,7 +576,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   private
   def evalThrow(localVars: Map[VarName, Type], acstore: ACStore, result: Expr): AMemories[AValue] = {
     val resmems = evalLocal(localVars, acstore, result)
-    Lattice[AMemories[AValue]].lub(resmems.memories.map { case (res, acstore_) =>
+    Lattice[AMemories[AValue]].lubs(resmems.memories.map { case (res, acstore_) =>
       res match {
         case SuccessResult(vl) =>
           AMemories(Set[AMemory[AValue]]((ExceptionalResult(Throw(vl)), acstore_)))
@@ -590,7 +590,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   private
   def evalTryCatch(localVars: Map[VarName, Type], acstore: ACStore, tryB: Expr, catchVar: VarName, catchB: Expr): AMemories[AValue] = {
     val trymems = evalLocal(localVars, acstore, tryB)
-    Lattice[AMemories[AValue]].lub(trymems.memories.map { case (tryres, acstore__) =>
+    Lattice[AMemories[AValue]].lubs(trymems.memories.map { case (tryres, acstore__) =>
         tryres match {
           case SuccessResult(tryval) => AMemories[AValue](Set((SuccessResult(tryval), acstore__)))
           case ExceptionalResult(exres) =>
@@ -607,11 +607,11 @@ case class AbstractShapeRelationalExecutor(module: Module) {
   private
   def evalTryFinally(localVars: Map[VarName, Type], acstore: ACStore, tryB: Expr, finallyB: Expr): AMemories[AValue] = {
     val trymems = evalLocal(localVars, acstore, tryB)
-    Lattice[AMemories[AValue]].lub(trymems.memories.map { case (tryres, acstore__) =>
+    Lattice[AMemories[AValue]].lubs(trymems.memories.map { case (tryres, acstore__) =>
       tryres match {
         case SuccessResult(vl) =>
           val finmems = evalLocal(localVars, acstore__, finallyB)
-          Lattice[AMemories[AValue]].lub(finmems.memories.map { case (finres, acstore_) =>
+          Lattice[AMemories[AValue]].lubs(finmems.memories.map { case (finres, acstore_) =>
             finres match {
               case SuccessResult(_) => AMemories[AValue](Set((SuccessResult(vl), acstore_)))
               case ExceptionalResult(exres) => AMemories[AValue](Set((ExceptionalResult(exres), acstore_)))
@@ -621,7 +621,7 @@ case class AbstractShapeRelationalExecutor(module: Module) {
           exres match {
             case Throw(_) =>
               val finmems = evalLocal(localVars, acstore__, finallyB)
-              Lattice[AMemories[AValue]].lub(finmems.memories.map { case (finres, acstore_) =>
+              Lattice[AMemories[AValue]].lubs(finmems.memories.map { case (finres, acstore_) =>
                   finres match {
                     case SuccessResult(_) =>
                       AMemories[AValue](Set((SuccessResult(Lattice[AValue].bot), acstore_)))

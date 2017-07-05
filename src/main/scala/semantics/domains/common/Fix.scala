@@ -37,7 +37,7 @@ object Fix {
         override def latticeA: Lattice[Fix[F]] = FixLattice
 
         override def alpha(dcs: Set[Fix[CF]]): Fix[F] =
-          Lattice[Fix[F]].lub(dcs.map(cf => Fix(cffgaloisres.alpha(Set(cf.out)))))
+          Lattice[Fix[F]].lubs(dcs.map(cf => Fix(cffgaloisres.alpha(Set(cf.out)))))
 
         override def gamma(da: Fix[F], bound: Int): Set[Fix[CF]] =
           cffgaloisres.gamma(da.out, bound).map(Fix(_))
