@@ -1818,7 +1818,9 @@ case class AbstractRefinementTypeExecutor(module: Module) {
 
 object AbstractRefinementTypeExecutor {
   // TODO Handle Global Variables
-  def execute(module: ModuleDef, function: VarName): String \/ (Module, RefinementDefs, TypeMemories[VoideableRefinementType]) = {
+  def execute(module: ModuleDef, function: VarName,
+              initialRefinements: RefinementDefs = Map(),
+              initialStore: Option[TypeStore] = None): String \/ (Module, RefinementDefs, TypeMemories[VoideableRefinementType]) = {
     for (transr <- ModuleTranslator.translateModule(module);
          executor = AbstractRefinementTypeExecutor(transr.semmod);
          funcDef <- transr.semmod.funs.get(function).fold(s"Unknown function $function".left[(Type, List[Parameter], FunBody)])(_.right);
@@ -1829,8 +1831,10 @@ object AbstractRefinementTypeExecutor {
          })
       yield {
         import executor.typememoriesops._
-        val funcBodyRes = executor.evalLocal(pars.map(p => p.name -> p.typ).toMap,
-          TypeStoreV(pars.map(p => p.name -> VoideableRefinementType(possiblyVoid = false, typeToRefinement(p.typ))).toMap), funcBodyExpr, Map.empty)
+        executor.refinements := initialRefinements
+        val funcstore =
+          initialStore.getOrElse(TypeStoreV(pars.map(p => p.name -> VoideableRefinementType(possiblyVoid = false, typeToRefinement(p.typ))).toMap))
+        val funcBodyRes = executor.evalLocal(pars.map(p => p.name -> p.typ).toMap, funcstore, funcBodyExpr, Map.empty)
         val reslub = Lattice[TypeMemories[VoideableRefinementType]].lubs(funcBodyRes.memories.map { case TypeMemory(res, store_) =>
           res match {
             case ExceptionalResult(Return(retty)) => TypeMemories[VoideableRefinementType](Set(TypeMemory(SuccessResult(retty), store_)))
