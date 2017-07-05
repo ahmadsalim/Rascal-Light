@@ -1,10 +1,10 @@
 import org.scalatest.{FlatSpec, Matchers}
 import semantics.AbstractRefinementTypeExecutor
 import semantics.domains.abstracting.RefinementTypes.RefinementDefs
-import semantics.domains.abstracting.{RefinementTypes, TypeMemories, TypeMemory, VoideableRefinementType}
+import semantics.domains.abstracting._
 import semantics.domains.common._
 import semantics.typing.AbstractTyping
-import syntax.{DataType, Type}
+import syntax.{DataType, StringType, Type}
 import util.rascalwrapper.RascalWrapper
 
 import scalaz.\/-
@@ -62,6 +62,16 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
   "The rename field refactoring in RenameField.rscli" should "run correctly with the abstract type executor" in {
     val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("RenameField.rscli").getFile)
     val modRFExecRes = modRFO.flatMap { moddef =>
+      val initialRefinements: RefinementDefs =
+        Map("Nominal#ofn" -> RefinementDef("Nominal", Map("ofn" -> List())),
+            "Nominal#nfn" -> RefinementDef("Nominal", Map("nfn" -> List())))
+      val initialStore =
+        TypeStoreV(Map(
+          "pkg" -> VoideableRefinementType(possiblyVoid = false, DataRefinementType("Package", None)),
+          "cl" -> VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringType)),
+          "oldFieldName" -> VoideableRefinementType(possiblyVoid = false, DataRefinementType("Nominal", Some("Nominal#ofn"))),
+          "newFieldName" -> VoideableRefinementType(possiblyVoid = false, DataRefinementType("Nominal", Some("Nominal#nfn")))
+        ))
       AbstractRefinementTypeExecutor.execute(moddef, "renameField")
     }
     modRFExecRes shouldBe a [\/-[_]]
