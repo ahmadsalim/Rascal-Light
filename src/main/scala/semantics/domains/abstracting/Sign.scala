@@ -51,7 +51,7 @@ object Sign {
 
   implicit val IntSignGalois = new ConcreteAbstractGalois[Int, Sign] {
     override def alpha(dcs: Set[Int]): Sign =
-      Lattice[Sign].lub(dcs.map(i => if (i > 0) Pos else if (i < 0) Neg else Zero))
+      Lattice[Sign].lubs(dcs.map(i => if (i > 0) Pos else if (i < 0) Neg else Zero))
 
     override def gamma(da: Sign, bound: Int): Set[Int] = da match {
       case SignBot => Set()

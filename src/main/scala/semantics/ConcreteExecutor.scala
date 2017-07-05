@@ -11,8 +11,9 @@ import scalaz.syntax.monadPlus._
 import fs2.{Pure, Stream}
 import semantics.domains.common._
 import semantics.domains.concrete._
+import semantics.typing.Typing
 
-case class Executor(module: Module) {
+case class ConcreteExecutor(module: Module) {
 
   private
   def evalUnaryOp(op: OpName, vl: Value): Result[Value] = (op, vl) match {
@@ -25,17 +26,17 @@ case class Executor(module: Module) {
   private
   def evalBinaryOp(lhvl: Value, op: OpName, rhvl: Value): Result[Value] =
     (lhvl, op, rhvl) match {
-      case (lhvl, "==", rhvl) =>
+      case (_, "==", _) =>
         (if (lhvl == rhvl) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "!=", rhvl) =>
+      case (_, "!=", _) =>
         (if (lhvl != rhvl) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "in", ListValue(vs)) =>
+      case (_, "in", ListValue(vs)) =>
         (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "in", SetValue(vs)) =>
+      case (_, "in", SetValue(vs)) =>
         (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "in", MapValue(vs)) =>
+      case (_, "in", MapValue(vs)) =>
         (if (vs.contains(lhvl)) ConstructorValue("true", Seq()) else ConstructorValue("false", Seq())).point[Result]
-      case (lhvl, "notin", rhvl) => evalBinaryOp(lhvl, "in", rhvl).flatMap(v => evalUnaryOp("!", v))
+      case (_, "notin", _) => evalBinaryOp(lhvl, "in", rhvl).flatMap(v => evalUnaryOp("!", v))
       case (ConstructorValue("false", Seq()), "&&", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
         ConstructorValue("false", Seq()).point[Result]
       case (ConstructorValue("true", Seq()), "&&", ConstructorValue(bnm, Seq())) if bnm == "true" || bnm == "false" =>
@@ -73,10 +74,10 @@ case class Executor(module: Module) {
 
   private
   def mergePairs(pairs: Stream[Pure, (Map[VarName, Value], Map[VarName, Value])]): Stream[Pure, Map[VarName, Value]] = {
-    pairs.map { case (env1, env2) =>
-      if (env1.keySet.intersect(env2.keySet).forall(x => env1(x) == env2(x))) Some(env1 ++ env2)
-      else None
-    }.filter(_.isDefined).map(_.get)
+    pairs.flatMap { case (env1, env2) =>
+      if (env1.keySet.intersect(env2.keySet).forall(x => env1(x) == env2(x))) Stream(env1 ++ env2)
+      else Stream()
+    }
   }
 
   private
@@ -108,7 +109,7 @@ case class Executor(module: Module) {
             else
               allPartitions(vals).flatMap(part =>
                 matchPattAll(Store(store.map.updated(sx, construct(part))), // Optimization to avoid heavy back-tracking
-                  restPartition(part, vals).get, sps, extract, construct, allPartitions, restPartition))
+                  restPartition(part, vals).get, sps, extract, construct, allPartitions, restPartition).map(_.updated(sx, construct(part))))
         }
     }
 
@@ -203,24 +204,31 @@ case class Executor(module: Module) {
         case MapAccessPath(kvl) =>
           ovl match {
             case MapValue(vals) =>
-              if (vals.contains(kvl)) {
+              if (tvl == BottomValue) ExceptionalResult(Error(Set(OtherError)))
+              else if (rpaths.isEmpty) {
+                SuccessResult(MapValue(vals.updated(kvl, tvl)))
+              } else if (vals.contains(kvl)) {
                 updatePath(vals(kvl), rpaths, tvl).map(nvl => MapValue(vals.updated(kvl, nvl)))
-              }
-              else ExceptionalResult(Throw(ConstructorValue("NoKey", Seq(kvl))))
-            case _ => ExceptionalResult(Error(Set(TypeError(ovl, MapType(typing.inferType(kvl).get, typing.inferType(tvl).get)))))
+              } else ExceptionalResult(Throw(ConstructorValue("NoKey", Seq(kvl))))
+            case _ => ExceptionalResult(Error(Set(TypeError(ovl, MapType(typing.inferType(kvl), typing.inferType(tvl))))))
           }
         case FieldAccessPath(fieldName) =>
           ovl match {
             case ConstructorValue(name, vals) =>
-              val (_, pars) = module.constructors(name)
-              val index = pars.indexWhere(_.name == fieldName)
-              if (index < 0) { ExceptionalResult(Error(Set(FieldError(ovl, fieldName)))) }
+              if (tvl == BottomValue) ExceptionalResult(Error(Set(OtherError)))
               else {
-                updatePath(vals(index), rpaths, tvl).flatMap { nvl =>
-                  if (typing.checkType(nvl, pars(index).typ)) {
-                    ConstructorValue(name, vals.updated(index, nvl)).point[Result]
-                  } else {
-                    ExceptionalResult(Error(Set(TypeError(nvl, pars(index).typ))))
+                val (_, pars) = module.constructors(name)
+                val index = pars.indexWhere(_.name == fieldName)
+                if (index < 0) {
+                  ExceptionalResult(Error(Set(FieldError(ovl, fieldName))))
+                }
+                else {
+                  updatePath(vals(index), rpaths, tvl).flatMap { nvl =>
+                    if (typing.checkType(nvl, pars(index).typ)) {
+                      ConstructorValue(name, vals.updated(index, nvl)).point[Result]
+                    } else {
+                      ExceptionalResult(Error(Set(TypeError(nvl, pars(index).typ))))
+                    }
                   }
                 }
               }
@@ -233,15 +241,24 @@ case class Executor(module: Module) {
   def reconstruct(vl: Value, cvs: List[Value]): Result[Value] = {
     vl match {
       case BasicValue(b) =>
-        if (cvs.isEmpty) BasicValue(b).point[Result] else ExceptionalResult(Error(Set(ReconstructError(vl, cvs))))
+        if (cvs.isEmpty) BasicValue(b).point[Result]
+        else ExceptionalResult(Error(Set(ReconstructError(vl, cvs))))
       case ConstructorValue(name, _) =>
         val (_, parameters) = module.constructors(name)
         if (cvs.length == parameters.length &&
-              cvs.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled)) ConstructorValue(name, cvs).point[Result]
+              !cvs.contains(BottomValue) &&
+                cvs.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled)) ConstructorValue(name, cvs).point[Result]
         else ExceptionalResult(Error(Set(ReconstructError(vl, cvs))))
-      case ListValue(_) => ListValue(cvs).point[Result]
-      case SetValue(_) => SetValue(cvs.toSet).point[Result]
-      case MapValue(_) => MapValue(cvs.take(cvs.length/2).zip(cvs.drop(cvs.length/2)).toMap).point[Result]
+      case ListValue(_) =>
+        if (!cvs.contains(BottomValue)) ListValue(cvs).point[Result]
+        else ExceptionalResult(Error(Set(ReconstructError(vl, cvs))))
+      case SetValue(_) =>
+        if (!cvs.contains(BottomValue)) SetValue(cvs.toSet).point[Result]
+        else ExceptionalResult(Error(Set(ReconstructError(vl, cvs))))
+      case MapValue(_) =>
+        val (nkeys, nvals) = cvs.splitAt(cvs.length/2)
+        if (!cvs.contains(BottomValue)) MapValue(nkeys.zip(nvals).toMap).point[Result]
+        else ExceptionalResult(Error(Set(ReconstructError(vl, cvs))))
       case BottomValue =>
         if (cvs.isEmpty) BottomValue.point[Result] else ExceptionalResult(Error(Set(ReconstructError(vl, cvs))))
     }
@@ -373,7 +390,8 @@ case class Executor(module: Module) {
     envs.head.toList match {
       case Nil => (().point[Result], store)
       case env :: _ =>
-        val (bodyres, store_) = evalLocal(localVars, Store(store.map ++ env), body)
+        val (bodyres, store__) = evalLocal(localVars, Store(store.map ++ env), body)
+        val store_ = Store(store__.map -- env.keySet)
         bodyres match {
           case SuccessResult(_) =>
             evalEach(localVars, store_, envs.tail, body)
@@ -480,7 +498,9 @@ case class Executor(module: Module) {
       case SuccessResult(tryval) => (tryval.point[Result], store__)
       case ExceptionalResult(exres) =>
         exres match {
-          case Throw(value) => evalLocal(localVars, Store(store__.map.updated(catchVar, value)), catchB)
+          case Throw(value) =>
+            val (res, store_) = evalLocal(localVars, Store(store__.map.updated(catchVar, value)), catchB)
+            (res, Store(store_.map - catchVar))
           case _ => (ExceptionalResult(exres), store__)
         }
     }
@@ -708,10 +728,15 @@ case class Executor(module: Module) {
             val (keyres, store__) = evalLocal(localVars, store___, ekey)
             keyres match {
               case SuccessResult(keyv) =>
-                val (valres, store_) = evalLocal(localVars, store__, evl)
-                valres match {
-                  case SuccessResult(valv) => (MapValue(vals.updated(keyv, valv)).pure[Result], store_)
-                  case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+                if (keyv == BottomValue) (ExceptionalResult(Error(Set(OtherError))), store__)
+                else {
+                  val (valres, store_) = evalLocal(localVars, store__, evl)
+                  valres match {
+                    case SuccessResult(valv) =>
+                      if (valv == BottomValue) (ExceptionalResult(Error(Set(OtherError))), store_)
+                      else (MapValue(vals.updated(keyv, valv)).pure[Result], store_)
+                    case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
+                  }
                 }
               case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
             }
@@ -748,7 +773,8 @@ case class Executor(module: Module) {
         valres match {
           case SuccessResult(vals) =>
             assert(keys.length == vals.length)
-            (MapValue(keys.zip(vals).toMap).pure[Result], store_)
+            if (!keys.contains(BottomValue) && !vals.contains(BottomValue)) (MapValue(keys.zip(vals).toMap).pure[Result], store_)
+            else (ExceptionalResult(Error(Set(OtherError))), store_)
           case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
         }
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
@@ -758,7 +784,9 @@ case class Executor(module: Module) {
   private def evalSet(localVars: Map[VarName, Type], store: Store, elements: Seq[Expr]) = {
     val (res, store_) = evalLocalAll(localVars, store, elements)
     res match {
-      case SuccessResult(vals) => (SetValue(vals.toSet).pure[Result], store_)
+      case SuccessResult(vals) =>
+        if (!vals.contains(BottomValue)) (SetValue(vals.toSet).pure[Result], store_)
+        else (ExceptionalResult(Error(Set(OtherError))), store_)
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
     }
   }
@@ -766,7 +794,9 @@ case class Executor(module: Module) {
   private def evalList(localVars: Map[VarName, Type], store: Store, elements: Seq[Expr]) = {
     val (res, store_) = evalLocalAll(localVars, store, elements)
     res match {
-      case SuccessResult(vals) => (ListValue(vals).pure[Result], store_)
+      case SuccessResult(vals) =>
+        if (!vals.contains(BottomValue)) (ListValue(vals).pure[Result], store_)
+        else (ExceptionalResult(Error(Set(OtherError))), store_)
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
     }
   }
@@ -777,6 +807,7 @@ case class Executor(module: Module) {
       case SuccessResult(vals) =>
         val (_, parameters) = module.constructors(name)
         if (vals.length == parameters.length &&
+          !vals.contains(BottomValue) &&
           vals.zip(parameters.map(_.typ)).forall((typing.checkType _).tupled))
           (ConstructorValue(name, vals).pure[Result], store_)
         else (ExceptionalResult(Error(Set(SignatureMismatch(name, vals, parameters.map(_.typ))))), store_)
@@ -849,9 +880,9 @@ case class Executor(module: Module) {
   def eval(store: Store, expr: Expr): (Result[Value], Store) = evalLocal(Map.empty, store, expr)
 }
 
-object Executor {
+object ConcreteExecutor {
   private
-  def evaluateGlobalVariables(executor: Executor, globVars: List[(VarName, Expr)]) = {
+  def evaluateGlobalVariables(executor: ConcreteExecutor, globVars: List[(VarName, Expr)]) = {
     val initStore = Store(globVars.toMap.mapValues(_ => BottomValue))
     globVars.reverse.foldLeftM[String \/ ?, Store](initStore) {
       (store, unevalglobvar) =>
@@ -865,7 +896,7 @@ object Executor {
   }
 
   private
-  def executeTests(executor: Executor, tests: List[TestDef], store: Store) = {
+  def executeTests(executor: ConcreteExecutor, tests: List[TestDef], store: Store) = {
     tests.foldLeftM[String \/ ?, List[VarName]](List()) { (failed, test) =>
       val (res, _) = executor.eval(store, test.body)
       res match {
@@ -880,7 +911,7 @@ object Executor {
 
   def execute(module: syntax.ModuleDef): String \/ ExecutionResult = {
     for (transr <- ModuleTranslator.translateModule(module);
-         executor = Executor(transr.semmod);
+         executor = ConcreteExecutor(transr.semmod);
          store <- evaluateGlobalVariables(executor, transr.globalVarDefs);
          testr <- executeTests(executor, transr.tests, store);
          (store_, failed) = testr

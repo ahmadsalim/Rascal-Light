@@ -1,6 +1,6 @@
 import org.scalatest.{FlatSpec, Matchers}
 import semantics.domains._
-import semantics.Executor
+import semantics.ConcreteExecutor
 import semantics.domains.common.{Domains, ExprFunBody}
 import semantics.domains.concrete.{BasicValue, ExecutionResult, Store}
 import syntax._
@@ -14,7 +14,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
   "The empty module" should "produce an empty store and only have prelude definitions" in {
     val emptyModule = syntax.ModuleDef(Seq())
     val expected = ExecutionResult(Store(Map()), Domains.prelude, List())
-    val actual = Executor.execute(emptyModule)
+    val actual = ConcreteExecutor.execute(emptyModule)
     actual should matchPattern { case \/-(`expected`) => }
   }
 
@@ -23,7 +23,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
       GlobalVarDef(ValueType, "_", BinaryExpr(BasicExpr(IntLit(2)), "+", BasicExpr(IntLit(3))))))
     val expected = ExecutionResult(Store(Map("_" -> BasicValue(IntLit(5)))),
                         Domains.prelude.copy(globalVars = Domains.prelude.globalVars.updated("_", ValueType)), List())
-    val actual = Executor.execute(valModule)
+    val actual = ConcreteExecutor.execute(valModule)
     actual should matchPattern { case \/-(`expected`) => }
   }
 
@@ -34,7 +34,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
       Domains.prelude.copy(funs =
         Domains.prelude.funs.updated("double",
           (BaseType(IntType), List(Parameter(BaseType(IntType), "x")), ExprFunBody(BinaryExpr(VarExpr("x"), "*", VarExpr("x")))))), List())
-    val actual = Executor.execute(funModule)
+    val actual = ConcreteExecutor.execute(funModule)
     actual should matchPattern { case \/-(`expected`) => }
   }
 
@@ -46,7 +46,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
       constructors = Domains.prelude.constructors.updated("zero", ("Nat", List()))
                                                  .updated("succ", ("Nat", List(Parameter(DataType("Nat"), "n"))))), List())
 
-    val actual = Executor.execute(dataModule)
+    val actual = ConcreteExecutor.execute(dataModule)
     actual should matchPattern { case \/-(`expected`) => }
   }
 
@@ -60,7 +60,7 @@ class ModuleExecutionTests extends FlatSpec with Matchers {
       Domains.prelude.copy(globalVars = Domains.prelude.globalVars.updated("y", BaseType(IntType)),
         funs = Domains.prelude.funs.updated("double",
           (BaseType(IntType), List(Parameter(BaseType(IntType), "x")), ExprFunBody(BinaryExpr(VarExpr("x"), "*", VarExpr("x")))))), List())
-    val actual = Executor.execute(module)
+    val actual = ConcreteExecutor.execute(module)
     actual should matchPattern { case \/-(`expected`) => }
   }
 }

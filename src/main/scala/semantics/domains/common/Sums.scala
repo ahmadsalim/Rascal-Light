@@ -90,7 +90,7 @@ object Sums {
              Sum5Lattice(implicitly[Lattice[E]], cagalois1.latticeA, cagalois2.latticeA, cagalois3.latticeA, cagalois4.latticeA, cagalois5.latticeA)
 
            override def alpha(dcs: Set[Sum5[CE, CF1, CF2, CF3, CF4, CF5]]): Sum5[E, F1, F2, F3, F4, F5] =
-            latticeA.lub(dcs.map {
+            latticeA.lubs(dcs.map {
               case SumBot() => SumBot[E,F1,F2,F3,F4,F5]()
               case SumTop() => SumTop[E,F1,F2,F3,F4,F5]()
               case Inj1(ce) => Inj1[E,F1,F2,F3,F4,F5](galois[CF1[CE], F1[E]].alpha(Set(ce)))

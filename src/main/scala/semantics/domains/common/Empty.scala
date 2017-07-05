@@ -22,7 +22,7 @@ object Empty {
 
     override def latticeA: Lattice[Nothing] = EmptyLattice
 
-    override def alpha(dcs: Set[Nothing]): Nothing = latticeA.lub(dcs)
+    override def alpha(dcs: Set[Nothing]): Nothing = latticeA.lubs(dcs)
 
     override def gamma(da: Nothing, bound: Int): Set[Nothing] = Set()
   }

@@ -1,25 +1,25 @@
 package util
 
-class Counter(value : Int) extends Ref[Int](value) {
-  def +=(diff : Int) = {
+class Counter(value : BigInt) extends Ref[BigInt](value) {
+  def +=(diff : BigInt): BigInt = {
     val oldValue = !this
     this := oldValue + diff
     oldValue
   }
 
-  def -=(diff : Int) = {
+  def -=(diff : BigInt): BigInt = {
     this += -diff
   }
 
-  def ++ = {
+  def ++ : BigInt = {
     this += 1
   }
 
-  def -- = {
+  def -- : BigInt = {
     this -= 1
   }
 }
 
 object Counter {
-  def apply(value : Int) = new Counter(value)
+  def apply(value : BigInt) = new Counter(value)
 }

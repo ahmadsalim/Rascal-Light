@@ -1,10 +1,10 @@
 package semantics.domains.abstracting
 
-import semantics.Typing
 import semantics.domains.abstracting.ListShape.{ListListShapeGalois, ListShapeLattice}
 import semantics.domains.common.Powerset.PowersetLattice
 import semantics.domains.common.{ConcreteAbstractGalois, Lattice, Module}
 import semantics.domains.concrete.{ConstructorValue, Value}
+import semantics.typing.Typing
 import syntax.{ConsName, Type, TypeName}
 
 import scalaz.std.list._
@@ -105,7 +105,7 @@ case class DataShapeOf(module: Module) {
 
     override def alpha(dcs: Set[ConstructorValue]): DataShape[E] = {
       implicit val latte = elementGalois.latticeA
-      latticeA.lub(dcs.map { consValue =>
+      latticeA.lubs(dcs.map { consValue =>
         val ty = module.constructors(consValue.name)._1
         dataElements(ty, Map(consValue.name ->
           consValue.vals.map(convValue.from).map(ce => elementGalois.alpha(Set(ce))).toList))
