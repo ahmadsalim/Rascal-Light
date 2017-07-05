@@ -36,7 +36,7 @@ data Expression
     | or(Expression lhs, Expression rhs)
     | negative(Expression expr)
     | positive(Expression expr)
-    | ifThenElse(Expression condition, Expression ifThen, Expression \else)
+    | ternary(Expression condition, Expression ifThen, Expression \else)
     | new(str artifact, list[Expression] args)
     | get(Type t)
     | invoke(str methodName, list[Expression] args)
@@ -48,12 +48,12 @@ data Expression
     ;
 
 data Type
-    = integer()
-    | string()
+    = integer2()
+    | string2()
     | voidValue()
-    | boolean()
-    | \list(Type \type)
-    | \map(Type key, Type v)
+    | boolean2()
+    | list2(Type \type)
+    | map2(Type key, Type v)
     | artifact(str name)
     | repository(str name)
     | selfie()
@@ -112,7 +112,7 @@ public data PhpName = phpName(str name);
 
 public data PhpNameOrExpr = phpName2(PhpName name) | phpExpr(PhpExpr expr);
 
-public data PhpCastType = phpInt() | phpBool() | phpString() | phpArray() | phpObject() | phpUnset();
+public data PhpCastType = phpIntCast() | phpBoolCast() | phpStringCast() | phpArrayCast() | phpObjectCast() | phpUnsetCast();
 
 public data PhpClosureUse = phpClosureUse(PhpExpr varName, bool byRef);
 
@@ -140,7 +140,7 @@ public data PhpExpr
     | phpCall(PhpNameOrExpr funName, list[PhpActualParameter] parameters)
     | phpMethodCall(PhpExpr target, PhpNameOrExpr methodName, list[PhpActualParameter] parameters)
     | phpStaticCall(PhpNameOrExpr staticTarget, PhpNameOrExpr methodName, list[PhpActualParameter] parameters)
-    | phpInclude(PhpExpr expr, PhpIncludeType includeType)
+    | phpIncludeExpr(PhpExpr expr, PhpIncludeType includeType)
     | phpInstanceOf(PhpExpr expr, PhpNameOrExpr toCompare)
     | phpIsSet(list[PhpExpr] exprs)
     | phpPrint(PhpExpr expr)
@@ -187,7 +187,7 @@ public data PhpScalar
 public data PhpStmt
     = phpBreak(PhpOptionExpr breakExpr)
     | phpClassDef(PhpClassDef classDef)
-    | phpConst(list[PhpConst] consts)
+    | phpConsts(list[PhpConst] consts)
     | phpContinue(PhpOptionExpr continueExpr)
     | phpDeclare(list[PhpDeclaration] decls, list[PhpStmt] body)
     | phpDo(PhpExpr cond, list[PhpStmt] body)
@@ -207,13 +207,13 @@ public data PhpStmt
     | phpNamespace(PhpOptionName nsName, list[PhpStmt] body)
     | phpNamespaceHeader(PhpName namespaceName)
     | phpReturn(PhpOptionExpr returnExpr)
-    | phpStatic(list[PhpStaticVar] vars)
+    | phpStaticVars(list[PhpStaticVar] vars)
     | phpSwitch(PhpExpr cond, list[PhpCase] cases)
     | phpThrow(PhpExpr expr)
     | phpTryCatch(list[PhpStmt] body, list[PhpCatch] catches)
     | phpTryCatchFinally(list[PhpStmt] body, list[PhpCatch] catches, list[PhpStmt] finallyBody)
     | phpUnset(list[PhpExpr] unsetVars)
-    | phpUse(set[PhpUse] uses)
+    | phpUseExpr(set[PhpUse] uses)
     | phpWhile(PhpExpr cond, list[PhpStmt] body)
     | phpEmptyStmt()
     | phpBlock(list[PhpStmt] body)
@@ -233,7 +233,7 @@ public data PhpElse = phpElse(list[PhpStmt] body);
 public data PhpUse = phpUse(PhpName importName, PhpOptionName asName);
 
 public data PhpClassItem
-    = phpProperty(set[PhpModifier] modifiers, list[PhpProperty] prop)
+    = phpPropertyCI(set[PhpModifier] modifiers, list[PhpProperty] prop)
     | phpConstCI(list[PhpConst] consts)
     | phpMethod(str name, set[PhpModifier] modifiers, bool byRef, list[PhpParam] params, list[PhpStmt] body, PhpOptionName returnType)
     | phpTraitUse(list[PhpName] traits, list[PhpAdaptation] adaptations)
@@ -318,7 +318,7 @@ PhpExpr toPhpExpr(Expression expr) {
 		case variable(str name):
 			return phpVar(phpName2(phpName(name)));
 
-		case ifThenElse(Expression condition, Expression ifThen, Expression \else):
+		case ternary(Expression condition, Expression ifThen, Expression \else):
 			return phpTernary(toPhpExpr(condition), phpSomeExpr(toPhpExpr(ifThen)), toPhpExpr(\else));
 
 		case new(str artifact, list[Expression] args): {
@@ -406,11 +406,11 @@ Glagol to PHP Transformation --- Types
 */
 PhpName toPhpTypeName(Type \type) {
 	switch(\type) {
-		case integer(): return phpName("int");
-		case boolean(): return phpName("bool");
-		case string(): return phpName("string");
-		case \list(_): return phpName("Vector");
-		case \map(_, _): return phpName("Map");
+		case integer2(): return phpName("int");
+		case boolean2(): return phpName("bool");
+		case string2(): return phpName("string");
+		case list2(_): return phpName("Vector");
+		case map2(_, _): return phpName("Map");
 		case artifact(str name): return phpName(name);
 		case repository(str name): return phpName(name + "Repository");
 	};

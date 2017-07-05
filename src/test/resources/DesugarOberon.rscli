@@ -40,15 +40,14 @@ data Statement
 
 data Expression 
 	= nat(int val)
-	| \true()
-	| \false()
+	| \trueE()
+	| \falseE()
 	| lookup(Ident var)
 	| neg(Expression exp)
 	| pos(Expression exp)
 	| not(Expression exp)
 	| mul(Expression lhs, Expression rhs)
 	| div(Expression lhs, Expression rhs)
-	| \mod(Expression lhs, Expression rhs)
 	| amp(Expression lhs, Expression rhs)
 	| add(Expression lhs, Expression rhs)
 	| sub(Expression lhs, Expression rhs)

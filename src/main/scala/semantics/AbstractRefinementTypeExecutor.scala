@@ -18,7 +18,7 @@ import scalaz.syntax.traverse._
 import scalaz.syntax.either._
 
 // TODO: Convert lub(...flatMap) to map(...lub)
-case class AbstractRefinementTypeExecutor(module: Module) {
+case class AbstractRefinementTypeExecutor(module: Module, precise: Boolean = false) {
   private
   val atyping = AbstractTyping(module)
 
@@ -1226,6 +1226,12 @@ case class AbstractRefinementTypeExecutor(module: Module) {
     })
   }
 
+  def memoVisitKey(rtyp: VoideableRefinementType): (Type, Set[ConsName]) = {
+    (atyping.inferType(rtyp.refinementType),
+      if (precise) RefinementTypes.possibleConstructors(typememoriesops.datatypes, !refinements, rtyp.refinementType)
+      else Set())
+  }
+
   def evalTD(localVars: Map[VarName, Type], store: TypeStore, scrtyp: VoideableRefinementType, cases: List[Case], break: Boolean, funMemo: FunMemo): TypeMemories[VoideableRefinementType] = {
     def evalTDAll(vrtypes: List[RefinementType], store: TypeStore, memo: Map[(Type, Set[ConsName]), (VoideableRefinementType, TypeMemories[VoideableRefinementType])]): TypeMemories[List[VoideableRefinementType]] = {
       vrtypes match {
@@ -1257,10 +1263,6 @@ case class AbstractRefinementTypeExecutor(module: Module) {
       }
     }
 
-    def memoKey(rtyp: VoideableRefinementType) = {
-      (atyping.inferType(rtyp.refinementType), RefinementTypes.possibleConstructors(typememoriesops.datatypes, !refinements, rtyp.refinementType))
-    }
-
     def memoFix(scrtyp: VoideableRefinementType, store: TypeStore, memo: Map[(Type, Set[ConsName]), (VoideableRefinementType, TypeMemories[VoideableRefinementType])]): TypeMemories[VoideableRefinementType] = {
       def go(scrtyp: VoideableRefinementType, prevRes: TypeMemories[VoideableRefinementType], loopcount: Int): TypeMemories[VoideableRefinementType] = {
         val (failresty, scmems) = evalCases(localVars, store, scrtyp, cases, funMemo)
@@ -1276,7 +1278,7 @@ case class AbstractRefinementTypeExecutor(module: Module) {
                   val cvmems: Set[(VoideableRefinementType, TypeMemories[List[VoideableRefinementType]])] =
                     RefinementTypes.children(typememoriesops.datatypes, !refinements, nscrtyp).map { case (newrefinements, nnrtyp, cts) =>
                       refinements := !refinements ++ newrefinements
-                      (nnrtyp, evalTDAll(cts, store, memo.updated(memoKey(scrtyp), (scrtyp, prevRes)))) }
+                      (nnrtyp, evalTDAll(cts, store, memo.updated(memoVisitKey(scrtyp), (scrtyp, prevRes)))) }
                   val cvress = cvmems.flatMap { case (nnrtyp, chres) =>
                     chres.memories.map { case TypeMemory(cvres, store_) =>
                       cvres match {
@@ -1299,7 +1301,7 @@ case class AbstractRefinementTypeExecutor(module: Module) {
           go(scrtyp, widened, loopcount = loopcount + 1)
         }
       }
-      memo.get(memoKey(scrtyp)).fold(
+      memo.get(memoVisitKey(scrtyp)).fold(
         go(scrtyp, Lattice[TypeMemories[VoideableRefinementType]].bot, loopcount = 0)) { case (prevscrtyp, prevres) =>
           if (RSLattice[VoideableRefinementType, DataTypeDefs, RefinementDefs].<=(typememoriesops.datatypes, !refinements, scrtyp, prevscrtyp)) prevres
           else {
@@ -1346,10 +1348,6 @@ case class AbstractRefinementTypeExecutor(module: Module) {
       }
     }
 
-    def memoKey(rtyp: VoideableRefinementType) = {
-      (atyping.inferType(rtyp.refinementType), RefinementTypes.possibleConstructors(typememoriesops.datatypes, !refinements, rtyp.refinementType))
-    }
-
     // TODO Visit state my dependend on the store as well, because of store-dependent pattern matching
     def memoFix(store: TypeStore, scrtyp: VoideableRefinementType, memo: Map[(Type, Set[ConsName]), (VoideableRefinementType, TypeMemories[VoideableRefinementType])]) = {
       def go(scrtyp: VoideableRefinementType, prevRes: TypeMemories[VoideableRefinementType], loopcount: Int): TypeMemories[VoideableRefinementType] = {
@@ -1357,7 +1355,7 @@ case class AbstractRefinementTypeExecutor(module: Module) {
           val children = RefinementTypes.children(typememoriesops.datatypes, !refinements, scrtyp)
           children.map { case (newrefinements, refinescrtyp, crtys) =>
             refinements := !refinements ++ newrefinements
-            val buvisitres = evalBUAll(crtys, store, memo.updated(memoKey(scrtyp), (scrtyp, prevRes)))
+            val buvisitres = evalBUAll(crtys, store, memo.updated(memoVisitKey(scrtyp), (scrtyp, prevRes)))
             (refinescrtyp, buvisitres)
           }
         }
@@ -1395,7 +1393,7 @@ case class AbstractRefinementTypeExecutor(module: Module) {
           go(scrtyp, widened, loopcount = loopcount + 1)
         }
       }
-      memo.get(memoKey(scrtyp)).fold(go(scrtyp, Lattice[TypeMemories[VoideableRefinementType]].bot, loopcount = 0)) { case (prevscrtyp, prevres) =>
+      memo.get(memoVisitKey(scrtyp)).fold(go(scrtyp, Lattice[TypeMemories[VoideableRefinementType]].bot, loopcount = 0)) { case (prevscrtyp, prevres) =>
         if (RSLattice[VoideableRefinementType, DataTypeDefs, RefinementDefs].<=(typememoriesops.datatypes, !refinements, scrtyp, prevscrtyp)) prevres
         else {
           val (newrefinements, scrtyplub) = RSLattice[VoideableRefinementType, DataTypeDefs, RefinementDefs].widen(typememoriesops.datatypes, !refinements, prevscrtyp, scrtyp)

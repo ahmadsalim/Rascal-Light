@@ -29,7 +29,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     } shouldBe true
     mems.memories.foreach { case TypeMemory(res, _) => res match {
         case SuccessResult(restype) =>
-          restype.possiblyVoid shouldBe false
+          //restype.possiblyVoid shouldBe false
           atyping.inferType(restype.refinementType) shouldBe targetType
         case ExceptionalResult(exres) =>  exres shouldNot be (an [Error])
       }
@@ -99,6 +99,39 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     modRDExecRes shouldBe a [\/-[_]]
     modRDExecRes.foreach { case (module, refinements, tmems) =>
       memsOK(module, refinements, tmems, DataType("Package"))
+    }
+  }
+
+  "The type translation in Glagol2PHP.rscli" should "run correctly with the abstract type executor" in {
+    val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHP.rscli").getFile)
+    val modG2PExecRes = modG2P.flatMap { moddef =>
+      AbstractRefinementTypeExecutor.execute(moddef, "toPhpTypeName")
+    }
+    modG2PExecRes shouldBe a [\/-[_]]
+    modG2PExecRes.foreach { case (module, refinements, tmems) =>
+      memsOK(module, refinements, tmems, DataType("PhpName"))
+    }
+  }
+
+  "The simplification procedure in SimplifyTableau.rscli" should "run correctly with the abstract type executor" in {
+    val modSTab = RascalWrapper.loadModuleFromFile(getClass.getResource("SimplifyTableau.rscli").getFile)
+    val modSTabExecRes = modSTab.flatMap { moddef =>
+      AbstractRefinementTypeExecutor.execute(moddef, "simplify")
+    }
+    modSTabExecRes shouldBe a [\/-[_]]
+    modSTabExecRes.foreach { case (module, refinements, tmems) =>
+      memsOK(module, refinements, tmems, DataType("Tableau"))
+    }
+  }
+
+  "The 'case' to 'if' desugaring in DesugarOberon.rscli" should "run correctly with the abstract type executor" in {
+    val modDSOb = RascalWrapper.loadModuleFromFile(getClass.getResource("DesugarOberon.rscli").getFile)
+    val modDSObExecRes = modDSOb.flatMap { moddef =>
+      AbstractRefinementTypeExecutor.execute(moddef, "case2ifs")
+    }
+    modDSObExecRes shouldBe a [\/-[_]]
+    modDSObExecRes.foreach { case (module, refinements, tmems) =>
+      memsOK(module, refinements, tmems, DataType("Module"))
     }
   }
 }
