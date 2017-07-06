@@ -188,15 +188,48 @@ object RefinementTypes {
 
     private
     def upperBound(datatypes: DataTypeDefs, refinements: RefinementDefs, rty1: RefinementType, rty2: RefinementType, widening: Boolean) = {
-      def replaceRec(rty: RefinementType, prevRns: Set[TypeName], newRn: TypeName): RefinementType = rty match {
-        case BaseRefinementType(basicType) => BaseRefinementType(basicType)
-        case DataRefinementType(dataname, refinename) => DataRefinementType(dataname, refinename.map(rn => if (prevRns.contains(rn)) newRn else rn))
-        case ListRefinementType(elementType) => ListRefinementType(replaceRec(elementType, prevRns, newRn))
-        case SetRefinementType(elementType) => SetRefinementType(replaceRec(elementType, prevRns, newRn))
-        case MapRefinementType(keyType, valueType) =>
-          MapRefinementType(replaceRec(keyType, prevRns, newRn), replaceRec(valueType, prevRns, newRn))
-        case NoRefinementType => NoRefinementType
-        case ValueRefinementType => ValueRefinementType
+      def replaceRec(refinements: RefinementDefs, rty: RefinementType, prevRns: Set[TypeName], newRn: TypeName): (RefinementDefs, RefinementType) = {
+        def go(refinements: RefinementDefs, rty: RefinementType, visited: Set[TypeName]): (RefinementDefs, RefinementType) =
+            rty match {
+              case BaseRefinementType(basicType) =>
+                (refinements, BaseRefinementType(basicType))
+              case DataRefinementType(dataname, refinename) =>
+                val (newrefinements, updRn) = refinename.fold[(RefinementDefs, Option[TypeName])]((refinements, None)) { rn =>
+                  if (rn == newRn || prevRns.contains(rn)) (refinements, Some(newRn))
+                  else if (visited.contains(rn)) (refinements, Some(rn))
+                  else {
+                    val rrefs = refinements(rn)
+                    val (newrefinements, newConss) = rrefs.conss.foldLeft((refinements, Map[ConsName, List[RefinementType]]())) { (st, ccrt) =>
+                      val (prevrefinements, prevconss) = st
+                      val (cons, crts) = ccrt
+                      val (newrefinements, newcrts) = crts.foldLeft((prevrefinements, List[RefinementType]())) { (st2, crt) =>
+                        val (prevrefinements2, prevcrts) = st2
+                        val (newrefinements, newcrt) = go(prevrefinements2, crt, visited + rn)
+                        (newrefinements, prevcrts :+ newcrt)
+                      }
+                      (newrefinements, prevconss.updated(cons, newcrts))
+                    }
+                    val newRn2 = newRefinement(dataname)
+                    addRefinement(datatypes, newrefinements, dataname, newRn2, newConss)
+                  }
+                }
+                (newrefinements, DataRefinementType(dataname, updRn))
+              case ListRefinementType(elementType) =>
+                val (newrefinements, newRty) = go(refinements, elementType, visited)
+                (newrefinements, ListRefinementType(newRty))
+              case SetRefinementType(elementType) =>
+                val (newrefinements, newRty) = go(refinements, elementType, visited)
+                (newrefinements, SetRefinementType(newRty))
+              case MapRefinementType(keyType, valueType) =>
+                val (newrefinements, newKRty) = go(refinements, keyType, visited)
+                val (newrefinements2, newVRty) = go(refinements, valueType, visited)
+                (newrefinements2, MapRefinementType(newKRty, newVRty))
+              case NoRefinementType =>
+                (refinements, NoRefinementType)
+              case ValueRefinementType =>
+                (refinements, ValueRefinementType)
+            }
+        go(refinements, rty, Set())
       }
 
       def merge(memo: Map[(TypeName, TypeName), TypeName], refinements: RefinementDefs, rty1: RefinementType, rty2: RefinementType): (RefinementDefs, RefinementType) = {
@@ -234,7 +267,8 @@ object RefinementTypes {
       }
 
       def mergeP(memo: Map[(TypeName, TypeName), TypeName], refinements: RefinementDefs, dn: TypeName, rn1: TypeName, rn2: TypeName, widened: Boolean): (RefinementDefs, Option[TypeName]) = {
-        if (memo.contains((rn1, rn2))) (refinements, Some(memo((rn1, rn2))))
+        if (rn1 == rn2) (refinements, Some(rn1))
+        else if (memo.contains((rn1, rn2))) (refinements, Some(memo((rn1, rn2))))
         else {
           if (!widened && <=(datatypes, refinements, DataRefinementType(dn, Some(rn1)), DataRefinementType(dn, Some(rn2)))) (refinements, Some(rn2))
           else if (!widened && <=(datatypes, refinements, DataRefinementType(dn, Some(rn2)), DataRefinementType(dn, Some(rn1)))) (refinements, Some(rn1))
@@ -257,8 +291,20 @@ object RefinementTypes {
               }
               (newrefinements, prevconss.updated(cons, newRtys))
             }
-            val newRhsW = if (widened) newRhs.mapValues(vs => vs.map(v => replaceRec(v, Set(rn1, rn2), newRn))) else newRhs
-            addRefinement(datatypes, newrefinements, dn, newRn, newRhsW)
+            val (newrefinements2, newRhsW) =
+              if (widened)
+                newRhs.foldLeft((newrefinements, Map[ConsName, List[RefinementType]]())) { (st, ccrts) =>
+                  val (prevrefinements, prevconss) = st
+                  val (cons, crts) = ccrts
+                  val (newrefinements3, newcrts) = crts.foldLeft((prevrefinements, List[RefinementType]())) { (st2, crt) =>
+                    val (prevrefinements2, prevcrts) = st2
+                    val (newrefinements4, newcrt) = replaceRec(prevrefinements2, crt, Set(rn1, rn2), newRn)
+                    (newrefinements4, prevcrts :+ newcrt)
+                  }
+                  (newrefinements3, prevconss.updated(cons, newcrts))
+                }
+              else (newrefinements, newRhs)
+            addRefinement(datatypes, newrefinements2, dn, newRn, newRhsW)
           }
         }
       }
@@ -391,7 +437,8 @@ object RefinementTypes {
     override def top: VoideableRefinementType = VoideableRefinementType(possiblyVoid = true, RSLattice[RefinementType, DataTypeDefs, RefinementDefs].top)
 
     override def isBot(datatypes: DataTypeDefs, refinements: RefinementDefs, vrty: VoideableRefinementType): Boolean =
-      vrty.possiblyVoid && RSLattice[RefinementType, DataTypeDefs, RefinementDefs].isBot(datatypes, refinements, vrty.refinementType)
+      !vrty.possiblyVoid &&
+        RSLattice[RefinementType, DataTypeDefs, RefinementDefs].isBot(datatypes, refinements, vrty.refinementType)
 
     override def lub(datatypes: DataTypeDefs, refinements: RefinementDefs, vrty1: VoideableRefinementType, vrty2: VoideableRefinementType): (RefinementDefs, VoideableRefinementType) = {
       val (newrefinements, rtylub) = RSLattice[RefinementType, DataTypeDefs, RefinementDefs].lub(datatypes, refinements, vrty1.refinementType, vrty2.refinementType)

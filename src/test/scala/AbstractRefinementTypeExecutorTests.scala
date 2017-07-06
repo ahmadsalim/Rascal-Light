@@ -102,10 +102,10 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     }
   }
 
-  "The type translation in Glagol2PHP.rscli" should "run correctly with the abstract type executor" in {
+  "The statement translation in Glagol2PHP.rscli" should "run correctly with the abstract type executor" in {
     val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHP.rscli").getFile)
     val modG2PExecRes = modG2P.flatMap { moddef =>
-      AbstractRefinementTypeExecutor.execute(moddef, "toPhpTypeName")
+      AbstractRefinementTypeExecutor.execute(moddef, "toPhpStmt")
     }
     modG2PExecRes shouldBe a [\/-[_]]
     modG2PExecRes.foreach { case (module, refinements, tmems) =>
@@ -124,10 +124,10 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     }
   }
 
-  "The 'case' to 'if' desugaring in DesugarOberon.rscli" should "run correctly with the abstract type executor" in {
+  "The desugaring in DesugarOberon.rscli" should "run correctly with the abstract type executor" in {
     val modDSOb = RascalWrapper.loadModuleFromFile(getClass.getResource("DesugarOberon.rscli").getFile)
     val modDSObExecRes = modDSOb.flatMap { moddef =>
-      AbstractRefinementTypeExecutor.execute(moddef, "case2ifs")
+      AbstractRefinementTypeExecutor.execute(moddef, "desugar")
     }
     modDSObExecRes shouldBe a [\/-[_]]
     modDSObExecRes.foreach { case (module, refinements, tmems) =>

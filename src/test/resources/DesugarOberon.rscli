@@ -27,13 +27,18 @@ data VarDecl
 data Type 
 	= user(Ident name)
 	;
-	
+
+data MaybeExpression
+    = nothing()
+    | just(Expression e)
+    ;
+
 data Statement 
 	= assign(Ident var, Expression exp)
 	| ifThen(Expression condition, list[Statement] body, list[ElseIf] elseIfs, list[Statement] elsePart)
 	| whileDo(Expression condition, list[Statement] body)
 	| skip()
-	| forDo(Ident name, Expression from, Expression to, list[Expression] by, list[Statement] body)
+	| forDo(Ident name, Expression from, Expression to, MaybeExpression by, list[Statement] body)
 	| caseOf(Expression exp, list[Case] cases, list[Statement] elsePart)
 	| begin(list[Statement] body)
 	;
@@ -96,10 +101,10 @@ public list[Statement] case2ifs(list[Statement] stats) {
 
 public list[Statement] for2while(list[Statement] stats) {
 	return visit (stats) {
-		case forDo(n, f, t, [by], b) =>
+		case forDo(n, f, t, just(by), b) =>
 			begin([assign(n, f), whileDo(geq(lookup(n), t),
 					b + [assign(n, add(lookup(n), by))])])
-		case forDo(n, f, t, [], b) =>
+		case forDo(n, f, t, nothing(), b) =>
 			begin([assign(n, f), whileDo(geq(lookup(n), t),
 					b + [assign(n, add(lookup(n), nat(1)))])])
 	}

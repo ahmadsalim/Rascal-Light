@@ -435,6 +435,7 @@ case class AbstractRefinementTypeExecutor(module: Module, precise: Boolean = fal
   }
 
   def evalUnaryOp(op: OpName, vrtyp: VoideableRefinementType): Set[TypeResult[VoideableRefinementType]] = {
+    if (RSLattice[VoideableRefinementType, DataTypeDefs, RefinementDefs].isBot(typememoriesops.datatypes, !refinements, vrtyp)) return Set()
     val errRes: Set[TypeResult[VoideableRefinementType]] = Set(ExceptionalResult(Error(Set(InvalidOperationError(op, List(vrtyp))))))
     val voidRes = if (vrtyp.possiblyVoid) errRes else Set[TypeResult[VoideableRefinementType]]()
     val rtyp = vrtyp.refinementType
@@ -523,6 +524,10 @@ case class AbstractRefinementTypeExecutor(module: Module, precise: Boolean = fal
       }
     }
 
+    if (Set(lhvrtyp, rhvrtyp).exists(
+      RSLattice[VoideableRefinementType,DataTypeDefs,RefinementDefs].isBot(typememoriesops.datatypes, !refinements, _))) {
+      return Set()
+    }
     (lhvrtyp.refinementType, op, rhvrtyp.refinementType) match {
       case (_, "==", _) => onNEq("false", lhvrtyp, rhvrtyp)
       case (_, "!=", _) => onNEq("true", lhvrtyp, rhvrtyp)
