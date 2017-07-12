@@ -36,7 +36,7 @@ object RefinementTypes {
   }
 
   type DataTypeDefs = Map[TypeName, Map[ConsName, List[Type]]]
-  type RefinementDefs = Map[TypeName, RefinementDef]
+  type RefinementDefs = Map[TypeName, RefinementDef] // TODO Consider using WeakHashMap to effectively have garbage collection for unneeded refinements
 
   private
   val counter = Counter(0)

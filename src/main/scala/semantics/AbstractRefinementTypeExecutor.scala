@@ -563,6 +563,31 @@ case class AbstractRefinementTypeExecutor(module: Module, precise: Boolean = fal
         Set(invOp) ++ boolOr(lrno, None)
       case (ValueRefinementType, "||", ValueRefinementType) =>
         Set(invOp) ++ boolOr(None, None)
+      case (ListRefinementType(rty1), "+", ListRefinementType(rty2)) =>
+        val (newrefinements, tylub) =
+          RSLattice[RefinementType, DataTypeDefs, RefinementDefs].lub(typememoriesops.datatypes, !refinements, rty1, rty2)
+        refinements := newrefinements
+        Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, ListRefinementType(tylub))))
+      case (ListRefinementType(_), "+", ValueRefinementType) | (ValueRefinementType, "+", ListRefinementType(_)) =>
+        Set(invOp) ++ Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, ListRefinementType(ValueRefinementType))))
+      case (SetRefinementType(rty1), "+", SetRefinementType(rty2)) =>
+        val (newrefinements, tylub) =
+          RSLattice[RefinementType, DataTypeDefs, RefinementDefs].lub(typememoriesops.datatypes, !refinements, rty1, rty2)
+        refinements := newrefinements
+        Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, SetRefinementType(tylub))))
+      case (SetRefinementType(_), "+", ValueRefinementType) | (ValueRefinementType, "+",SetRefinementType(_)) =>
+        Set(invOp) ++ Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, SetRefinementType(ValueRefinementType))))
+      case (MapRefinementType(krty1,vrty1), "+", MapRefinementType(krty2, vrty2)) =>
+        val (newrefinements, krtylub) =
+          RSLattice[RefinementType, DataTypeDefs, RefinementDefs].lub(typememoriesops.datatypes, !refinements, krty1, krty2)
+        refinements := newrefinements
+        val (newrefinements2, vrtylub) =
+          RSLattice[RefinementType, DataTypeDefs, RefinementDefs].lub(typememoriesops.datatypes, !refinements, vrty1, vrty2)
+        refinements := newrefinements2
+        Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, MapRefinementType(krtylub, vrtylub))))
+      case (MapRefinementType(_,_), "+", ValueRefinementType) |
+           (ValueRefinementType, "+", MapRefinementType(_,_)) =>
+        Set(invOp) ++ Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, MapRefinementType(ValueRefinementType, ValueRefinementType))))
       case (BaseRefinementType(StringType), "+", BaseRefinementType(StringType)) =>
         (if (lhvrtyp.possiblyVoid || rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
           Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringType))))
@@ -575,8 +600,7 @@ case class AbstractRefinementTypeExecutor(module: Module, precise: Boolean = fal
         Set(invOp, SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
       case (ValueRefinementType, "+", ValueRefinementType) =>
         Set(invOp,
-          SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringType))),
-          SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
+          SuccessResult(VoideableRefinementType(possiblyVoid = false, ValueRefinementType)))
       case (BaseRefinementType(IntType), "-", BaseRefinementType(IntType)) =>
         (if (lhvrtyp.possiblyVoid || rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
           Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
