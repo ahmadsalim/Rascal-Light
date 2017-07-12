@@ -59,7 +59,7 @@ class Refinements(initialDefinitions: Map[Refinement, RefinementDef] = Map()) {
       }.mkString(" | ")
     }
     definitions.toList.map { case (nt, defn) =>
-      s"refine $nt = ${prettyDefn(defn)}"
+      s"refine ${nt.refinementName} = ${prettyDefn(defn)}"
     }
   }
 }
