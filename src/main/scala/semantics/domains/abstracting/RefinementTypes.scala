@@ -271,7 +271,7 @@ object RefinementTypes {
         else if (memo.contains((rn1, rn2))) (refinements, Some(memo((rn1, rn2))))
         else {
           if (!widened && <=(datatypes, refinements, DataRefinementType(dn, Some(rn1)), DataRefinementType(dn, Some(rn2)))) (refinements, Some(rn2))
-          else if (!widened && <=(datatypes, refinements, DataRefinementType(dn, Some(rn2)), DataRefinementType(dn, Some(rn1)))) (refinements, Some(rn1))
+          else if (<=(datatypes, refinements, DataRefinementType(dn, Some(rn2)), DataRefinementType(dn, Some(rn1)))) (refinements, Some(rn1))
           else {
             val newRn = newRefinement(dn)
             val RefinementDef(_, rrn1) = refinements(rn1)

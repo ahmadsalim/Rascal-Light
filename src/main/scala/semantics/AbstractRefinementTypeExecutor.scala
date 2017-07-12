@@ -426,10 +426,12 @@ case class AbstractRefinementTypeExecutor(module: Module, precise: Boolean = fal
 
   def evalFieldAccess(localVars: Map[VarName, Type], store: TypeStore, target: Expr, fieldName: FieldName, funMemo: FunMemo): TypeMemories[VoideableRefinementType] = {
     val targetmems = evalLocal(localVars, store, target, funMemo)
-    Lattice[TypeMemories[VoideableRefinementType]].lubs(targetmems.memories.flatMap { case TypeMemory(targetres, store_) =>
+    Lattice[TypeMemories[VoideableRefinementType]].lubs(targetmems.memories.map { case TypeMemory(targetres, store_) =>
       targetres match {
-        case SuccessResult(tv) => accessField(tv, fieldName).map(res => TypeMemories[VoideableRefinementType](Set(TypeMemory(res, store_))))
-        case _ => Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(targetres, store_))))
+        case SuccessResult(tv) =>
+          Lattice[TypeMemories[VoideableRefinementType]].lubs(accessField(tv, fieldName).map(res =>
+            TypeMemories[VoideableRefinementType](Set(TypeMemory(res, store_)))))
+        case _ => TypeMemories[VoideableRefinementType](Set(TypeMemory(targetres, store_)))
       }
     })
   }
@@ -470,11 +472,11 @@ case class AbstractRefinementTypeExecutor(module: Module, precise: Boolean = fal
 
   def evalUnary(localVars: Map[VarName, Type], store: TypeStore, op: OpName, operand: Expr, funMemo: FunMemo): TypeMemories[VoideableRefinementType] = {
     val mems = evalLocal(localVars, store, operand, funMemo)
-    Lattice[TypeMemories[VoideableRefinementType]].lubs(mems.memories.flatMap { case TypeMemory(res, store_) =>
+    Lattice[TypeMemories[VoideableRefinementType]].lubs(mems.memories.map { case TypeMemory(res, store_) =>
         res match {
           case SuccessResult(vl) =>
-            evalUnaryOp(op, vl).map{ ures => TypeMemories(Set(TypeMemory(ures, store_))) }
-          case ExceptionalResult(exres) => Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store_))))
+            Lattice[TypeMemories[VoideableRefinementType]].lubs(evalUnaryOp(op, vl).map{ ures => TypeMemories[VoideableRefinementType](Set(TypeMemory(ures, store_))) })
+          case ExceptionalResult(exres) => TypeMemories[VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store_)))
         }
     })
   }
@@ -607,25 +609,25 @@ case class AbstractRefinementTypeExecutor(module: Module, precise: Boolean = fal
 
   def evalBinary(localVars: Map[VarName, Type], store: TypeStore, left: Expr, op: OpName, right: Expr, funMemo: FunMemo): TypeMemories[VoideableRefinementType] = {
     val leftmems = evalLocal(localVars, store, left, funMemo)
-    Lattice[TypeMemories[VoideableRefinementType]].lubs(leftmems.memories.flatMap { case TypeMemory(lhres, store__) =>
+    Lattice[TypeMemories[VoideableRefinementType]].lubs(leftmems.memories.map { case TypeMemory(lhres, store__) =>
         lhres match {
           case SuccessResult(lhval) =>
             val rightmems = evalLocal(localVars, store__, right, funMemo)
-            rightmems.memories.flatMap { case TypeMemory(rhres, store_) =>
+            Lattice[TypeMemories[VoideableRefinementType]].lubs(rightmems.memories.map { case TypeMemory(rhres, store_) =>
                 rhres match {
                   case SuccessResult(rhval) =>
-                    evalBinaryOp(lhval, op, rhval).map { res => TypeMemories[VoideableRefinementType](Set(TypeMemory(res, store_))) }
-                  case _ => Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(rhres, store_))))
+                    Lattice[TypeMemories[VoideableRefinementType]].lubs(evalBinaryOp(lhval, op, rhval).map { res => TypeMemories[VoideableRefinementType](Set(TypeMemory(res, store_))) })
+                  case _ => TypeMemories[VoideableRefinementType](Set(TypeMemory(rhres, store_)))
                 }
-            }
-          case _ => Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(lhres, store__))))
+            })
+          case _ => TypeMemories[VoideableRefinementType](Set(TypeMemory(lhres, store__)))
         }
     })
   }
 
   def evalConstructor(localVars: Map[VarName, Type], store: TypeStore, consname: ConsName, args: Seq[Expr], funMemo: FunMemo): TypeMemories[VoideableRefinementType] = {
     val argmems = evalLocalAll(localVars, store, args, funMemo)
-    Lattice[TypeMemories[VoideableRefinementType]].lubs(argmems.memories.flatMap {
+    Lattice[TypeMemories[VoideableRefinementType]].lubs(argmems.memories.map {
       case TypeMemory(argres, store_) =>
         argres match {
           case SuccessResult(vrtys) =>
@@ -645,9 +647,9 @@ case class AbstractRefinementTypeExecutor(module: Module, precise: Boolean = fal
                 refinements := newrefinements
                 Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, DataRefinementType(tyname, nrno))), store_))
               } else Set()
-            Set(TypeMemories(posEx ++ posSuc))
+            TypeMemories(posEx ++ posSuc)
           case ExceptionalResult(exres) =>
-            Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store_))))
+            TypeMemories[VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store_)))
         }
     })
   }
@@ -1756,21 +1758,21 @@ case class AbstractRefinementTypeExecutor(module: Module, precise: Boolean = fal
 
   def evalLocalAll(localVars: Map[VarName, Type], store: TypeStore, exprs: Seq[Expr], funMemo: FunMemo): TypeMemories[List[VoideableRefinementType]] = {
     exprs.toList.foldLeft[TypeMemories[List[VoideableRefinementType]]](TypeMemories(Set(TypeMemory(SuccessResult(List()), store)))) { (mems, e) =>
-      val flatMems = Lattice[TypeMemories[Flat[List[VoideableRefinementType]]]].lubs(mems.memories.flatMap[TypeMemories[Flat[List[VoideableRefinementType]]], Set[TypeMemories[Flat[List[VoideableRefinementType]]]]] {
+      val flatMems = Lattice[TypeMemories[Flat[List[VoideableRefinementType]]]].lubs(mems.memories.map[TypeMemories[Flat[List[VoideableRefinementType]]], Set[TypeMemories[Flat[List[VoideableRefinementType]]]]] {
         case TypeMemory(prevres, store__) =>
           prevres match {
             case SuccessResult(tys) =>
               val emems = evalLocal(localVars, store__, e, funMemo)
-              Set(TypeMemories(emems.memories.map[TypeMemory[Flat[List[VoideableRefinementType]]], Set[TypeMemory[Flat[List[VoideableRefinementType]]]]] {
+              Lattice[TypeMemories[Flat[List[VoideableRefinementType]]]].lubs(emems.memories.map[TypeMemories[Flat[List[VoideableRefinementType]]], Set[TypeMemories[Flat[List[VoideableRefinementType]]]]] {
                 case TypeMemory(res, store_) =>
                   res match {
                     case SuccessResult(ty) =>
-                      TypeMemory(SuccessResult(FlatValue(tys :+ ty)), store_)
-                    case ExceptionalResult(exres) => TypeMemory(ExceptionalResult(exres), store_)
+                      TypeMemories(Set(TypeMemory(SuccessResult(FlatValue(tys :+ ty)), store_)))
+                    case ExceptionalResult(exres) => TypeMemories(Set(TypeMemory(ExceptionalResult(exres), store_)))
                   }
-              }))
+              })
             case ExceptionalResult(exres) =>
-              Set(TypeMemories[Flat[List[VoideableRefinementType]]](Set(TypeMemory(ExceptionalResult(exres), store__))))
+              TypeMemories[Flat[List[VoideableRefinementType]]](Set(TypeMemory(ExceptionalResult(exres), store__)))
           }
       })
       unflatMems(flatMems) // Remove dummy Flat, since all merger of successes happens manually
@@ -1823,9 +1825,10 @@ object AbstractRefinementTypeExecutor {
   // TODO Handle Global Variables
   def execute(module: ModuleDef, function: VarName,
               initialRefinements: RefinementDefs = Map(),
-              initialStore: Option[TypeStore] = None): String \/ (Module, RefinementDefs, TypeMemories[VoideableRefinementType]) = {
+              initialStore: Option[TypeStore] = None,
+              precise: Boolean = true): String \/ (Module, RefinementDefs, TypeMemories[VoideableRefinementType]) = {
     for (transr <- ModuleTranslator.translateModule(module);
-         executor = AbstractRefinementTypeExecutor(transr.semmod);
+         executor = AbstractRefinementTypeExecutor(transr.semmod, precise = precise);
          funcDef <- transr.semmod.funs.get(function).fold(s"Unknown function $function".left[(Type, List[Parameter], FunBody)])(_.right);
          (_, pars, funcBody) = funcDef;
          funcBodyExpr <- funcBody match {
