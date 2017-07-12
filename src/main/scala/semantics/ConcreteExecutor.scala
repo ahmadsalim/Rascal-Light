@@ -47,6 +47,9 @@ case class ConcreteExecutor(module: Module) {
         ConstructorValue(bnm, Seq()).point[Result]
       case (BasicValue(StringLit(s1)), "+", BasicValue(StringLit(s2))) => BasicValue(StringLit(s1 + s2)).point[Result]
       case (BasicValue(IntLit(i1)), "+", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 + i2)).point[Result]
+      case (ListValue(vals1), "+", ListValue(vals2)) => ListValue(vals1 ++ vals2).point[Result]
+      case (SetValue(vals1), "+", SetValue(vals2)) => SetValue(vals1 ++ vals2).point[Result]
+      case (MapValue(kvs1), "+", MapValue(kvs2)) => MapValue(kvs1 ++ kvs2).point[Result]
       case (BasicValue(IntLit(i1)), "-", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 - i2)).point[Result]
       case (BasicValue(IntLit(i1)), "*", BasicValue(IntLit(i2))) => BasicValue(IntLit(i1 * i2)).point[Result]
       case (BasicValue(IntLit(i1)), "/", BasicValue(IntLit(i2)))  =>
