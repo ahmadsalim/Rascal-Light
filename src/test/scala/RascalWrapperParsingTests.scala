@@ -59,7 +59,8 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                               ConstructorExpr("or",List(ConstructorExpr("neg",List(VarExpr("l"))), ConstructorExpr("neg",List(VarExpr("r")))))),
                     Case(ConstructorPatt("neg",List(ConstructorPatt("imp",List(VarPatt("l"), VarPatt("r"))))),
                       ConstructorExpr("and",List(VarExpr("l"), ConstructorExpr("neg",List(VarExpr("r")))))),
-                 Case(ConstructorPatt("neg",List(ConstructorPatt("neg",List(VarPatt("f"))))),FunCallExpr("nnf",List(VarExpr("f")))))))))
+                    Case(ConstructorPatt("neg",List(ConstructorPatt("neg",List(VarPatt("f"))))),FunCallExpr("nnf",List(VarExpr("f")))),
+                    Case(ConstructorPatt("imp", List(VarPatt("l"), VarPatt("r"))), ConstructorExpr("or", List(ConstructorExpr("neg", List(VarExpr("l"))), VarExpr("r")))))))))
     parseAndTranslateMatchingExpected("NNF.rscli", expected)
   }
 
