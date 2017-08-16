@@ -2,6 +2,8 @@ package semantics.domains.common
 
 import syntax._
 
+case object NonNormalFormMemories extends Throwable
+
 case class DataPath[+T](varName: VarName, accessPaths: List[AccessPath[T]])
 sealed trait AccessPath[+T]
 case class MapAccessPath[T](value: T) extends AccessPath[T]
