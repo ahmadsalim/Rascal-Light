@@ -2,7 +2,7 @@ package semantics.domains.common
 
 import syntax._
 
-case object NonNormalFormMemories extends Throwable
+case object NonNormalFormMemories extends Exception
 
 case class DataPath[+T](varName: VarName, accessPaths: List[AccessPath[T]])
 sealed trait AccessPath[+T]
