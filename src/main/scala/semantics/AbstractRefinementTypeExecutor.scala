@@ -1681,29 +1681,14 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
   def evalTryFinally(localVars: Map[VarName, Type], store: TypeStore, tryB: Expr, finallyB: Expr, funMemo: FunMemo): TypeMemories[VoideableRefinementType] = {
     val trymems = evalLocal(localVars, store, tryB, funMemo)
-    Lattice[TypeMemories[VoideableRefinementType]].lubs(trymems.memories.flatMap { case TypeMemory(tryres, store__) =>
-      tryres match {
-        case SuccessResult(typ) =>
-          val finmems = evalLocal(localVars, store, finallyB, funMemo)
-          Set(Lattice[TypeMemories[VoideableRefinementType]].lubs(finmems.memories.flatMap { case TypeMemory(finres, store_) =>
-            finres match {
-              case SuccessResult(_) => Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(SuccessResult(typ), store_))))
-              case ExceptionalResult(exres) => Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store_))))
-            }
-          }))
-        case ExceptionalResult(exres) =>
-          exres match {
-            case Throw(_) =>
-              val finmems = evalLocal(localVars, store__, finallyB, funMemo)
-              Set(Lattice[TypeMemories[VoideableRefinementType]].lubs(finmems.memories.flatMap { case TypeMemory(finres, store_) =>
-                finres match {
-                  case SuccessResult(_) => Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = true, NoRefinementType)), store_))))
-                  case ExceptionalResult(exres_) => Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres_), store_))))
-                }
-              }))
-            case _ => Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store__))))
+    Lattice[TypeMemories[VoideableRefinementType]].lubs(trymems.memories.map { case TypeMemory(tryres, store__) =>
+        val finmems = evalLocal(localVars, store, finallyB, funMemo)
+        Lattice[TypeMemories[VoideableRefinementType]].lubs(finmems.memories.map { case TypeMemory(finres, store_) =>
+          finres match {
+            case SuccessResult(_) => TypeMemories(Set(TypeMemory[VoideableRefinementType](tryres, store_)))
+            case ExceptionalResult(exres) => TypeMemories(Set(TypeMemory[VoideableRefinementType](ExceptionalResult(exres), store_)))
           }
-      }
+        })
     })
   }
 
