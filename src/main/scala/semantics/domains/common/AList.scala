@@ -1,5 +1,7 @@
 package semantics.domains.common
 
+import semantics.domains.abstracting.VoideableRefinementType
+
 sealed trait AList[+V]
 case object AListBot extends AList[Nothing]
 case class AListVals[V](vs: List[V]) extends AList[V]
@@ -8,6 +10,13 @@ case object AListTop extends AList[Nothing]
 case object NonFixedList extends Exception
 
 object AList {
+  def botToSizedBot[V: Lattice](alist: AList[V], n: Int): AList[V] = alist match {
+    case AListBot => sizedBot[V](n)
+    case _ => alist
+  }
+
+  def sizedBot[V: Lattice](n : Int): AList[V] = AListVals(List.fill(n)(Lattice[V].bot))
+
   def getList[V](alist: AList[V]): List[V] = alist match {
     case AListVals(vs) => vs
     case _ => throw NonFixedList
