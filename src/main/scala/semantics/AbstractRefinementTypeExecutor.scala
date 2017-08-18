@@ -919,7 +919,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
          S2: Conflate recursions to the same syntactic judgement according to some partitioning
          S3: Conflate recursions to the same or larger previous input (works if the input domain is finite)
 
-         S1 is too unprecise in practice, so S2-S4 are preferrable.
+         S1 is too unprecise in practice, so S2-S4 are preferable.
 
          In both the cases S1 and S2, we need to widen the current input with the closest previous input to the same judgment in order to get a sound result (otherwise
          the recursion is potentially not monotone).
@@ -1313,6 +1313,8 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
         if (Lattice[(VoideableRefinementType, TypeMemories[VoideableRefinementType])].<=(newRes, prevRes)) newRes
         else {
           val widened = Lattice[(VoideableRefinementType, TypeMemories[VoideableRefinementType])].widen(prevRes, newRes)
+          assert(Lattice[(VoideableRefinementType, TypeMemories[VoideableRefinementType])].<=(newRes, widened))
+          assert(Lattice[(VoideableRefinementType, TypeMemories[VoideableRefinementType])].<=(prevRes, widened))
           go(scrtyp, widened, loopcount = loopcount + 1)
         }
       }
