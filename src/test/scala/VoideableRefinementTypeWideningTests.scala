@@ -1,7 +1,7 @@
 import org.scalatest.{FlatSpec, Matchers}
 import semantics.domains.abstracting._
 import semantics.domains.common.Lattice
-import syntax.{ConsName, DataType, Type, TypeName}
+import syntax._
 
 /**
   * Created by asal on 18/08/2017.
@@ -123,5 +123,45 @@ class VoideableRefinementTypeWideningTests extends FlatSpec with Matchers {
         VoideableRefinementType(possiblyVoid = false, DataRefinementType("list", Some(NX1Ref)))),
         VoideableRefinementType(possiblyVoid = false, DataRefinementType("list", Some(NNX1Ref))))
     Lattice[VoideableRefinementType].===(wrty, VoideableRefinementType(possiblyVoid = false, DataRefinementType("list", Some(RX1Ref)))) shouldBe true
+  }
+
+  "Formula widening regression" should "now widen correctly" in {
+    val datatypes: Map[TypeName, Map[ConsName, List[Type]]] =
+      Map("Formula" -> Map("atom" -> List(BaseType(StringType))
+                          ,"and" -> List(DataType("Formula"), DataType("Formula"))
+                          ,"or" -> List(DataType("Formula"), DataType("Formula"))
+                          ,"imp" -> List(DataType("Formula"), DataType("Formula"))
+                          ,"neg" -> List(DataType("Formula"))))
+    val AtomRef = new Refinement("Atom")
+    val XRef = new Refinement("X")
+    val NXRef = new Refinement("NX")
+    val YRef = new Refinement("Y")
+    val ZRef = new Refinement("Z")
+    val WRef = new Refinement("W")
+    val RXRef = new Refinement("RX")
+    val RKRef = new Refinement("RK")
+    val initialRefs: Map[Refinement, RefinementDef] =
+      Map(AtomRef -> RefinementDef("Formula", Map("atom" -> List(BaseRefinementType(StringType))))
+         , XRef -> RefinementDef("Formula", Map("neg" -> List(DataRefinementType("Formula", Some(AtomRef))),
+                                               "or" -> List(DataRefinementType("Formula", Some(YRef)), DataRefinementType("Formula", Some(YRef)))))
+         , NXRef -> RefinementDef("Formula", Map("neg" -> List(DataRefinementType("Formula", Some(AtomRef))),
+               "or" -> List(DataRefinementType("Formula", Some(ZRef)), DataRefinementType("Formula", Some(ZRef)))))
+         , YRef -> RefinementDef("Formula", Map("neg" -> List(DataRefinementType("Formula", Some(AtomRef))),
+               "or" -> List(DataRefinementType("Formula", Some(ZRef)), DataRefinementType("Formula", Some(ZRef)))))
+         , ZRef -> RefinementDef("Formula", Map("neg" -> List(DataRefinementType("Formula", Some(AtomRef))),
+            "or" -> List(DataRefinementType("Formula", Some(WRef)), DataRefinementType("Formula", Some(WRef)))))
+         , WRef -> RefinementDef("Formula", Map("neg" -> List(DataRefinementType("Formula", Some(AtomRef)))))
+         , RXRef -> RefinementDef("Formula", Map("neg" -> List(DataRefinementType("Formula", Some(AtomRef))),
+            "or" -> List(DataRefinementType("Formula", Some(RKRef)), DataRefinementType("Formula", Some(RKRef)))))
+         , RKRef -> RefinementDef("Formula", Map("neg" -> List(DataRefinementType("Formula", Some(AtomRef))),
+            "or" -> List(DataRefinementType("Formula", Some(RKRef)), DataRefinementType("Formula", Some(RKRef)))))
+         )
+    val refinements = new Refinements(initialRefs)
+    val RTOS = RefinementTypeOps(datatypes, refinements)
+    import RTOS._
+    val wrty = Lattice[VoideableRefinementType].widen(
+      VoideableRefinementType(possiblyVoid = false, DataRefinementType("list", Some(XRef))),
+      VoideableRefinementType(possiblyVoid = false, DataRefinementType("list", Some(NXRef))))
+    Lattice[VoideableRefinementType].===(wrty, VoideableRefinementType(possiblyVoid = false, DataRefinementType("list", Some(RXRef)))) shouldBe true
   }
 }

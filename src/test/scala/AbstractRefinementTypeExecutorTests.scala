@@ -56,8 +56,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       memsOK(module, refinements, tmems, DataType("Formula"))
     }
   }
-  /*
 
+  /*
     "The rename field refactoring in RenameField.rscli" should "run correctly with the abstract type executor" in {
       val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("RenameField.rscli").getFile)
       val modRFExecRes = modRFO.flatMap { moddef =>
@@ -80,6 +80,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
         memsOK(module, refinements, tmems, DataType("Package"))
       }
     }
+
 
     "The extract superclass refactoring in ExtractSuperclass.rscli" should "run correctly with the abstract type executor" in {
       val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("ExtractSuperclass.rscli").getFile)
@@ -133,6 +134,5 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       modG2PExecRes.foreach { case (module, refinements, tmems) =>
         memsOK(module, refinements, tmems, DataType("PhpName"))
       }
-    }
-    */
+    }*/
 }

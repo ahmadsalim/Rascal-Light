@@ -463,10 +463,17 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
 
     private
     def applySubstRefs(wrefinements: Map[Refinement, URefinementDef], subst: Map[Refinement, Refinement]): Map[Refinement, URefinementDef] = {
-      val substRefs = wrefinements.mapValues(urefdef =>
-        urefdef.copy(conss = applySubstCons(urefdef.conss, subst))
-      )
-      substRefs -- subst.keySet
+      val substRefs = wrefinements.foldLeft (Map[Refinement, URefinementDef]()) { (prevRevs, df) =>
+        val (kref, urefdef) = df
+        val newKref = applySubst(kref, subst)
+        val newConss = applySubstCons(urefdef.conss, subst)
+        if (prevRevs.contains(newKref)) {
+          val otherconss = prevRevs(newKref).conss
+          prevRevs.updated(newKref, URefinementDef(urefdef.baseDataType, otherconss ++ newConss))
+        }
+        else prevRevs.updated(newKref, URefinementDef(urefdef.baseDataType, newConss))
+      }
+      substRefs
     }
 
     private
@@ -509,17 +516,18 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     private
     def replaceRec(wrefinements: Map[Refinement, URefinementDef], dn: TypeName, prevRn: Refinement, newRn: Refinement): (URefinementDef, Map[Refinement, Refinement], Map[Refinement, URefinementDef]) = {
       val prevRnDefs = getURefinementDef(wrefinements, prevRn)
-      val (copysubst, newwrefinements) = copyToWorkingRefinements(Map(), wrefinements, dn, prevRn, (wrs, rn) => reachable(wrs, rn, prevRn))
+      val (copysubst, newwrefinements) = copyToWorkingRefinements(Map(), wrefinements, dn, prevRn, (_, _) => true)
       val copyprevRn = applySubst(prevRn, copysubst)
       val newsubst = if (prevRnDefs.conss.size > 1) copysubst.updated(copyprevRn, newRn) else copysubst
       (prevRnDefs, newsubst, newwrefinements)
     }
 
+    def addAllGlobal(refinementDefs: Map[Refinement, RefinementDef]) = ???
 
     override def widen(rty1: RefinementType, rty2: RefinementType, bound: Int): RefinementType = {
-      def fixIC(icrefs: List[Refinement], wrefinements: Map[Refinement, URefinementDef]): Map[Refinement, URefinementDef] = {
+      def fixIC(resrt : RefinementType, icrefs: List[Refinement], wrefinements: Map[Refinement, URefinementDef]): (RefinementType, Map[Refinement, URefinementDef]) = {
         val res =
-          if (icrefs.isEmpty) wrefinements
+          if (icrefs.isEmpty) (resrt, wrefinements)
           else {
             val icref = icrefs.head
             val icrefsr = icrefs.tail
@@ -530,7 +538,7 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
                   val (prevConss, prevShmerges, prevMemo) = st
                   val (k, kargss) = kkargss
                   if (kargss.size > 1) {
-                    assert(kargss.size == 2) // We currently only support "binary widening"
+                    //assert(kargss.size == 2) // We currently only support "binary widening"
                     val (newKargs, newShmerges, newMemo) = kargss.tail.foldLeft((kargss.head, prevShmerges, prevMemo)) { (st, kargs2) =>
                       val (kargs1, prevShmergesKs, prevMemoKs) = st
                       kargs1.zip(kargs2).foldLeft((List[RefinementType](), prevShmergesKs, prevMemoKs)) { (st, ka12) =>
@@ -547,9 +555,6 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
                   } else (prevConss.updated(k, kargss), prevShmerges, prevMemo)
                 }
               val newwrefinements = wrefinements.updated(icref, URefinementDef(icrefdef.baseDataType, newConss))
-              println("-" * 50)
-              newwrefinements.foreach(println)
-              println("-" * 50)
               val (finalsubst, finalicrefs, finalwrefinements) = shmerges.foldLeft((Map[Refinement,Refinement](), icrefsr, newwrefinements)) { (st, rop) =>
                 val (prevSubst, prevIcrefs, prevwrefinements) = st
                 val (newRn, (dn, rn1r, rn2r)) = rop
@@ -558,15 +563,9 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
                 val (subst, nicrefs, newwrefinements) = mergeP(prevwrefinements, dn, rn1, rn2, newRn)
                 (applyNewSubst(prevSubst, subst), prevIcrefs union nicrefs, applySubstRefs(newwrefinements, subst))
               }
-              println("*" * 50)
-              finalwrefinements.foreach(println)
-              println("*" * 50)
-              fixIC(finalicrefs, finalwrefinements)
-            } else fixIC(icrefsr, wrefinements)
+              fixIC(applySubstTy(resrt, finalsubst), finalicrefs, finalwrefinements)
+            } else fixIC(resrt, icrefsr, wrefinements)
           }
-        println("=" * 50)
-        res.foreach(println)
-        println("=" * 50)
         res
       }
 
@@ -663,13 +662,10 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
         }
       }
       val (newrt, _, icrefs, newRefinements) = merge(Map(), rty1, rty2)
-      println("=" * 50)
-      newRefinements.foreach(println)
-      println("=" * 50)
-      val finalRefinements = fixIC(icrefs, newRefinements)
+      val (resrt, finalRefinements) = fixIC(newrt, icrefs, newRefinements)
       // TODO Smarter add to global
       refinements.definitions ++= finalRefinements.mapValues(urdef => RefinementDef(urdef.baseDataType, urdef.conss.mapValues(_.head)))
-      newrt
+      resrt
     }
   }
 
