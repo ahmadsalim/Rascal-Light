@@ -35,7 +35,6 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     }
   }
 
-  /*
   "The expression simplification procedure in Expr.rscli" should "run correctly with the abstract type executor" in {
     val modExprO = RascalWrapper.loadModuleFromFile(getClass.getResource("Expr.rscli").getFile)
     val modExprExecRes = modExprO.flatMap { moddef =>
@@ -45,7 +44,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     modExprExecRes.foreach { case (module, refinements, tmems) =>
       memsOK(module, refinements, tmems, DataType("Expr"))
     }
-  }*/
+  }
 
   "The negation normal form transformation in NNF.rscli" should "run correctly with the abstract type executor" in {
     val modNnfO = RascalWrapper.loadModuleFromFile(getClass.getResource("NNF.rscli").getFile)
