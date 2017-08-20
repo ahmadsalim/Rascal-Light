@@ -45,7 +45,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     modExprExecRes.foreach { case (module, refinements, tmems) =>
       memsOK(module, refinements, tmems, DataType("Expr"))
     }
-  }*/
+  }
 
   "The negation normal form transformation in NNF.rscli" should "run correctly with the abstract type executor" in {
     val modNnfO = RascalWrapper.loadModuleFromFile(getClass.getResource("NNF.rscli").getFile)
@@ -57,7 +57,6 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       memsOK(module, refinements, tmems, DataType("Formula"))
     }
   }
-  /*
 
     "The rename field refactoring in RenameField.rscli" should "run correctly with the abstract type executor" in {
       val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("RenameField.rscli").getFile)
@@ -81,6 +80,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
         memsOK(module, refinements, tmems, DataType("Package"))
       }
     }
+
 
     "The extract superclass refactoring in ExtractSuperclass.rscli" should "run correctly with the abstract type executor" in {
       val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("ExtractSuperclass.rscli").getFile)
@@ -123,17 +123,16 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       modDSObExecRes.foreach { case (module, refinements, tmems) =>
         memsOK(module, refinements, tmems, DataType("Module"))
       }
-    }
+    }*/
 
     "The statement translation in Glagol2PHP.rscli" should "run correctly with the abstract type executor" in {
       val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHP.rscli").getFile)
       val modG2PExecRes = modG2P.flatMap { moddef =>
-        AbstractRefinementTypeExecutor.execute(moddef, "toPhpStmt")
+        AbstractRefinementTypeExecutor.execute(moddef, "toPhpStmt", precise = false)
       }
       modG2PExecRes shouldBe a [\/-[_]]
       modG2PExecRes.foreach { case (module, refinements, tmems) =>
         memsOK(module, refinements, tmems, DataType("PhpName"))
       }
     }
-    */
 }

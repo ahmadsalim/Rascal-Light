@@ -22,9 +22,24 @@ case object NoRefinementType extends RefinementType
 case object ValueRefinementType extends RefinementType
 
 case class RefinementDef(baseDataType: TypeName, conss: Map[ConsName, List[RefinementType]])
+case class URefinementDef(baseDataType: TypeName, conss: Map[ConsName, Set[List[RefinementType]]])
 
 class Refinement(val refinementName: String) {
   override def toString: TypeName = refinementName
+
+  def canEqual(other: Any): Boolean = other.isInstanceOf[Refinement]
+
+  override def equals(other: Any): Boolean = other match {
+    case that: Refinement =>
+      (that canEqual this) &&
+        refinementName == that.refinementName
+    case _ => false
+  }
+
+  override def hashCode(): Int = {
+    val state = Seq(refinementName)
+    state.map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
+  }
 }
 
 class Refinements(initialDefinitions: Map[Refinement, RefinementDef] = Map()) {
@@ -117,6 +132,11 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
   def addRefinement(dn: TypeName, rn: Refinement, rnrhs: Map[ConsName, List[RefinementType]]): Option[Refinement] = {
     // Small optimization: if the resulting value is the datatype itself, drop refinements
     refinements.definitions.update(rn, RefinementDef(dn, rnrhs))
+    ensureUnique(dn, rn, Set())
+  }
+
+  private
+  def ensureUnique(dn: TypeName, rn: Refinement, excludedRns: Set[Refinement]): Option[Refinement] = {
     refinements.definitions ++= dataTypeRefinements
     val isSubRefinement = Lattice[RefinementType].<=(DataRefinementType(dn, dataTypeNameRefs.get(dn)), DataRefinementType(dn, Some(rn)))
     refinements.definitions --= dataTypeRefinements.keySet
@@ -126,12 +146,9 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     } else {
       // Another optimization: if there exists a refinement already use that one
       val eqRefineRes = refinements.definitions.find { case (rn2, rn2ref) =>
-        rn2 != rn &&
+        rn2 != rn && !excludedRns.contains(rn2) &&
           rn2ref.baseDataType == dn &&
-          rnrhs.keySet == rn2ref.conss.keySet &&
-          rnrhs.keySet.forall(cons =>
-            rnrhs(cons).zip(rn2ref.conss(cons)).forall {
-              case (rty1, rty2) => RefinementTypeLattice.===(rty1, rty2) })
+            RefinementTypeLattice.===(DataRefinementType(dn, Some(rn)), DataRefinementType(dn, Some(rn2)))
       }.map(_._1)
       eqRefineRes.fold(Some(rn)) {
         rn2 =>
@@ -216,51 +233,8 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
       !checkNonEmpty(Map.empty, rty)
     }
 
-
-    private
-    def upperBound(rty1: RefinementType, rty2: RefinementType, widening: Boolean) = {
-      def replaceRec(rty: RefinementType, prevRns: Set[Refinement], newRn: Refinement): RefinementType = {
-        def go(rty: RefinementType, visited: Set[Refinement]): RefinementType =
-          rty match {
-            case BaseRefinementType(basicType) => BaseRefinementType(basicType)
-            case DataRefinementType(dataname, refinename) =>
-              val updRn = refinename.fold[Option[Refinement]](None) { rn =>
-                if (rn == newRn || prevRns.contains(rn)) Some(newRn)
-                else if (visited.contains(rn)) Some(rn)
-                else {
-                  val rrefs = refinements.definitions(rn)
-                  val newConss = rrefs.conss.foldLeft(Map[ConsName, List[RefinementType]]()) { (prevConss, ccrt) =>
-                    val (cons, crts) = ccrt
-                    val newcrts = crts.foldLeft(List[RefinementType]()) { (prevcrts, crt) =>
-                      val newcrt = go(crt, visited + rn)
-                      prevcrts :+ newcrt
-                    }
-                    prevConss.updated(cons, newcrts)
-                  }
-                  val newRn2 = refinements.newRefinement(dataname)
-                  addRefinement(dataname, newRn2, newConss)
-                }
-              }
-              DataRefinementType(dataname, updRn)
-            case ListRefinementType(elementType) =>
-              val newRty = go(elementType, visited)
-              ListRefinementType(newRty)
-            case SetRefinementType(elementType) =>
-              val newRty = go(elementType, visited)
-              SetRefinementType(newRty)
-            case MapRefinementType(keyType, valueType) =>
-              val newKRty = go(keyType, visited)
-              val newVRty = go(valueType, visited)
-              MapRefinementType(newKRty, newVRty)
-            case NoRefinementType =>
-              NoRefinementType
-            case ValueRefinementType =>
-              ValueRefinementType
-          }
-        go(rty, Set())
-      }
-
-      def merge(memo: Map[(Refinement, Refinement), Refinement], widmemo: Map[Refinement, Refinement], rty1: RefinementType, rty2: RefinementType): RefinementType = {
+    override def lub(rty1: RefinementType, rty2: RefinementType): RefinementType = {
+      def merge(memo: Map[(Refinement, Refinement), Refinement], rty1: RefinementType, rty2: RefinementType): RefinementType = {
         (rty1, rty2) match {
           case (_, ValueRefinementType) | (ValueRefinementType, _) => ValueRefinementType
           case (_, NoRefinementType) => rty1
@@ -272,29 +246,29 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
               case (_, _) => ValueRefinementType
             }
           case (ListRefinementType(irty1), ListRefinementType(irty2)) =>
-            val irtylub = merge(memo, widmemo, irty1, irty2)
+            val irtylub = merge(memo, irty1, irty2)
             ListRefinementType(irtylub)
           case (SetRefinementType(irty1), SetRefinementType(irty2)) =>
-            val irtylub = merge(memo, widmemo, irty1, irty2)
+            val irtylub = merge(memo, irty1, irty2)
             SetRefinementType(irtylub)
           case (MapRefinementType(krty1, vrty1), MapRefinementType(krty2, vrty2)) =>
-            val krtylub = merge(memo, widmemo, krty1, krty2)
-            val vrtylub = merge(memo, widmemo, vrty1, vrty2)
+            val krtylub = merge(memo, krty1, krty2)
+            val vrtylub = merge(memo, vrty1, vrty2)
             MapRefinementType(krtylub, vrtylub)
           case (DataRefinementType(dn1, rno1), DataRefinementType(dn2, rno2)) if dn1 == dn2 =>
             rno1.fold(DataRefinementType(dn1, None))(rn1 => rno2.fold(DataRefinementType(dn1, None)) { rn2 =>
-              val newrty = mergeP(memo, widmemo, dn1, rn1, rn2)
+              val newrty = mergeP(memo, dn1, rn1, rn2)
               DataRefinementType(dn1, newrty)
             })
           case (_, _) => ValueRefinementType
         }
       }
 
-      def mergeP(memo: Map[(Refinement, Refinement), Refinement], widmemo: Map[Refinement, Refinement], dn: TypeName, rn1: Refinement, rn2: Refinement): Option[Refinement] = {
+      def mergeP(memo: Map[(Refinement, Refinement), Refinement], dn: TypeName, rn1: Refinement, rn2: Refinement): Option[Refinement] = {
         if (rn1 == rn2) Some(rn1)
         else if (memo.contains((rn1, rn2)) || memo.contains((rn2, rn1))) Some(memo((rn1, rn2)))
         else {
-          if (!widening && <=(DataRefinementType(dn, Some(rn1)), DataRefinementType(dn, Some(rn2)))) Some(rn2)
+          if (<=(DataRefinementType(dn, Some(rn1)), DataRefinementType(dn, Some(rn2)))) Some(rn2)
           else if (<=(DataRefinementType(dn, Some(rn2)), DataRefinementType(dn, Some(rn1)))) Some(rn1)
           else {
             val newRn = refinements.newRefinement(dn)
@@ -306,33 +280,18 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
                 rrn2.get(cons).fold(rn1tys) { rn2tys =>
                   rn1tys.zip(rn2tys).foldLeft(List.empty[RefinementType]) { (prevrtys, rntypair) =>
                     val (rnty1, rnty2) = rntypair
-                    val newRty = merge(memo.updated((rn1, rn2), newRn), widmemo.updated(rn1, newRn).updated(rn2, newRn), rnty1, rnty2)
+                    val newRty = merge(memo.updated((rn1, rn2), newRn), rnty1, rnty2)
                     prevrtys :+ newRty
                   }
                 }
               }
               prevconss.updated(cons, newRtys)
             }
-            val newRhsW =
-              if (widening)
-                newRhs.foldLeft(Map[ConsName, List[RefinementType]]()) { (prevconss, ccrts) =>
-                  val (cons, crts) = ccrts
-                  val newcrts = crts.foldLeft(List[RefinementType]()) { (prevcrts, crt) =>
-                    val newcrt = replaceRec(crt, Set(rn1, rn2), newRn)
-                    prevcrts :+ newcrt
-                  }
-                  prevconss.updated(cons, newcrts)
-                }
-              else newRhs
-            addRefinement(dn, newRn, newRhsW)
+            addRefinement(dn, newRn, newRhs)
           }
         }
       }
-      merge(Map.empty, Map.empty, rty1, rty2)
-    }
-
-    override def lub(rty1: RefinementType, rty2: RefinementType): RefinementType = {
-      upperBound(rty1, rty2, widening = false)
+      merge(Map.empty, rty1, rty2)
     }
 
     override def glb(rty1: RefinementType, rty2: RefinementType): RefinementType = {
@@ -447,9 +406,330 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
       sub(Map(), rty1, rty2)
     }
 
-    override def widen(rty1: RefinementType, rty2: RefinementType, bound: Int): RefinementType =
-      upperBound(rty1, rty2, widening = true)
+    private def toURefinementDef(rnDef: RefinementDef) = {
+      URefinementDef(rnDef.baseDataType, rnDef.conss.mapValues(Set(_)))
+    }
+
+    private def getURefinementDef(wrefinements: Map[Refinement, URefinementDef], prevRn: Refinement): URefinementDef = {
+      if (wrefinements.contains(prevRn)) wrefinements(prevRn)
+      else {
+        val prevRnDef = refinements.definitions(prevRn)
+        toURefinementDef(prevRnDef)
+      }
+    }
+
+    def reachable(wrefinements: Map[Refinement, URefinementDef], rn1: Refinement, rn2: Refinement): Boolean = {
+      def go(visited: Set[Refinement], rn: Refinement): Boolean = {
+        def recursiveRef(karg: RefinementType): Boolean = karg match {
+          case DataRefinementType(_, refinename) =>
+            refinename.exists(drn => drn == rn2 || go(visited = visited + rn, drn))
+          case ListRefinementType(elementType) => recursiveRef(elementType)
+          case SetRefinementType(elementType) => recursiveRef(elementType)
+          case MapRefinementType(keyType, valueType) => recursiveRef(keyType) || recursiveRef(valueType)
+          case _ => false
+        }
+        if (visited.contains(rn)) false
+        else {
+          val rndef = getURefinementDef(wrefinements, rn)
+          rndef.conss.exists { case (_, kargss) =>
+            kargss.exists { kargs =>
+              kargs.exists(recursiveRef)
+            }
+          }
+        }
+      }
+      go(Set(), rn1)
+    }
+
+
+    private
+    def copyInType(currmemo: Map[Refinement, Refinement], currwrefinements: Map[Refinement, URefinementDef], rty: RefinementType):
+      (Map[Refinement, Refinement], Map[Refinement, URefinementDef]) = {
+      rty match {
+        case DataRefinementType(dataname, refinename) =>
+          refinename.fold((currmemo, currwrefinements)) { rn =>
+            copyToWorkingRefinements(currmemo, currwrefinements, dataname, rn)
+          }
+        case ListRefinementType(elementType) => copyInType(currmemo, currwrefinements, elementType)
+        case SetRefinementType(elementType) => copyInType(currmemo, currwrefinements, elementType)
+        case MapRefinementType(keyType, valueType) =>
+          val (memo1, wrefinements1) = copyInType(currmemo, currwrefinements, keyType)
+          copyInType(memo1, wrefinements1, valueType)
+        case _ => (currmemo, currwrefinements)
+      }
+    }
+
+    private
+    def copyToWorkingRefinements(memo: Map[Refinement, Refinement], wrefinements:  Map[Refinement, URefinementDef], dn: TypeName, rn: Refinement): (Map[Refinement, Refinement], Map[Refinement, URefinementDef]) = {
+      if (wrefinements.contains(rn) || memo.contains(rn)) (memo, wrefinements)
+      else {
+
+        val newRn = refinements.newRefinement(dn)
+        val rndef = toURefinementDef(refinements.definitions(rn))
+        val newMemo = memo.updated(rn, newRn)
+        val newWrefinements = wrefinements.updated(newRn, rndef)
+        rndef.conss.values.toList.foldLeft((newMemo, newWrefinements)) { (st, kargss) =>
+          kargss.foldLeft(st) { (st, kargs) =>
+            kargs.foldLeft(st) { (st, rty) =>
+              val (currmemo, currwrefinements) = st
+              copyInType(currmemo, currwrefinements, rty)
+            }
+          }
+        }
+      }
+    }
+
+    private
+    def applySubstRefs(wrefinements: Map[Refinement, URefinementDef], subst: Map[Refinement, Refinement]): Map[Refinement, URefinementDef] = {
+      val substRefs = wrefinements.foldLeft (Map[Refinement, URefinementDef]()) { (prevRevs, df) =>
+        val (kref, urefdef) = df
+        val newKref = applySubst(kref, subst)
+        val newConss = applySubstCons(urefdef.conss, subst)
+        if (prevRevs.contains(newKref)) {
+          val otherconss = prevRevs(newKref).conss
+          val finalconss = (otherconss.keySet ++ newConss.keySet).map(k => k ->
+            otherconss.getOrElse(k, Set()).union(newConss.getOrElse(k, Set()))
+          ).toMap
+          prevRevs.updated(newKref, URefinementDef(urefdef.baseDataType, finalconss))
+        }
+        else prevRevs.updated(newKref, URefinementDef(urefdef.baseDataType, newConss))
+      }
+      substRefs
+    }
+
+    private
+    def applySubstCons(conss: Map[ConsName, Set[List[RefinementType]]], subst: Map[Refinement, Refinement]): Map[ConsName, Set[List[RefinementType]]] = {
+      conss.mapValues(applySubstKargss(_, subst))
+    }
+
+    private
+    def applySubstKargss(kargss: Set[List[RefinementType]], subst: Map[Refinement, Refinement]): Set[List[RefinementType]] = {
+      kargss.map(applySubstKargs(_, subst))
+    }
+
+    private
+    def applySubstKargs(kargs: List[RefinementType], subst: Map[Refinement, Refinement]) = {
+      kargs.map(applySubstTy(_, subst))
+    }
+
+    def applySubst(rn: Refinement, subst: Map[Refinement, Refinement]): Refinement = { // Transitively apply substitions
+      val newRn = subst.getOrElse(rn, rn)
+      if (rn == newRn) rn
+      else applySubst(newRn, subst)
+    }
+
+    private
+    def applySubstTy(rty: RefinementType, subst: Map[Refinement, Refinement]): RefinementType = rty match {
+      case DataRefinementType(dataname, refinename) =>
+        DataRefinementType(dataname, refinename.map(rn => applySubst(rn, subst)))
+      case ListRefinementType(elementType) => ListRefinementType(applySubstTy(elementType, subst))
+      case SetRefinementType(elementType) => SetRefinementType(applySubstTy(elementType, subst))
+      case MapRefinementType(keyType, valueType) => MapRefinementType(applySubstTy(keyType, subst), applySubstTy(valueType, subst))
+      case _ => rty
+    }
+
+    private
+    def applyNewSubst(prevsubst: Map[Refinement, Refinement], newsubst: Map[Refinement, Refinement])(implicit di: DummyImplicit, di2: DummyImplicit): Map[Refinement, Refinement] = {
+      val res = newsubst ++ prevsubst.map { case (r1, r2) => r1 -> applySubst(r2, newsubst) }
+      res
+    }
+
+    private
+    def replaceRec(wrefinements: Map[Refinement, URefinementDef], dn: TypeName, prevRn: Refinement, newRn: Refinement): (URefinementDef, Map[Refinement, Refinement]) = {
+      val prevRnDefs = getURefinementDef(wrefinements, prevRn)
+      val newsubst = if (prevRnDefs.conss.size > 1) Map(prevRn -> newRn) else Map[Refinement, Refinement]()
+      (prevRnDefs, newsubst)
+    }
+
+    private
+    def substAddedRty(refinementType: RefinementType, rn: Refinement, nrno: Option[Refinement]): RefinementType = refinementType match {
+      case DataRefinementType(dataname, refinename) =>
+        DataRefinementType(dataname, refinename.flatMap(rn2 => if (rn2 == rn) nrno else Some(rn2)))
+      case ListRefinementType(elementType) =>
+        ListRefinementType(substAddedRty(elementType, rn, nrno))
+      case SetRefinementType(elementType) =>
+        SetRefinementType(substAddedRty(elementType, rn, nrno))
+      case MapRefinementType(keyType, valueType) =>
+        MapRefinementType(substAddedRty(keyType, rn, nrno), substAddedRty(valueType, rn, nrno))
+      case _ => refinementType
+    }
+
+    private
+    def addAllRefinements(newrefinements: List[(Refinement, RefinementDef)]): Map[Refinement, Option[Refinement]] = {
+      def ensureUniqueAll(refs: List[(TypeName, Refinement)]): Map[Refinement, Option[Refinement]] = {
+        refs match {
+          case Nil => Map()
+          case (dn, rn) :: rns =>
+            val rnsrefs = rns.map(_._2).toSet
+            val nrno = ensureUnique(dn, rn, rnsrefs)
+            refinements.definitions.transform { case (rn2, rn2def) =>
+              rn2def.copy(conss = rn2def.conss.transform((_, v) => v.map(substAddedRty(_, rn, nrno))))
+            }
+            ensureUniqueAll(rns).updated(rn, nrno)
+        }
+      }
+      refinements.definitions ++= newrefinements
+      ensureUniqueAll(newrefinements.map { case (rn, rndef) => (rndef.baseDataType, rn) })
+    }
+
+    override def widen(rty1: RefinementType, rty2: RefinementType, bound: Int): RefinementType = {
+      def fixIC(resrt : RefinementType, icrefs: List[Refinement], wrefinements: Map[Refinement, URefinementDef]): (RefinementType, Map[Refinement, URefinementDef]) = {
+        val res =
+          if (icrefs.isEmpty) (resrt, wrefinements)
+          else {
+            val icref = icrefs.head
+            val icrefsr = icrefs.tail
+            if (wrefinements.contains(icref)) {
+              val icrefdef = wrefinements(icref)
+              val (newConss, shmerges, _) = icrefdef.conss.foldLeft(
+                (Map[ConsName, Set[List[RefinementType]]](), Map[Refinement, (TypeName, Refinement, Refinement)](), Map[(RefinementType, RefinementType), RefinementType]())) { (st, kkargss) =>
+                  val (prevConss, prevShmerges, prevMemo) = st
+                  val (k, kargss) = kkargss
+                  if (kargss.size > 1) {
+                    val (newKargs, newShmerges, newMemo) = kargss.tail.foldLeft((kargss.head, prevShmerges, prevMemo)) { (st, kargs2) =>
+                      val (kargs1, prevShmergesKs, prevMemoKs) = st
+                      kargs1.zip(kargs2).foldLeft((List[RefinementType](), prevShmergesKs, prevMemoKs)) { (st, ka12) =>
+                        val (prevKargs, prevShmergesK, prevMemoK) = st
+                        val (ka1, ka2) = ka12
+                        if (prevMemoK.contains((ka1, ka2))) (prevKargs :+ prevMemoK((ka1, ka2)), prevShmergesK, prevMemoK)
+                        else {
+                          val (newkarg, newShmerges) = shallowMerge(ka1, ka2)
+                          (prevKargs :+ newkarg, prevShmergesK ++ newShmerges, prevMemoK.updated((ka1, ka2), newkarg))
+                        }
+                      }
+                    }
+                    (prevConss.updated(k, Set(newKargs)), newShmerges, newMemo)
+                  } else (prevConss.updated(k, kargss), prevShmerges, prevMemo)
+                }
+              val newwrefinements = wrefinements.updated(icref, URefinementDef(icrefdef.baseDataType, newConss))
+              val (finalsubst, finalicrefs, finalwrefinements) = shmerges.foldLeft((Map[Refinement,Refinement](), icrefsr, newwrefinements)) { (st, rop) =>
+                val (prevSubst, prevIcrefs, prevwrefinements) = st
+                val (newRn, (dn, rn1r, rn2r)) = rop
+                val rn1 = applySubst(rn1r, prevSubst)
+                val rn2 = applySubst(rn2r, prevSubst)
+                val (subst, nicrefs, newwrefinements) = mergeP(prevwrefinements, dn, rn1, rn2, newRn)
+                val finalsubst = applyNewSubst(prevSubst, subst)
+                val resIcs = (prevIcrefs union nicrefs).map(applySubst(_, finalsubst))
+                val finalRefinements = applySubstRefs(newwrefinements, finalsubst)
+                (finalsubst, resIcs, finalRefinements)
+              }
+              val finalresrt = applySubstTy(resrt, finalsubst)
+              fixIC(finalresrt, finalicrefs, finalwrefinements)
+            } else fixIC(resrt, icrefsr, wrefinements)
+          }
+        res
+      }
+
+      def shallowMerge(rty1: RefinementType, rty2: RefinementType): (RefinementType, Map[Refinement, (TypeName, Refinement, Refinement)]) = {
+        (rty1, rty2) match {
+          case (_, NoRefinementType) => (rty1, Map())
+          case (NoRefinementType, _) => (rty2, Map())
+          case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
+            (bty1, bty2) match {
+              case (IntType, IntType) => (BaseRefinementType(IntType), Map())
+              case (StringType, StringType) => (BaseRefinementType(StringType), Map())
+              case (_, _) => (ValueRefinementType, Map())
+            }
+          case (ListRefinementType(irty1), ListRefinementType(irty2)) =>
+            val (irtywid, shmerges) = shallowMerge(irty1, irty2)
+            (ListRefinementType(irtywid), shmerges)
+          case (SetRefinementType(irty1), SetRefinementType(irty2)) =>
+            val (irtywid, shmerges) = shallowMerge(irty1, irty2)
+            (SetRefinementType(irtywid), shmerges)
+          case (MapRefinementType(krty1, vrty1), MapRefinementType(krty2, vrty2)) =>
+            // Small optimization
+            if (krty1 == vrty1 && krty2 == vrty2) {
+              val (irtywid, shmerges) = shallowMerge(krty1, krty2)
+              (MapRefinementType(irtywid, irtywid), shmerges)
+            } else {
+              val (krtywid, shmerges1) = shallowMerge(krty1, krty2)
+              val (vrtywid, shmerges2) = shallowMerge(vrty1, vrty2)
+              (MapRefinementType(krtywid, vrtywid), shmerges1 ++ shmerges2)
+            }
+          case (DataRefinementType(dn1, rno1), DataRefinementType(dn2, rno2)) if dn1 == dn2 =>
+            if (rno1.isEmpty || rno2.isEmpty) (DataRefinementType(dn1, None), Map())
+            else {
+              val rn1 = rno1.get
+              val rn2 = rno2.get
+              val newRn = refinements.newRefinement(dn1)
+              (DataRefinementType(dn1, Some(newRn)), Map(newRn -> (dn1, rn1, rn2)))
+            }
+          case _ => (ValueRefinementType, Map())
+        }
+      }
+
+      def mergeP(wrefinements: Map[Refinement, URefinementDef],
+                 dn: TypeName, rn1: Refinement, rn2: Refinement, newRn: Refinement): (Map[Refinement, Refinement], List[Refinement], Map[Refinement, URefinementDef]) = {
+          val (rn1defs, subst1) = replaceRec(wrefinements, dn, rn1, newRn)
+          val (rn2defs, subst2)  = replaceRec(wrefinements, dn, rn2, newRn)
+          val newRnDefsCons = rn1defs.conss.keySet union rn2defs.conss.keySet
+          val newRnDefs = newRnDefsCons.map(k => k ->
+                              rn1defs.conss.getOrElse(k, Set()).union(rn2defs.conss.getOrElse(k, Set()))).toMap
+          val finalwrefinements = applySubstRefs(wrefinements.updated(newRn, URefinementDef(dn, newRnDefs)), subst1 ++ subst2)
+          (subst1 ++ subst2, List(newRn), finalwrefinements)
+      }
+
+      // Returns new refinement type, substitution, set of possibly inconsistent refinements, and an updated local refinement map
+      def merge(wrefinements: Map[Refinement, URefinementDef],
+                rty1: RefinementType, rty2: RefinementType): (RefinementType, Map[Refinement, Refinement], List[Refinement], Map[Refinement, URefinementDef]) = {
+        (rty1, rty2) match {
+          case (_, NoRefinementType) => (rty1, Map(), List(), wrefinements)
+          case (NoRefinementType, _) => (rty2, Map(), List(), wrefinements)
+          case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
+            (bty1, bty2) match {
+              case (IntType, IntType) => (BaseRefinementType(IntType), Map(), List(), wrefinements)
+              case (StringType, StringType) => (BaseRefinementType(StringType), Map(), List(), wrefinements)
+              case (_, _) => (ValueRefinementType, Map(), List(), wrefinements)
+            }
+          case (ListRefinementType(irty1), ListRefinementType(irty2)) =>
+            val (irtywid, subst, icrefs, nwrefinements) = merge(wrefinements, irty1, irty2)
+            (ListRefinementType(irtywid), subst, icrefs, nwrefinements)
+          case (SetRefinementType(irty1), SetRefinementType(irty2)) =>
+            val (irtywid, subst, icrefs, nwrefinements) = merge(wrefinements, irty1, irty2)
+            (SetRefinementType(irtywid), subst, icrefs, nwrefinements)
+          case (MapRefinementType(krty1, vrty1), MapRefinementType(krty2, vrty2)) =>
+            // Small optimization
+            if (krty1 == vrty1 && krty2 == vrty2) {
+              val (irtywid, subst, icrefs, nwrefinements) = merge(wrefinements, krty1, krty2)
+              (MapRefinementType(irtywid, irtywid), subst, icrefs, nwrefinements)
+            } else {
+              val (krtylub, subst1, icrefs1, nwrefinements1) = merge(wrefinements, krty1, krty2)
+              val (vrtylub, subst2, icrefs2, nwrefinements2) = merge(nwrefinements1, vrty1, vrty2)
+              (MapRefinementType(krtylub, vrtylub), subst1 ++ subst2, icrefs1 ++ icrefs2, nwrefinements2)
+            }
+          case (DataRefinementType(dn1, rno1), DataRefinementType(dn2, rno2)) if dn1 == dn2 =>
+            if (rno1.isEmpty || rno2.isEmpty) (DataRefinementType(dn1, None), Map(), List(), wrefinements)
+            else {
+              val rn1 = rno1.get
+              val rn2 = rno2.get
+              if (rn1 == rn2) (DataRefinementType(dn1, Some(rn1)), Map(), List(), wrefinements) // No need to complicate things
+              else {
+                val newRn = refinements.newRefinement(dn1)
+                val (subst, icrefs, newWrefinements) = mergeP(wrefinements, dn1, rn1, rn2, newRn)
+                (DataRefinementType(dn1, Some(applySubst(newRn, subst))), subst, icrefs, newWrefinements)
+              }
+            }
+          case _ => (ValueRefinementType, Map(), List(), wrefinements)
+        }
+      }
+
+      def copyRelevantRefinements(rty1: RefinementType, rty2: RefinementType) = {
+        val (memo1, wrefinements1) = copyInType(Map(), Map(), rty1)
+        val (memo2, wrefinements2) = copyInType(memo1, applySubstRefs(wrefinements1, memo1), rty2)
+        (applySubstTy(rty1,memo2), applySubstTy(rty2, memo2), applySubstRefs(wrefinements2, memo2))
+      }
+
+      val (nrty1, nrty2, copiedRefinements) = copyRelevantRefinements(rty1, rty2)
+      val (newrt, _, icrefs, newRefinements) = merge(copiedRefinements, nrty1, nrty2)
+      val (resrt, finalRefinements) = fixIC(newrt, icrefs, newRefinements)
+      // TODO Smarter add to global
+      val addedTys = addAllRefinements(finalRefinements.transform((_, urdef) => RefinementDef(urdef.baseDataType, urdef.conss.mapValues(_.head))).toList)
+      addedTys.foldLeft(resrt) { (resrt, subst) =>
+        substAddedRty(resrt, subst._1, subst._2)
+      }
+    }
   }
+
 
   implicit def VoideableRefinementTypeLattice: Lattice[VoideableRefinementType] = new Lattice[VoideableRefinementType] {
     override def bot: VoideableRefinementType = VoideableRefinementType(possiblyVoid = false, Lattice[RefinementType].bot)
