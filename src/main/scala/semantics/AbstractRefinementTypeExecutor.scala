@@ -42,7 +42,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   private
   def safeReconstruct(scrtyp: VoideableRefinementType,
                       cvtys: List[VoideableRefinementType]): VoideableRefinementType = {
-    reconstruct(scrtyp, cvtys).head match {
+    reconstruct(scrtyp, cvtys.map(_.copy(possiblyVoid = false))).head match {
       case SuccessResult(t) => t
       case ExceptionalResult(exres) => assert(false); throw new Exception("safeReconstruct")
     }
