@@ -102,7 +102,7 @@ public data PhpOptionElse = phpSomeElse(PhpElse e) | phpNoElse();
 
 public data PhpActualParameter
     = phpActualParameter(PhpExpr expr, bool byRef)
-    | phpActualParameter(PhpExpr expr, bool byRef, bool isVariadic);
+    | phpActualParameter2(PhpExpr expr, bool byRef, bool isVariadic);
 
 public data PhpConst = phpConst(str name, PhpExpr constValue);
 

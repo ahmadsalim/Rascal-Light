@@ -13,8 +13,49 @@ case object TypeStoreBot extends TypeStore
 case class TypeMemory[T](result: TypeResult[T], store: TypeStore)
 case class TypeMemories[T](memories: Set[TypeMemory[T]])
 
+object TypeResult {
+  def pretty(typeResult: TypeResult[VoideableRefinementType]): String = typeResult match {
+    case SuccessResult(t) =>
+      s"success ${VoideableRefinementTypes.pretty(t)}"
+    case ExceptionalResult(exres) =>
+      exres match {
+        case Return(value) => s"return ${VoideableRefinementTypes.pretty(value)}"
+        case Throw(value) => s"throw ${VoideableRefinementTypes.pretty(value)}"
+        case Break => "break"
+        case Continue => "continue"
+        case Fail => "fail"
+        case Error(kinds) =>
+          s"errors: \n ${kinds.map(errk => "\t" + errk).mkString("\n")}"
+      }
+  }
+}
+
 object TypeStore {
+  def pretty(store: TypeStore) = store match {
+    case TypeStoreTop => "store⊤"
+    case TypeStoreV(vals) => vals.map { case (vr, vl) => s"$vr ↦ ${VoideableRefinementTypes.pretty(vl)}" }.mkString("[", ",", "]")
+    case TypeStoreBot => "store⊥"
+  }
+
   type TypeResult[T] = ResultV[VoideableRefinementType, T]
+}
+
+object TypeMemory {
+  def pretty(mem: TypeMemory[VoideableRefinementType]): String = {
+    val prettyRes = TypeResult.pretty(mem.result)
+    val prettyStore = TypeStore.pretty(mem.store)
+    s"""result:
+       | $prettyRes
+       |
+       |store:
+       | $prettyStore""".stripMargin
+  }
+}
+
+object TypeMemories {
+  def pretty(mems: TypeMemories[VoideableRefinementType]): String = {
+    mems.memories.map(TypeMemory.pretty).mkString("\n")
+  }
 }
 
 case class TypeStoreOps(datatypes: DataTypeDefs, refinements: Refinements) {

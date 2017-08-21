@@ -17,7 +17,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
   def memsOK(module: Module, refinements: Refinements, mems: TypeMemories[VoideableRefinementType], targetType: Type): Unit = {
     println("=" * 100)
     refinements.prettyDefs.foreach(println)
-    mems.memories.foreach(println)
+    println(TypeMemories.pretty(mems))
     println("=" * 100)
     val atyping = AbstractTyping(module)
     mems.memories.exists { case TypeMemory(res, _) =>
@@ -35,7 +35,6 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     }
   }
 
-  /*
   "The expression simplification procedure in Expr.rscli" should "run correctly with the abstract type executor" in {
     val modExprO = RascalWrapper.loadModuleFromFile(getClass.getResource("Expr.rscli").getFile)
     val modExprExecRes = modExprO.flatMap { moddef =>
@@ -123,16 +122,16 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       modDSObExecRes.foreach { case (module, refinements, tmems) =>
         memsOK(module, refinements, tmems, DataType("Module"))
       }
-    }*/
+    }
 
-    "The statement translation in Glagol2PHP.rscli" should "run correctly with the abstract type executor" in {
+    "The expression translation in Glagol2PHP.rscli" should "run correctly with the abstract type executor" in {
       val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHP.rscli").getFile)
       val modG2PExecRes = modG2P.flatMap { moddef =>
-        AbstractRefinementTypeExecutor.execute(moddef, "toPhpStmt", precise = false)
+        AbstractRefinementTypeExecutor.execute(moddef, "toPhpExpr", precise = false)
       }
       modG2PExecRes shouldBe a [\/-[_]]
       modG2PExecRes.foreach { case (module, refinements, tmems) =>
-        memsOK(module, refinements, tmems, DataType("PhpName"))
+        memsOK(module, refinements, tmems, DataType("PhpExpr"))
       }
     }
 }

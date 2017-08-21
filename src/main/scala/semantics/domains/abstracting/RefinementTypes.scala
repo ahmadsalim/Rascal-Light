@@ -51,28 +51,10 @@ class Refinements(initialDefinitions: Map[Refinement, RefinementDef] = Map()) {
   def newRefinement(dataname: TypeName): Refinement = new Refinement(s"$dataname#${refCounter.++}")
 
   def prettyDefs: List[String] = {
-    def prettyRty(refinementType: RefinementType): String = refinementType match {
-      case BaseRefinementType(basicType) =>
-        basicType match {
-          case IntType => "int"
-          case StringType => "string"
-        }
-      case DataRefinementType(dataname, refinename) =>
-        refinename.fold(dataname)(_.refinementName)
-      case ListRefinementType(elementType) =>
-        s"list<${prettyRty(elementType)}>"
-      case SetRefinementType(elementType) =>
-        s"set<${prettyRty(elementType)}>"
-      case MapRefinementType(keyType, valueType) =>
-        s"map<${prettyRty(keyType)}, ${prettyRty(valueType)}>"
-      case NoRefinementType =>
-        s"void"
-      case ValueRefinementType =>
-        "value"
-    }
+
     def prettyDefn(defn: RefinementDef): String = {
-      defn.conss.toList.map { case (cons, rtys) =>
-        s"$cons(${rtys.map(rty => prettyRty(rty)).mkString(", ")})"
+      defn.conss.toList.sortBy(_._1).map { case (cons, rtys) =>
+        s"$cons(${rtys.map(rty => RefinementTypes.pretty(rty)).mkString(", ")})"
       }.mkString(" | ")
     }
     definitions.toList.map { case (nt, defn) =>
@@ -83,9 +65,38 @@ class Refinements(initialDefinitions: Map[Refinement, RefinementDef] = Map()) {
 
 object RefinementTypes {
   type DataTypeDefs = Map[TypeName, Map[ConsName, List[Type]]]
+
+  def pretty(refinementType: RefinementType): String = refinementType match {
+    case BaseRefinementType(basicType) =>
+      basicType match {
+        case IntType => "int"
+        case StringType => "string"
+      }
+    case DataRefinementType(dataname, refinename) =>
+      refinename.fold(dataname)(_.refinementName)
+    case ListRefinementType(elementType) =>
+      s"list<${pretty(elementType)}>"
+    case SetRefinementType(elementType) =>
+      s"set<${pretty(elementType)}>"
+    case MapRefinementType(keyType, valueType) =>
+      s"map<${pretty(keyType)}, ${pretty(valueType)}>"
+    case NoRefinementType =>
+      s"void"
+    case ValueRefinementType =>
+      "value"
+  }
+}
+
+object VoideableRefinementTypes {
+  def pretty(voideableRefinementType: VoideableRefinementType): String = {
+    val prettyRty = RefinementTypes.pretty(voideableRefinementType.refinementType)
+    val prettyVoideable = if (voideableRefinementType.possiblyVoid) "?" else ""
+    s"$prettyRty$prettyVoideable"
+  }
 }
 
 case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) {
+
   def possibleConstructors(refinementType: RefinementType): Set[ConsName] = refinementType match {
     case BaseRefinementType(_) => Set()
     case DataRefinementType(dataname, refinename) =>
