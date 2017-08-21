@@ -224,9 +224,9 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case BaseRefinementType(_) => true
           case DataRefinementType(_, refinenameopt) =>
             refinenameopt.fold(true)(refinename => checkNonEmptyP(memo, refinename))
-          case ListRefinementType(elementType) => checkNonEmpty(memo, elementType)
-          case SetRefinementType(elementType) => checkNonEmpty(memo, elementType)
-          case MapRefinementType(keyType, valueType) => checkNonEmpty(memo, keyType) && checkNonEmpty(memo, valueType)
+          case ListRefinementType(elementType) => true // At least until we get lengths since empty lists are possible
+          case SetRefinementType(elementType) => true // At least until we get length since empty sets are possible
+          case MapRefinementType(keyType, valueType) => true // at least until we get length since empty maps are possible
           case NoRefinementType => false
           case ValueRefinementType => true
         }

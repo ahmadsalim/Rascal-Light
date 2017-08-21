@@ -118,7 +118,7 @@ public list[Statement] flattenBegin(list[Statement] stats) {
               for (s <- ss) {
                 switch (s) {
                    case begin(b): res = res + b;
-                   case _: res = res + s;
+                   case _: res = res + [s];
                 };
               };
               res;

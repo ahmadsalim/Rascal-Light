@@ -114,7 +114,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       }
     }
     "The desugaring in DesugarOberon.rscli" should "run correctly with the abstract type executor" in {
-      val modDSOb = RascalWrapper.loadModuleFromFile(getClass.getResource("DesugarOberon.rscli").getFile)
+      val modDSOb = RascalWrapper.loadModuleFromFile(getClass.getResource("DesugarOberonSimpl.rscli").getFile)
       val modDSObExecRes = modDSOb.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "desugar")
       }

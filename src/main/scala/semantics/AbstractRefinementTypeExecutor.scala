@@ -1322,8 +1322,6 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
           val widened = Lattice[(VoideableRefinementType, TypeMemories[VoideableRefinementType])].widen(prevRes, newRes)
           val ubnew = Lattice[(VoideableRefinementType, TypeMemories[VoideableRefinementType])].<=(newRes, widened)
           val ubprev = Lattice[(VoideableRefinementType, TypeMemories[VoideableRefinementType])].<=(prevRes, widened)
-          assert(ubnew)
-          assert(ubprev)
           go(scrtyp, widened, loopcount = loopcount + 1)
         }
       }
@@ -1560,32 +1558,33 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
       // TODO Find a way to have the go fixedpoint calculation outside the inner memoization/regular tree calculation
       def memoFix(store: TypeStore, memo: Map[TypeStore, TypeMemories[VoideableRefinementType]]): TypeMemories[VoideableRefinementType] = {
         def go(prevRes: TypeMemories[VoideableRefinementType]): TypeMemories[VoideableRefinementType] = {
-          def itermems: TypeMemories[VoideableRefinementType] = {
+          val itermems: TypeMemories[VoideableRefinementType] = {
             // We overapproximate order, cardinality and content, so we have to try all possible combinations in parallel
             val bodymems = Lattice[TypeMemories[VoideableRefinementType]].lubs(envs.map { env =>
-              TypeMemories(evalLocal(localVars, joinStores(store, TypeStoreV(env)), body, funMemo).memories.map {
+              val joinedStore = joinStores(store, TypeStoreV(env))
+              val bodymems1 = evalLocal(localVars, joinedStore, body, funMemo)
+              TypeMemories(bodymems1.memories.map {
                 case TypeMemory(bodyres, store_) => TypeMemory(bodyres, dropVars(store_, env.keySet))
               })
             })
-            Lattice[TypeMemories[VoideableRefinementType]].lubs(bodymems.memories.flatMap { case TypeMemory(bodyres, store_) =>
+            Lattice[TypeMemories[VoideableRefinementType]].lubs(bodymems.memories.map { case TypeMemory(bodyres, store_) =>
               bodyres match {
                 case SuccessResult(_) =>
                   val widenedstore = Lattice[TypeStore].widen(store, store_)
-                  Set(memoFix(widenedstore, memo.updated(store, prevRes)))
+                  memoFix(widenedstore, memo.updated(store, prevRes))
                 case ExceptionalResult(exres) =>
                   exres match {
-                    case Break => Set(TypeMemories[VoideableRefinementType](
-                      Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = true, NoRefinementType)), store_))))
+                    case Break => TypeMemories[VoideableRefinementType](
+                      Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = true, NoRefinementType)), store_)))
                     case Continue =>
                       val widenedstore = Lattice[TypeStore].widen(store, store_)
-                      Set(memoFix(widenedstore, memo.updated(store, prevRes)))
+                      memoFix(widenedstore, memo.updated(store, prevRes))
                     // We have to try everything again because of possible duplicates (although perhaps, it should only be
                     // envs, because it is not possible to change alternative through an iteration
-                    case _ => Set(TypeMemories[VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store_))))
+                    case _ => TypeMemories[VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store_)))
                   }
               }
             })
-
           }
           val newRes = Lattice[TypeMemories[VoideableRefinementType]].lub(
             TypeMemories[VoideableRefinementType](Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = true, NoRefinementType)), store))), itermems)
