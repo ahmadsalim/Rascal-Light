@@ -207,11 +207,37 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     case ValueType => ValueRefinementType
   }
 
-
   def dataTypeDefToRefinementDef(dn: TypeName, dt: Map[ConsName, List[Type]], refs: Map[TypeName, Refinement] = Map()): RefinementDef = {
     RefinementDef(dn, dt.mapValues(tys => tys.map(typeToRefinement(_, refs))))
   }
 
+  // Overapproximative negation
+  def negate(rty: RefinementType): RefinementType = {
+    // TODO Implement negation algorithm of Aiken instead
+
+    def negateRty(memo: Map[Refinement, Refinement], rty: RefinementType): RefinementType = rty match {
+      case BaseRefinementType(basicType) => BaseRefinementType(basicType)
+      case DataRefinementType(dataname, refinename) =>
+        if (datatypes(dataname).values.forall(_.isEmpty) && refinename.isDefined) {
+          val rndef = refinements.definitions(refinename.get)
+          val newRn = refinements.newRefinement(dataname)
+          val newRnDef = dataTypeRefinements(dataTypeNameRefs(dataname)).conss -- rndef.conss.keySet
+          val finalRn = addRefinement(dataname, newRn, newRnDef)
+          DataRefinementType(dataname, finalRn)
+        } else DataRefinementType(dataname, None)
+      case ListRefinementType(elementType) =>
+        ListRefinementType(RefinementTypeLattice.lub(elementType, negateRty(memo, elementType))) // To ensure overapproximation
+      case SetRefinementType(elementType) =>
+        SetRefinementType(RefinementTypeLattice.lub(elementType, negateRty(memo, elementType))) // To ensure overapproximation
+      case MapRefinementType(keyType, valueType) =>
+        MapRefinementType(RefinementTypeLattice.lub(keyType, negateRty(memo, keyType)),
+          RefinementTypeLattice.lub(valueType, negateRty(memo, valueType))) // To ensure overapproximation
+      case NoRefinementType => NoRefinementType
+      case ValueRefinementType => ValueRefinementType
+    }
+
+    negateRty(Map[Refinement, Refinement](), rty)
+  }
 
   implicit def RefinementTypeLattice: Lattice[RefinementType] = new Lattice[RefinementType] {
     override def bot: RefinementType = NoRefinementType
@@ -573,7 +599,7 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case (dn, rn) :: rns =>
             val rnsrefs = rns.map(_._2).toSet
             val nrno = ensureUnique(dn, rn, rnsrefs)
-            refinements.definitions.transform { case (rn2, rn2def) =>
+            refinements.definitions.transform { case (_, rn2def) =>
               rn2def.copy(conss = rn2def.conss.transform((_, v) => v.map(substAddedRty(_, rn, nrno))))
             }
             ensureUniqueAll(rns).updated(rn, nrno)

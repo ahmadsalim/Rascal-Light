@@ -127,6 +127,21 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     else Some(vrtyglb)
   }
 
+  def refineNeq(vrty1: VoideableRefinementType, vrty2: VoideableRefinementType): Option[(VoideableRefinementType, VoideableRefinementType)] = {
+    (vrty1.refinementType, vrty2.refinementType) match {
+      case (DataRefinementType(dn1, rno1), DataRefinementType(dn2, rno2)) if dn1 == dn2 =>
+        val drglb = Lattice[RefinementType].glb(vrty1.refinementType, vrty2.refinementType)
+        if (Lattice[RefinementType].isBot(drglb)) None
+        else {
+          val drnegglb = refinementtypeops.negate(drglb)
+          val vrty1r = vrty1.copy(refinementType = Lattice[RefinementType].glb(vrty1.refinementType, drnegglb))
+          val vrty2r = vrty2.copy(refinementType = Lattice[RefinementType].glb(vrty2.refinementType, drnegglb))
+          Some((vrty1r, vrty2r))
+        }
+      case _ => None // Currently there is no way to refine inequality for the rest of the domains
+    }
+  }
+
   // Use Set instead of Stream for nicer equality, and easier structural traversal when having alternatives
   def mergePairs(pairs: Set[(Map[VarName, VoideableRefinementType], Map[VarName, VoideableRefinementType])]): Set[Set[Map[VarName, VoideableRefinementType]]] = {
     // TODO Seems to lose the laziness, but I am still unsure how to recover that
@@ -221,11 +236,14 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
       case VarPatt(name) =>
         def bindVar = Set((store, scrvrtyp, Set(Map(name -> scrvrtyp))))
         getVar(store, name).fold[Set[MatchPattRes]](bindVar) { xvrtyp =>
-          val refineres = refineEq(scrvrtyp, VoideableRefinementType(possiblyVoid = false, xvrtyp.refinementType))
+          val refineeqres = refineEq(scrvrtyp, VoideableRefinementType(possiblyVoid = false, xvrtyp.refinementType))
+          val refineneqres = refineNeq(scrvrtyp, VoideableRefinementType(possiblyVoid = false, xvrtyp.refinementType))
           val posBind: Set[MatchPattRes] = if (xvrtyp.possiblyVoid) bindVar else Set()
           posBind ++
-            Set[MatchPattRes]((store, scrvrtyp, Set())) ++
-              refineres.fold[Set[MatchPattRes]](Set()) { vrteq =>
+            Set[MatchPattRes](refineneqres.fold((store, scrvrtyp, Set[Map[VarName, VoideableRefinementType]]())) { case (nscrvrtyp, nxvrtyp) =>
+              (setVar(store, name, nxvrtyp), nscrvrtyp, Set[Map[VarName, VoideableRefinementType]]())
+            }) ++
+              refineeqres.fold[Set[MatchPattRes]](Set()) { vrteq =>
                 Set((setVar(store, name, vrteq), vrteq, Set(Map())))
               }
         }
