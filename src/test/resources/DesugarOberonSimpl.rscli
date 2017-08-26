@@ -83,6 +83,7 @@ public Module desugar(Module \mod) {
 
 Statement cases2if(Expression e, list[Case] cs, list[Statement] es) {
 	switch (cs) {
+	  case []: return begin(es);
       case [c, *cs2]: {
 			list[ElseIf] eis = [];
 			for (c2 <- cs2)
@@ -94,7 +95,6 @@ Statement cases2if(Expression e, list[Case] cs, list[Statement] es) {
 
 public list[Statement] case2ifs(list[Statement] stats) {
 	return visit (stats) {
-		case caseOf(e, [], es) => begin(es)
 		case caseOf(e, cs, es) => cases2if(e, cs, es)
 	}
 }

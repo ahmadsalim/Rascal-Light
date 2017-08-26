@@ -128,7 +128,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     }
 
     "The expression translation in Glagol2PHP.rscli" should "run correctly with the abstract type executor" in {
-      val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHP.rscli").getFile)
+      val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHPExpr.rscli").getFile)
       val modG2PExecRes = modG2P.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "toPhpExpr", precise = false)
       }

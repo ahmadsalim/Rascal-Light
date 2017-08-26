@@ -1,18 +1,18 @@
 module NNF
 
-data Formula = atom(str nm)
-             | and(Formula l, Formula r)
-             | or(Formula l, Formula r)
-             | imp(Formula l, Formula r)
-             | neg(Formula f);
+  data Formula = atom(str nm)
+               | and(Formula l, Formula r)
+               | or(Formula l, Formula r)
+               | imp(Formula l, Formula r)
+               | neg(Formula f);
 
-Formula nnf(Formula phi) = top-down visit(phi) {
-	case neg(or(l,r)) => and(neg(l), neg(r))
-	case neg(and(l,r)) => or(neg(l), neg(r))
-	case neg(imp(l,r)) => and(l, neg(r))
-	case neg(neg(f)) => nnf(f)
-	case imp(l,r) => or(neg(l), r)
-};
+  Formula nnf(Formula phi) = top-down visit(phi) {
+  	case neg(or(l,r)) => and(neg(l), neg(r))
+  	case neg(and(l,r)) => or(neg(l), neg(r))
+  	case neg(imp(l,r)) => and(l, neg(r))
+  	case neg(neg(f)) => nnf(f)
+  	case imp(l,r) => or(neg(l), r)
+  };
 
 test bool test1() {
 	Formula phi_in = neg(and(or(atom("a"), atom("b")), atom("c")));
