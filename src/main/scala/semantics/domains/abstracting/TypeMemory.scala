@@ -113,8 +113,15 @@ case class TypeStoreOps(datatypes: DataTypeDefs, refinements: Refinements) {
         case (TypeStoreV(vals1), TypeStoreV(vals2)) =>
           val allVars = vals1.keySet ++ vals2.keySet
           val varmap = allVars.foldLeft( Map.empty[VarName, VoideableRefinementType]) { (prevvarmap, x) =>
-            vals1.get(x).fold(prevvarmap.updated(x, VoideableRefinementType(possiblyVoid = true, vals2(x).refinementType))) { vty1 =>
-              vals2.get(x).fold(prevvarmap.updated(x, VoideableRefinementType(possiblyVoid = true, vty1.refinementType))) { vty2 =>
+            vals1.get(x).fold {
+              val v2rty = vals2(x)
+              if (Lattice[VoideableRefinementType].isBot(v2rty)) prevvarmap
+              else prevvarmap.updated(x, VoideableRefinementType(possiblyVoid = true, v2rty.refinementType))
+            } { vty1 =>
+              vals2.get(x).fold {
+                if (Lattice[VoideableRefinementType].isBot(vty1)) prevvarmap
+                else prevvarmap.updated(x, VoideableRefinementType(possiblyVoid = true, vty1.refinementType))
+              } { vty2 =>
                 val newrefinetyp = tOp(vty1, vty2)
                 prevvarmap.updated(x, newrefinetyp)
               }

@@ -19,7 +19,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
   private
   def memsOK(module: Module, refinements: Refinements, mems: TypeMemories[VoideableRefinementType], targetType: Type): Unit = {
     println("=" * 100)
-    refinements.prettyDefs.foreach(println)
+    refinements.prettyDefs.sorted.foreach(println)
     println(TypeMemories.pretty(mems))
     println("=" * 100)
     val atyping = AbstractTyping(module)
@@ -116,6 +116,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
         memsOK(module, refinements, tmems, DataType("Tableau"))
       }
     }
+
     "The desugaring in DesugarOberonSimpl.rscli" should "run correctly with the abstract type executor" in {
       val modDSOb = RascalWrapper.loadModuleFromFile(getClass.getResource("DesugarOberonSimpl.rscli").getFile)
       val modDSObExecRes = modDSOb.flatMap { moddef =>
@@ -126,7 +127,6 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
         memsOK(module, refinements, tmems, DataType("Module"))
       }
     }
-
     "The expression translation in Glagol2PHP.rscli" should "run correctly with the abstract type executor" in {
       val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHPExpr.rscli").getFile)
       val modG2PExecRes = modG2P.flatMap { moddef =>

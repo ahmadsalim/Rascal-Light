@@ -10,7 +10,7 @@ Glagol Abstract Syntax
 ======================
 */
 
-import String;
+data Unsuppported = unsupported();
 
 data Expression
     = integer(int intValue)
@@ -252,7 +252,8 @@ Glagol to PHP Transformation --- Expressions
 ===========================================
 */
 
-public str toLowerCaseFirstChar(str text) = toLowerCase(text[0]) + substring(text, 1);
+// Changed because of lack of string abstractions of built-in library functions
+public str toLowerCaseFirstChar(str text) = text;
 
 PhpExpr toPhpExpr(Expression expr) {
 	switch(expr) {
@@ -365,24 +366,8 @@ PhpExpr toPhpExpr(Expression expr) {
 
 		case this():
 			return phpVar(phpName2(phpName("this")));
-	};
-}
 
-
-/*
-===========================================
-Glagol to PHP Transformation --- Types
-===========================================
-*/
-PhpName toPhpTypeName(Type \type) {
-	switch(\type) {
-		case integer2(): return phpName("int");
-		case boolean2(): return phpName("bool");
-		case string2(): return phpName("string");
-		case list2(_): return phpName("Vector");
-		case map2(_, _): return phpName("Map");
-		case artifact(str name): return phpName(name);
-		case repository(str name): return phpName(name + "Repository");
+        case _: throw unsupported();
 	};
 }
 
