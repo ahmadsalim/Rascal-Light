@@ -75,11 +75,11 @@ object RefinementTypes {
     case DataRefinementType(dataname, refinename) =>
       refinename.fold(dataname)(_.refinementName)
     case ListRefinementType(elementType) =>
-      s"list<${pretty(elementType)}>"
+      s"list[${pretty(elementType)}]"
     case SetRefinementType(elementType) =>
-      s"set<${pretty(elementType)}>"
+      s"set[${pretty(elementType)}]"
     case MapRefinementType(keyType, valueType) =>
-      s"map<${pretty(keyType)}, ${pretty(valueType)}>"
+      s"map[${pretty(keyType)}, ${pretty(valueType)}]"
     case NoRefinementType =>
       s"void"
     case ValueRefinementType =>
@@ -237,6 +237,39 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     }
 
     negateRty(Map[Refinement, Refinement](), rty)
+  }
+
+  // Excludes constructors in `excludedConss` recursively from a datatype
+  def excluding(dn: TypeName, excludedConss: Set[ConsName]): RefinementType = {
+    def removeSelfRefinements(rty: RefinementType): RefinementType = rty match {
+      case DataRefinementType(dataname, refinename) if refinename.exists(r => r.refinementName == dataname) =>
+        DataRefinementType(dataname, None)
+      case ListRefinementType(elementType) => ListRefinementType(removeSelfRefinements(elementType))
+      case SetRefinementType(elementType) => SetRefinementType(removeSelfRefinements(elementType))
+      case MapRefinementType(keyType, valueType) =>
+        MapRefinementType(removeSelfRefinements(keyType), removeSelfRefinements(valueType))
+      case _ => rty
+    }
+    val newRn = refinements.newRefinement(dn)
+    val newRnDef = dataTypeRefinements(dataTypeNameRefs(dn)).conss -- excludedConss
+    val newRnDefRep = newRnDef.transform {
+      (k, tys) => tys.map(rty => removeSelfRefinements(substDataRefsInType(rty, dataTypeNameRefs(dn), Some(newRn))))
+    }
+    val resRn = addRefinement(dn, newRn, newRnDefRep)
+    DataRefinementType(dn, resRn)
+  }
+
+  private
+  def substDataRefsInType(refinementType: RefinementType, rn: Refinement, nrno: Option[Refinement]): RefinementType = refinementType match {
+    case DataRefinementType(dataname, refinename) =>
+      DataRefinementType(dataname, refinename.flatMap(rn2 => if (rn2 == rn) nrno else Some(rn2)))
+    case ListRefinementType(elementType) =>
+      ListRefinementType(substDataRefsInType(elementType, rn, nrno))
+    case SetRefinementType(elementType) =>
+      SetRefinementType(substDataRefsInType(elementType, rn, nrno))
+    case MapRefinementType(keyType, valueType) =>
+      MapRefinementType(substDataRefsInType(keyType, rn, nrno), substDataRefsInType(valueType, rn, nrno))
+    case _ => refinementType
   }
 
   implicit def RefinementTypeLattice: Lattice[RefinementType] = new Lattice[RefinementType] {
@@ -578,18 +611,6 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
       (prevRnDefs, newsubst)
     }
 
-    private
-    def substAddedRty(refinementType: RefinementType, rn: Refinement, nrno: Option[Refinement]): RefinementType = refinementType match {
-      case DataRefinementType(dataname, refinename) =>
-        DataRefinementType(dataname, refinename.flatMap(rn2 => if (rn2 == rn) nrno else Some(rn2)))
-      case ListRefinementType(elementType) =>
-        ListRefinementType(substAddedRty(elementType, rn, nrno))
-      case SetRefinementType(elementType) =>
-        SetRefinementType(substAddedRty(elementType, rn, nrno))
-      case MapRefinementType(keyType, valueType) =>
-        MapRefinementType(substAddedRty(keyType, rn, nrno), substAddedRty(valueType, rn, nrno))
-      case _ => refinementType
-    }
 
     private
     def addAllRefinements(newrefinements: List[(Refinement, RefinementDef)]): Map[Refinement, Option[Refinement]] = {
@@ -600,7 +621,7 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
             val rnsrefs = rns.map(_._2).toSet
             val nrno = ensureUnique(dn, rn, rnsrefs)
             refinements.definitions.transform { case (_, rn2def) =>
-              rn2def.copy(conss = rn2def.conss.transform((_, v) => v.map(substAddedRty(_, rn, nrno))))
+              rn2def.copy(conss = rn2def.conss.transform((_, v) => v.map(substDataRefsInType(_, rn, nrno))))
             }
             ensureUniqueAll(rns).updated(rn, nrno)
         }
@@ -762,7 +783,7 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
       // TODO Smarter add to global
       val addedTys = addAllRefinements(finalRefinements.transform((_, urdef) => RefinementDef(urdef.baseDataType, urdef.conss.mapValues(_.head))).toList)
       addedTys.foldLeft(resrt) { (resrt, subst) =>
-        substAddedRty(resrt, subst._1, subst._2)
+        substDataRefsInType(resrt, subst._1, subst._2)
       }
     }
   }

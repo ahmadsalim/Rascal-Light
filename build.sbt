@@ -31,4 +31,6 @@ libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.6.0"
 
 addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3")
 
+testOptions in Test += Tests.Argument("-oD")
+
 cancelable in Global := true

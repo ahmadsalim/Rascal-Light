@@ -169,7 +169,8 @@ case class TypeStoreOps(datatypes: DataTypeDefs, refinements: Refinements) {
 }
 
 case class TypeMemoriesOps(module: Module, refinements: Refinements) {
-  val datatypes: DataTypeDefs = module.datatypes.mapValues(conss => module.constructors.filterKeys(conss.contains).mapValues(_._2.map(_.typ)))
+  val datatypes: DataTypeDefs =
+    module.datatypes.mapValues(conss => module.constructors.filterKeys(conss.contains).mapValues(_._2.map(_.typ)))
 
   val typestoreops = TypeStoreOps(datatypes, refinements)
   import typestoreops._

@@ -1847,6 +1847,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 }
 
 object AbstractRefinementTypeExecutor {
+
   // TODO Handle Global Variables
   def execute(module: ModuleDef, function: VarName,
               initialRefinements: Refinements = new Refinements,
