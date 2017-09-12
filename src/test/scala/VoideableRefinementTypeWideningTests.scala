@@ -141,7 +141,7 @@ class VoideableRefinementTypeWideningTests extends FlatSpec with Matchers {
     val RXRef = new Refinement("RX")
     val RKRef = new Refinement("RK")
     val initialRefs: Map[Refinement, RefinementDef] =
-      Map(AtomRef -> RefinementDef("Formula", Map("atom" -> List(BaseRefinementType(StringType))))
+      Map(AtomRef -> RefinementDef("Formula", Map("atom" -> List(BaseRefinementType(StringRefinementType))))
          , XRef -> RefinementDef("Formula", Map("neg" -> List(DataRefinementType("Formula", Some(AtomRef))),
                                                "or" -> List(DataRefinementType("Formula", Some(YRef)), DataRefinementType("Formula", Some(YRef)))))
          , NXRef -> RefinementDef("Formula", Map("neg" -> List(DataRefinementType("Formula", Some(AtomRef))),

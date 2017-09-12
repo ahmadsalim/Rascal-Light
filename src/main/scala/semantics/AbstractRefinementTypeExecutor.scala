@@ -14,6 +14,8 @@ import scalaz.std.option._
 import scalaz.syntax.traverse._
 import scalaz.syntax.either._
 
+import Intervals.Unbounded._
+
 // TODO: Convert lub(...flatMap) to map(...lub)
 case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Refinements, precise: Boolean = false) {
   private
@@ -44,7 +46,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                       cvtys: List[VoideableRefinementType]): VoideableRefinementType = {
     reconstruct(scrtyp, cvtys.map(_.copy(possiblyVoid = false))).head match {
       case SuccessResult(t) => t
-      case ExceptionalResult(exres) => assert(false); throw new Exception("safeReconstruct")
+      case ExceptionalResult(_) => assert(false); throw new Exception("safeReconstruct")
     }
   }
 
@@ -130,7 +132,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
   def refineNeq(vrty1: VoideableRefinementType, vrty2: VoideableRefinementType): Option[(VoideableRefinementType, VoideableRefinementType)] = {
     (vrty1.refinementType, vrty2.refinementType) match {
-      case (DataRefinementType(dn1, rno1), DataRefinementType(dn2, rno2)) if dn1 == dn2 =>
+      case (DataRefinementType(dn1, _), DataRefinementType(dn2, _)) if dn1 == dn2 =>
         val drglb = Lattice[RefinementType].glb(vrty1.refinementType, vrty2.refinementType)
         if (Lattice[RefinementType].isBot(drglb)) None
         else {
@@ -220,16 +222,26 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     val matchress: Set[MatchPattRes] = cspatt match {
       case BasicPatt(b) =>
         b match {
-          case IntLit(_) => scrvrtyp.refinementType match {
-            case BaseRefinementType(IntType) | ValueRefinementType =>
+          case IntLit(i) => scrvrtyp.refinementType match {
+            case BaseRefinementType(IntRefinementType(ival)) =>
+              val included =
+                if (Intervals.Unbounded.contains(ival, i))
+                  Set[MatchPattRes]((store, VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Intervals.Unbounded.singleton(IntegerVal(i))))), Set(Map())))
+                else Set[MatchPattRes]()
+              val excludeIval = Intervals.Unbounded.exclude(ival, IntegerVal(i))
+              val excluded =
+                if (Lattice[Intervals.Unbounded.Interval].isBot(excludeIval)) Set[MatchPattRes]()
+                else Set[MatchPattRes]((store, VoideableRefinementType(scrvrtyp.possiblyVoid, BaseRefinementType(IntRefinementType(excludeIval))), Set()))
+              included ++ excluded
+            case ValueRefinementType =>
               Set((store, scrvrtyp, Set()),
-                (store, VoideableRefinementType(scrvrtyp.possiblyVoid, BaseRefinementType(IntType)), Set(Map())))
+                (store, VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Intervals.Unbounded.singleton(IntegerVal(i))))), Set(Map())))
             case _ => Set((store, scrvrtyp, Set()))
           }
           case StringLit(_) => scrvrtyp.refinementType match {
-            case BaseRefinementType(StringType) | ValueRefinementType =>
+            case BaseRefinementType(StringRefinementType) | ValueRefinementType =>
               Set((store, scrvrtyp, Set()),
-                (store, VoideableRefinementType(scrvrtyp.possiblyVoid, BaseRefinementType(StringType)), Set(Map())))
+                (store, VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType)), Set(Map())))
             case _ => Set((store, scrvrtyp, Set()))
           }
         }
@@ -463,9 +475,12 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
       val voidRes = if (vrtyp.possiblyVoid) errRes else Set[TypeResult[VoideableRefinementType]]()
       val rtyp = vrtyp.refinementType
       val typRes = (op, rtyp) match {
-        case ("-", BaseRefinementType(IntType) | ValueRefinementType) =>
-          (if (rtyp == ValueRefinementType) errRes else Set()) ++
-            Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
+        case ("-", BaseRefinementType(IntRefinementType(ival))) =>
+            Set(SuccessResult(VoideableRefinementType(possiblyVoid = false,
+                              BaseRefinementType(IntRefinementType(Intervals.Unbounded.-(Intervals.Unbounded.singleton(IntegerVal(0)), ival))))))
+        case ("-", ValueRefinementType)   =>
+          errRes ++
+            Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].top)))))
         case ("!", DataRefinementType("Bool", rno)) =>
           rno.fold(Set[TypeResult[VoideableRefinementType]](SuccessResult(VoideableRefinementType(possiblyVoid = false, DataRefinementType("Bool", None))))) { rn =>
             refinements.definitions(rn).conss.toSet[(ConsName, List[RefinementType])].flatMap {
@@ -594,45 +609,68 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
       case (MapRefinementType(_,_), "+", ValueRefinementType) |
            (ValueRefinementType, "+", MapRefinementType(_,_)) =>
         Set(invOp) ++ Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, MapRefinementType(ValueRefinementType, ValueRefinementType))))
-      case (BaseRefinementType(StringType), "+", BaseRefinementType(StringType)) =>
+      case (BaseRefinementType(StringRefinementType), "+", BaseRefinementType(StringRefinementType)) =>
         (if (lhvrtyp.possiblyVoid || rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
-          Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringType))))
-      case (BaseRefinementType(IntType), "+", BaseRefinementType(IntType)) =>
+          Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType))))
+      case (BaseRefinementType(IntRefinementType(ival1)), "+", BaseRefinementType(IntRefinementType(ival2))) =>
         (if (lhvrtyp.possiblyVoid || rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
-          Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
-      case (BaseRefinementType(StringType), "+", ValueRefinementType) | (ValueRefinementType, "+", BaseRefinementType(StringType)) =>
-        Set(invOp, SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringType))))
-      case (BaseRefinementType(IntType), "+", ValueRefinementType) | (ValueRefinementType, "+", BaseRefinementType(IntType)) =>
-        Set(invOp, SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
+          Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Intervals.Unbounded.+(ival1, ival2))))))
+      case (BaseRefinementType(StringRefinementType), "+", ValueRefinementType) | (ValueRefinementType, "+", BaseRefinementType(StringRefinementType)) =>
+        Set(invOp, SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType))))
+      case (BaseRefinementType(IntRefinementType(_)), "+", ValueRefinementType) | (ValueRefinementType, "+", BaseRefinementType(IntRefinementType(_))) =>
+        Set(invOp, SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].top)))))
       case (ValueRefinementType, "+", ValueRefinementType) =>
         Set(invOp,
           SuccessResult(VoideableRefinementType(possiblyVoid = false, ValueRefinementType)))
-      case (BaseRefinementType(IntType), "-", BaseRefinementType(IntType)) =>
+      case (BaseRefinementType(IntRefinementType(ival1)), "-", BaseRefinementType(IntRefinementType(ival2))) =>
         (if (lhvrtyp.possiblyVoid || rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
-          Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
-      case (ValueRefinementType | BaseRefinementType(IntType), "-",  ValueRefinementType | BaseRefinementType(IntType)) =>
-        Set(invOp, SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
-      case (BaseRefinementType(IntType), "*", BaseRefinementType(IntType)) =>
+          Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Intervals.Unbounded.-(ival1, ival2))))))
+      case (ValueRefinementType | BaseRefinementType(IntRefinementType(_)), "-",  ValueRefinementType | BaseRefinementType(IntRefinementType(_))) =>
+        Set(invOp, SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].top)))))
+      case (BaseRefinementType(IntRefinementType(ival1)), "*", BaseRefinementType(IntRefinementType(ival2))) =>
         (if (lhvrtyp.possiblyVoid || rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
-          Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
-      case (ValueRefinementType | BaseRefinementType(IntType), "*", ValueRefinementType | BaseRefinementType(IntType)) =>
-        Set(invOp, SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
-      case (BaseRefinementType(IntType), "/", BaseRefinementType(IntType)) =>
-        (if (lhvrtyp.possiblyVoid || rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
-          Set(ExceptionalResult(Throw(VoideableRefinementType(possiblyVoid = false, DataRefinementType("DivByZero", None)))),
-            SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
-      case (ValueRefinementType | BaseRefinementType(IntType), "/", ValueRefinementType | BaseRefinementType(IntType)) =>
+          Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Intervals.Unbounded.*(ival1, ival2))))))
+      case (ValueRefinementType | BaseRefinementType(IntRefinementType(_)), "*", ValueRefinementType | BaseRefinementType(IntRefinementType(_))) =>
+        Set(invOp, SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].top)))))
+      case (BaseRefinementType(IntRefinementType(ival1)), "/", BaseRefinementType(IntRefinementType(ival2))) =>
+        val exres =
+          if (Intervals.Unbounded.contains(ival2, 0))
+            Set(ExceptionalResult(Throw(VoideableRefinementType(possiblyVoid = false, DataRefinementType("DivByZero", None)))))
+          else Set()
+        val divval = Intervals.Unbounded./(ival1, ival2)
+        val succres =
+          if (!Lattice[Intervals.Unbounded.Interval].isBot(divval))
+            Set(SuccessResult(VoideableRefinementType(possiblyVoid = false,
+              BaseRefinementType(IntRefinementType(divval)))))
+          else Set()
+        Set(invOp) ++ exres ++ succres
+      case (ValueRefinementType, "/", BaseRefinementType(IntRefinementType(ival2))) =>
+        val exres =
+          if (Intervals.Unbounded.contains(ival2, 0))
+            Set(ExceptionalResult(Throw(VoideableRefinementType(possiblyVoid = false, DataRefinementType("DivByZero", None)))))
+          else Set()
+        Set(invOp) ++ exres ++
+          Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].top)))))
+      case (ValueRefinementType | BaseRefinementType(IntRefinementType(_)), "/", ValueRefinementType) =>
         Set(invOp,
           ExceptionalResult(Throw(VoideableRefinementType(possiblyVoid = false, DataRefinementType("DivByZero", None)))),
-          SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
-      case (BaseRefinementType(IntType), "%", BaseRefinementType(IntType)) =>
-        (if (lhvrtyp.possiblyVoid || rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
-          Set(ExceptionalResult(Throw(VoideableRefinementType(possiblyVoid = false, DataRefinementType("ModNonPos", None)))),
-            SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
-      case (ValueRefinementType | BaseRefinementType(IntType), "%", ValueRefinementType | BaseRefinementType(IntType)) =>
+          SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].top)))))
+      case (BaseRefinementType(IntRefinementType(ival1)), "%", BaseRefinementType(IntRefinementType(ival2))) =>
+        val exres =
+          if (IntegerW.<=(ival2.lb, IntegerVal(0)))
+            Set(ExceptionalResult(Throw(VoideableRefinementType(possiblyVoid = false, DataRefinementType("ModNonPos", None)))))
+          else Set()
+        val ival2pos = Intervals.Unbounded.mkInterval(IntegerVal(1), ival2.ub)
+        val modval = Intervals.Unbounded.%(ival1, ival2pos)
+        val succres =
+          if (!Lattice[Intervals.Unbounded.Interval].isBot(modval))
+              Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(modval)))))
+          else Set()
+        (if (lhvrtyp.possiblyVoid || rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++ exres ++ succres
+      case (ValueRefinementType | BaseRefinementType(IntRefinementType(_)), "%", ValueRefinementType | BaseRefinementType(IntRefinementType(_))) =>
         Set(invOp,
           ExceptionalResult(Throw(VoideableRefinementType(possiblyVoid = false, DataRefinementType("ModNonPos", None)))),
-          SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))))
+          SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].top)))))
       case _ => Set(invOp)
     }
   }
@@ -883,7 +921,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                         TypeMemories(voidRes ++ typRes)
                       case "toString" =>
                         val _ = callstore.vals("earg")
-                        TypeMemories[VoideableRefinementType](Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringType))), callstore)))
+                        TypeMemories[VoideableRefinementType](Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType))), callstore)))
                       case _ => TypeMemories[VoideableRefinementType](Set(TypeMemory(ExceptionalResult(Error(Set(OtherError))), callstore)))
                     }
                 }
@@ -1808,10 +1846,11 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     expr match {
       case BasicExpr(b) =>
         b match {
-          case IntLit(_) =>
-            TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(IntType))), store)))
+          case IntLit(i) =>
+            TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false,
+              BaseRefinementType(IntRefinementType(Intervals.Unbounded.singleton(IntegerVal(i)))))), store)))
           case StringLit(_) =>
-            TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringType))), store)))
+            TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType))), store)))
         }
       case VarExpr(x) => evalVar(store, x)
       case FieldAccExpr(target, fieldName) => evalFieldAccess(localVars, store, target, fieldName, funMemo)

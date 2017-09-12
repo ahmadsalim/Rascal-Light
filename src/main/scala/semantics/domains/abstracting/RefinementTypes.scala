@@ -9,14 +9,19 @@ import scala.collection.mutable
 import scalaz.std.option._
 import scalaz.std.list._
 import scalaz.syntax.foldable._
+import Intervals.Unbounded._
 
 case class VoideableRefinementType(possiblyVoid: Boolean, refinementType: RefinementType)
 
+sealed trait BasicRefinementType
+case class IntRefinementType(ival: Intervals.Unbounded.Interval) extends BasicRefinementType
+case object StringRefinementType extends BasicRefinementType
+
 sealed trait RefinementType
-case class BaseRefinementType(basicType: BasicType) extends RefinementType
+case class BaseRefinementType(basicType: BasicRefinementType) extends RefinementType
 case class DataRefinementType(dataname: TypeName, refinename: Option[Refinement]) extends RefinementType
-case class ListRefinementType(elementType: RefinementType) extends RefinementType
-case class SetRefinementType(elementType: RefinementType) extends RefinementType
+case class ListRefinementType(elementType: RefinementType/*, length: RefinementTypes.PositiveIntervals.Interval*/) extends RefinementType
+case class SetRefinementType(elementType: RefinementType/*, cardinality: RefinementTypes.PositiveIntervals.Interval*/) extends RefinementType
 case class MapRefinementType(keyType: RefinementType, valueType: RefinementType) extends RefinementType
 case object NoRefinementType extends RefinementType
 case object ValueRefinementType extends RefinementType
@@ -69,8 +74,8 @@ object RefinementTypes {
   def pretty(refinementType: RefinementType): String = refinementType match {
     case BaseRefinementType(basicType) =>
       basicType match {
-        case IntType => "int"
-        case StringType => "string"
+        case IntRefinementType(ival) => s"int[$ival]"
+        case StringRefinementType => "string"
       }
     case DataRefinementType(dataname, refinename) =>
       refinename.fold(dataname)(_.refinementName)
@@ -197,8 +202,13 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     voidRes ++ typRes
   }
 
+  def basetypeToRefinement(b: BasicType): BasicRefinementType = b match {
+    case IntType => IntRefinementType(Lattice[Intervals.Unbounded.Interval].top)
+    case StringType => StringRefinementType
+  }
+
   def typeToRefinement(t: Type, refs: Map[TypeName, Refinement] = Map()): RefinementType = t match {
-    case BaseType(b) => BaseRefinementType(b)
+    case BaseType(b) => BaseRefinementType(basetypeToRefinement(b))
     case DataType(name) => DataRefinementType(name, refs.get(name))
     case ListType(elementType) => ListRefinementType(typeToRefinement(elementType, refs))
     case SetType(elementType) => SetRefinementType(typeToRefinement(elementType, refs))
@@ -253,7 +263,7 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     val newRn = refinements.newRefinement(dn)
     val newRnDef = dataTypeRefinements(dataTypeNameRefs(dn)).conss -- excludedConss
     val newRnDefRep = newRnDef.transform {
-      (k, tys) => tys.map(rty => removeSelfRefinements(substDataRefsInType(rty, dataTypeNameRefs(dn), Some(newRn))))
+      (_, tys) => tys.map(rty => removeSelfRefinements(substDataRefsInType(rty, dataTypeNameRefs(dn), Some(newRn))))
     }
     val resRn = addRefinement(dn, newRn, newRnDefRep)
     DataRefinementType(dn, resRn)
@@ -283,9 +293,9 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case BaseRefinementType(_) => true
           case DataRefinementType(_, refinenameopt) =>
             refinenameopt.fold(true)(refinename => checkNonEmptyP(memo, refinename))
-          case ListRefinementType(elementType) => true // At least until we get lengths since empty lists are possible
-          case SetRefinementType(elementType) => true // At least until we get length since empty sets are possible
-          case MapRefinementType(keyType, valueType) => true // at least until we get length since empty maps are possible
+          case ListRefinementType(_) => true // At least until we get lengths since empty lists are possible
+          case SetRefinementType(_) => true // At least until we get length since empty sets are possible
+          case MapRefinementType(_, _) => true // at least until we get length since empty maps are possible
           case NoRefinementType => false
           case ValueRefinementType => true
         }
@@ -311,8 +321,9 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case (NoRefinementType, _) => rty2
           case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
             (bty1, bty2) match {
-              case (IntType, IntType) => BaseRefinementType(IntType)
-              case (StringType, StringType) => BaseRefinementType(StringType)
+              case (IntRefinementType(ival1), IntRefinementType(ival2)) =>
+                BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].lub(ival1, ival2)))
+              case (StringRefinementType, StringRefinementType) => BaseRefinementType(StringRefinementType)
               case (_, _) => ValueRefinementType
             }
           case (ListRefinementType(irty1), ListRefinementType(irty2)) =>
@@ -372,8 +383,11 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case (_, ValueRefinementType) => rty2
           case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
             (bty1, bty2) match {
-              case (IntType, IntType) => BaseRefinementType(IntType)
-              case (StringType, StringType) => BaseRefinementType(StringType)
+              case (IntRefinementType(ival1), IntRefinementType(ival2)) =>
+                val ivalglb = Lattice[Intervals.Unbounded.Interval].glb(ival1, ival2)
+                if (Lattice[Intervals.Unbounded.Interval].isBot(ivalglb)) NoRefinementType
+                else BaseRefinementType(IntRefinementType(ivalglb))
+              case (StringRefinementType, StringRefinementType) => BaseRefinementType(StringRefinementType)
               case (_, _) => NoRefinementType
             }
           case (ListRefinementType(irty1), ListRefinementType(irty2)) =>
@@ -684,8 +698,8 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case (NoRefinementType, _) => (rty2, Map())
           case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
             (bty1, bty2) match {
-              case (IntType, IntType) => (BaseRefinementType(IntType), Map())
-              case (StringType, StringType) => (BaseRefinementType(StringType), Map())
+              case (IntRefinementType(ival1), IntRefinementType(ival2)) => (BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].widen(ival1, ival2))), Map())
+              case (StringRefinementType, StringRefinementType) => (BaseRefinementType(StringRefinementType), Map())
               case (_, _) => (ValueRefinementType, Map())
             }
           case (ListRefinementType(irty1), ListRefinementType(irty2)) =>
@@ -735,8 +749,9 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case (NoRefinementType, _) => (rty2, Map(), List(), wrefinements)
           case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
             (bty1, bty2) match {
-              case (IntType, IntType) => (BaseRefinementType(IntType), Map(), List(), wrefinements)
-              case (StringType, StringType) => (BaseRefinementType(StringType), Map(), List(), wrefinements)
+              case (IntRefinementType(ival1), IntRefinementType(ival2)) =>
+                (BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].widen(ival1, ival2))), Map(), List(), wrefinements)
+              case (StringRefinementType, StringRefinementType) => (BaseRefinementType(StringRefinementType), Map(), List(), wrefinements)
               case (_, _) => (ValueRefinementType, Map(), List(), wrefinements)
             }
           case (ListRefinementType(irty1), ListRefinementType(irty2)) =>

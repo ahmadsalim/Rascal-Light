@@ -8,7 +8,12 @@ case class AbstractTyping(module: Module) {
   private val typing = Typing(module)
 
   def inferType(rtyp: RefinementType): Type = rtyp match {
-    case BaseRefinementType(basicType) => BaseType(basicType)
+    case BaseRefinementType(basicType) =>
+      val bt = basicType match {
+        case IntRefinementType(_) => IntType
+        case StringRefinementType => StringType
+      }
+      BaseType(bt)
     case DataRefinementType(dataname, _) => DataType(dataname)
     case ListRefinementType(elementType) => ListType(inferType(elementType))
     case SetRefinementType(elementType) => SetType(inferType(elementType))

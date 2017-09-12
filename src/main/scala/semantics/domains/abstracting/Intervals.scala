@@ -1,14 +1,17 @@
 package semantics.domains.abstracting
 
 import semantics.domains.common.Lattice
-import scalaz.\/
-import scalaz.syntax.either._
-import scalaz.std.either._
 
 sealed trait IntegerW
-case object IntegerInf extends IntegerW
-case class IntegerVal(value: Int) extends IntegerW
-case object IntegerNegInf extends IntegerW
+case object IntegerInf extends IntegerW {
+  override def toString: String = "∞"
+}
+case class IntegerVal(value: Int) extends IntegerW {
+  override def toString: String = value.toString
+}
+case object IntegerNegInf extends IntegerW {
+  override def toString: String = "-∞"
+}
 
 object IntegerW {
   def <=(iw1: IntegerW, iw2: IntegerW): Boolean = (iw1, iw2) match {
@@ -115,10 +118,12 @@ object IntegerW {
   }
 }
 
-case class Interval(lb: IntegerW, ub: IntegerW)
 
-case class Intervals(mlb: IntegerW, mub: IntegerW) {
+case class Intervals(mlb: IntegerW = IntegerNegInf, mub: IntegerW = IntegerInf) {
   require(IntegerW.<=(mlb, mub) && mub != IntegerNegInf && mlb != IntegerInf)
+  case class Interval(lb: IntegerW, ub: IntegerW) {
+    override def toString: String = s"[$lb;$ub]"
+  }
 
   implicit def IntervalLattice: Lattice[Interval] = new Lattice[Interval] {
     override def <=(i1: Interval, i2: Interval): Boolean =
@@ -169,7 +174,9 @@ case class Intervals(mlb: IntegerW, mub: IntegerW) {
     coerceBot(res)
   }
 
-  def mkInterval(lb: IntegerW, ub: IntegerW) = {
+  def singleton(iv: IntegerW): Interval = mkInterval(iv, iv)
+
+  def mkInterval(lb: IntegerW, ub: IntegerW): Interval = {
     coerceBot(Interval(boundsAdjusted(lb), boundsAdjusted(ub)))
   }
 
@@ -212,4 +219,5 @@ case class Intervals(mlb: IntegerW, mub: IntegerW) {
 
 object Intervals {
   val Positive = Intervals(IntegerVal(0), IntegerInf)
+  val Unbounded = Intervals()
 }

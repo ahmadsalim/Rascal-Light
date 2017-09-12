@@ -106,7 +106,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       val initialStore =
         TypeStoreV(Map(
           "pkg" -> VoideableRefinementType(possiblyVoid = false, DataRefinementType("Package", None)),
-          "st" -> VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringType)),
+          "st" -> VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType)),
           "oldFieldName" -> VoideableRefinementType(possiblyVoid = false, DataRefinementType("Nominal", Some(ofnrn))),
           "newFieldName" -> VoideableRefinementType(possiblyVoid = false, DataRefinementType("Nominal", Some(nfnrn)))
         ))
