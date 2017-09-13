@@ -1,19 +1,19 @@
 import org.scalatest.{FlatSpec, Matchers}
-import semantics.{AbstractRefinementTypeExecutor, ModuleTranslator}
 import semantics.domains.abstracting._
 import semantics.domains.common._
 import semantics.typing.AbstractTyping
+import semantics.{AbstractRefinementTypeExecutor, ModuleTranslator}
 import syntax.{DataType, StringType, Type}
 import util.rascalwrapper.RascalWrapper
 
-import scalaz.{\/, \/-}
+import scalaz.\/-
 
 /**
   * Created by asal on 20/06/2017.
   */
 class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
   private def checkError(exres: Exceptional[VoideableRefinementType]) = {
-    //exres shouldNot be(an[Error])
+    exres shouldNot be(an[Error])
   }
 
   private
@@ -31,14 +31,13 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     } shouldBe true
     mems.memories.foreach { case TypeMemory(res, _) => res match {
         case SuccessResult(restype) =>
-          //restype.possiblyVoid shouldBe false
+          restype.possiblyVoid shouldBe false
           atyping.inferType(restype.refinementType) shouldBe targetType
         case ExceptionalResult(exres) =>  checkError(exres)
       }
     }
   }
 
-  /*
   "The expression simplification procedure in Expr.rscli" should "run correctly with the abstract type executor" in {
     val modExprO = RascalWrapper.loadModuleFromFile(getClass.getResource("Expr.rscli").getFile)
     val modExprExecRes = modExprO.flatMap { moddef =>
@@ -81,7 +80,7 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       modSTabExecRes.foreach { case (module, refinements, tmems) =>
         memsOK(module, refinements, tmems, DataType("Tableau"))
       }
-    }*/
+    }
 
   "The negation normal form transformation in NNF.rscli" should "run correctly with the abstract type executor" in {
     val modNnfO = RascalWrapper.loadModuleFromFile(getClass.getResource("NNF.rscli").getFile)

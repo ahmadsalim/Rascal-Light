@@ -196,20 +196,7 @@ case class TypeMemoriesOps(module: Module, refinements: Refinements) {
 
     private
     def groupMemories(a1: TypeMemories[T], a2: TypeMemories[T]): Set[List[TypeMemory[T]]] = {
-      val grouped = (a1.memories.toList ++ a2.memories.toList).groupBy[String] {
-        _.result match {
-          case SuccessResult(_) => "SuccessResult"
-          case ExceptionalResult(exres) =>
-            exres match {
-              case Return(_) => "Return"
-              case Throw(_) => "Throw"
-              case Break => "Break"
-              case Continue => "Continue"
-              case Fail => "Fail"
-              case Error(_) => "Error"
-            }
-        }
-      }
+      val grouped = (a1.memories.toList ++ a2.memories.toList).groupBy[String](_.result.kind)
       grouped.values.toSet
     }
 
