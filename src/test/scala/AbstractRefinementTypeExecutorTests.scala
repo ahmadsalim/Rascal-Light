@@ -3,7 +3,7 @@ import semantics.domains.abstracting._
 import semantics.domains.common._
 import semantics.typing.AbstractTyping
 import semantics.{AbstractRefinementTypeExecutor, ModuleTranslator}
-import syntax.{DataType, StringType, Type}
+import syntax._
 import util.rascalwrapper.RascalWrapper
 
 import scalaz.\/-
@@ -81,6 +81,28 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
         memsOK(module, refinements, tmems, DataType("Tableau"))
       }
     }
+
+  "The absolute value tree conversion procedure in IntProgs.rscli" should "run currectly with the abstract type executor" in {
+    val modIntP = RascalWrapper.loadModuleFromFile(getClass.getResource("IntProgs.rscli").getFile)
+    val modIntPExecRes = modIntP.flatMap { moddef =>
+      AbstractRefinementTypeExecutor.execute(moddef, "abstree")
+    }
+    modIntPExecRes shouldBe a [\/-[_]]
+    modIntPExecRes.foreach { case (module, refinements, tmems) =>
+      memsOK(module, refinements, tmems, DataType("IntTree"))
+    }
+  }
+
+  "The even list calculation procedure in IntProgs.rscli" should "run currectly with the abstract type executor" in {
+    val modIntP = RascalWrapper.loadModuleFromFile(getClass.getResource("IntProgs.rscli").getFile)
+    val modIntPExecRes = modIntP.flatMap { moddef =>
+      AbstractRefinementTypeExecutor.execute(moddef, "evenedout")
+    }
+    modIntPExecRes shouldBe a [\/-[_]]
+    modIntPExecRes.foreach { case (module, refinements, tmems) =>
+      memsOK(module, refinements, tmems, ListType(BaseType(IntType)))
+    }
+  }
 
   "The negation normal form transformation in NNF.rscli" should "run correctly with the abstract type executor" in {
     val modNnfO = RascalWrapper.loadModuleFromFile(getClass.getResource("NNF.rscli").getFile)
