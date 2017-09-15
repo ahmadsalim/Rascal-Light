@@ -141,7 +141,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
           val vrty2r = vrty2.copy(refinementType = Lattice[RefinementType].glb(vrty2.refinementType, drnegglb))
           Some((vrty1r, vrty2r))
         }
-      case _ => None // Currently there is no way to refine inequality for the rest of the domains
+      case _ => Some((vrty1, vrty2)) // Currently there is no way to refine inequality for the rest of the domains
     }
   }
 
@@ -520,15 +520,28 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   def evalBinaryOp(lhvrtyp: VoideableRefinementType, op: OpName, rhvrtyp: VoideableRefinementType): Set[TypeResult[VoideableRefinementType]] = {
     val invOp = ExceptionalResult(Error(Set(InvalidOperationError(op, List(lhvrtyp, rhvrtyp)))))
 
-    def onNEq(boolcons : ConsName, lhvrtyp: VoideableRefinementType, rhvrtyp: VoideableRefinementType) = {
-      refineEq(lhvrtyp, rhvrtyp).fold[Set[TypeResult[VoideableRefinementType]]] {
-        val newRn = refinements.newRefinement("Bool")
-        val newrhs = Map(boolcons -> List[RefinementType]())
-        val nrno = addRefinement("Bool", newRn, newrhs)
-        Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, DataRefinementType("Bool", nrno))))
-      } { _ => Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, DataRefinementType("Bool", None)))) }
+    def boolToRefinement(b: Boolean): VoideableRefinementType = {
+      val boolcons = if (b) "true" else "false"
+      val newRn = refinements.newRefinement("Bool")
+      val newrhs = Map(boolcons -> List[RefinementType]())
+      val nrno = addRefinement("Bool", newRn, newrhs)
+      VoideableRefinementType(possiblyVoid = false, DataRefinementType("Bool", nrno))
     }
 
+    def valEq(eqt: Boolean, lhvrtyp: VoideableRefinementType, rhvrtyp: VoideableRefinementType) = {
+      val possiblyEq = refineEq(lhvrtyp, rhvrtyp).fold(Set[TypeResult[VoideableRefinementType]]()) { _ =>
+        Set(SuccessResult(boolToRefinement(eqt)))
+      }
+      val possiblyNeq = refineNeq(lhvrtyp, rhvrtyp).fold(Set[TypeResult[VoideableRefinementType]]()) { _ =>
+        Set(SuccessResult(boolToRefinement(!eqt)))
+      }
+      possiblyEq ++ possiblyNeq
+    }
+
+    def valIn(lrtyp: RefinementType, irtyp: RefinementType) =
+      refineEq(VoideableRefinementType(possiblyVoid = false, lrtyp), VoideableRefinementType(possiblyVoid = false, irtyp)).fold(Set(SuccessResult(boolToRefinement(false)))) {
+        _ => Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, DataRefinementType("Bool", None))))
+      }
 
     def boolAnd(lrno: Option[Refinement], rnro: Option[Refinement]): Set[TypeResult[VoideableRefinementType]] = {
       val lrefinedef = lrno.fold(dataTypeDefToRefinementDef("Bool", typememoriesops.datatypes("Bool")))(refinements.definitions)
@@ -560,19 +573,16 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
     if (Set(lhvrtyp, rhvrtyp).exists(Lattice[VoideableRefinementType].isBot)) Set()
     else (lhvrtyp.refinementType, op, rhvrtyp.refinementType) match {
-      case (_, "==", _) => onNEq("false", lhvrtyp, rhvrtyp)
-      case (_, "!=", _) => onNEq("true", lhvrtyp, rhvrtyp)
+      case (_, "==", _) => valEq(eqt = true, lhvrtyp, rhvrtyp)
+      case (_, "!=", _) => valEq(eqt = false, lhvrtyp, rhvrtyp)
       case (_, "in", ListRefinementType(invrtyp)) =>
-        (if (rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
-          onNEq("false", lhvrtyp, VoideableRefinementType(possiblyVoid = false, invrtyp))
+        (if (rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++ valIn(lhvrtyp.refinementType, invrtyp)
       case (_, "in", SetRefinementType(invrtyp)) =>
-        (if (rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
-          onNEq("false", lhvrtyp, VoideableRefinementType(possiblyVoid = false, invrtyp))
+        (if (rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++ valIn(lhvrtyp.refinementType, invrtyp)
       case (_, "in", MapRefinementType(keyvrtyp, _)) =>
-        (if (rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++
-          onNEq("false", lhvrtyp, VoideableRefinementType(possiblyVoid = false, keyvrtyp))
+        (if (rhvrtyp.possiblyVoid) Set(invOp) else Set()) ++ valIn(lhvrtyp.refinementType, keyvrtyp)
       case (_, "in", ValueRefinementType) =>
-        Set(invOp) ++ onNEq("false", lhvrtyp, VoideableRefinementType(possiblyVoid = false, ValueRefinementType))
+        Set(invOp) ++ valIn(lhvrtyp.refinementType, ValueRefinementType)
       case (_, "notin", _) => evalBinaryOp(lhvrtyp, "in", rhvrtyp).flatMap {
         case SuccessResult(ty) => evalUnaryOp("!", ty)
         case ExceptionalResult(exres) =>
