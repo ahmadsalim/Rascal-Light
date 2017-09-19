@@ -38,8 +38,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     }
   }
 
-  "The expression simplification procedure in Expr.rscli" should "run correctly with the abstract type executor" in {
-    val modExprO = RascalWrapper.loadModuleFromFile(getClass.getResource("Expr.rscli").getFile)
+  "The expression simplification procedure in Expr.rsc" should "run correctly with the abstract type executor" in {
+    val modExprO = RascalWrapper.loadModuleFromFile(getClass.getResource("Expr.rsc").getFile)
     val modExprExecRes = modExprO.flatMap { moddef =>
       AbstractRefinementTypeExecutor.execute(moddef, "simplify")
     }
@@ -49,8 +49,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     }
   }
 
-    "The extract superclass refactoring in ExtractSuperclass.rscli" should "run correctly with the abstract type executor" in {
-      val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("ExtractSuperclass.rscli").getFile)
+    "The extract superclass refactoring in ExtractSuperclass.rsc" should "run correctly with the abstract type executor" in {
+      val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("ExtractSuperclass.rsc").getFile)
       val modESExecRes = modESO.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "extractSuperclass")
       }
@@ -60,8 +60,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       }
     }
 
-    "The replace delegation with inheritance refactoring in ReplaceDelegation.rscli" should "run correctly with the abstract type executor" in {
-      val modRDO = RascalWrapper.loadModuleFromFile(getClass.getResource("ReplaceDelegation.rscli").getFile)
+    "The replace delegation with inheritance refactoring in ReplaceDelegation.rsc" should "run correctly with the abstract type executor" in {
+      val modRDO = RascalWrapper.loadModuleFromFile(getClass.getResource("ReplaceDelegation.rsc").getFile)
       val modRDExecRes = modRDO.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "replaceDelegationWithInheritance")
       }
@@ -71,8 +71,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       }
     }
 
-    "The simplification procedure in SimplifyTableau.rscli" should "run correctly with the abstract type executor" in {
-      val modSTab = RascalWrapper.loadModuleFromFile(getClass.getResource("SimplifyTableau.rscli").getFile)
+    "The simplification procedure in SimplifyTableau.rsc" should "run correctly with the abstract type executor" in {
+      val modSTab = RascalWrapper.loadModuleFromFile(getClass.getResource("SimplifyTableau.rsc").getFile)
       val modSTabExecRes = modSTab.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "simplify")
       }
@@ -82,8 +82,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       }
     }
 
-  "The absolute value tree conversion procedure in IntProgs.rscli" should "run currectly with the abstract type executor" in {
-    val modIntP = RascalWrapper.loadModuleFromFile(getClass.getResource("IntProgs.rscli").getFile)
+  "The absolute value tree conversion procedure in IntProgs.rsc" should "run currectly with the abstract type executor" in {
+    val modIntP = RascalWrapper.loadModuleFromFile(getClass.getResource("IntProgs.rsc").getFile)
     val modIntPExecRes = modIntP.flatMap { moddef =>
       AbstractRefinementTypeExecutor.execute(moddef, "abstree")
     }
@@ -93,8 +93,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     }
   }
 
-  "The even list calculation procedure in IntProgs.rscli" should "run currectly with the abstract type executor" in {
-    val modIntP = RascalWrapper.loadModuleFromFile(getClass.getResource("IntProgs.rscli").getFile)
+  "The even list calculation procedure in IntProgs.rsc" should "run currectly with the abstract type executor" in {
+    val modIntP = RascalWrapper.loadModuleFromFile(getClass.getResource("IntProgs.rsc").getFile)
     val modIntPExecRes = modIntP.flatMap { moddef =>
       AbstractRefinementTypeExecutor.execute(moddef, "evenedout")
     }
@@ -104,8 +104,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
     }
   }
 
-  "The negation normal form transformation in NNF.rscli" should "run correctly with the abstract type executor" in {
-    val modNnfO = RascalWrapper.loadModuleFromFile(getClass.getResource("NNF.rscli").getFile)
+  "The negation normal form transformation in NNF.rsc" should "run correctly with the abstract type executor" in {
+    val modNnfO = RascalWrapper.loadModuleFromFile(getClass.getResource("NNF.rsc").getFile)
     val modNnfExecRes = modNnfO.flatMap { moddef =>
       AbstractRefinementTypeExecutor.execute(moddef, "nnf")
     }
@@ -116,8 +116,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
   }
 
 
-  "The rename field refactoring in RenameStructField.rscli" should "run correctly with the abstract type executor" in {
-    val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("RenameStructField.rscli").getFile)
+  "The rename field refactoring in RenameStructField.rsc" should "run correctly with the abstract type executor" in {
+    val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("RenameStructField.rsc").getFile)
     val modRFExecRes = modRFO.flatMap { moddef =>
       val ofnrn = new Refinement("Nominal#ofn")
       val nfnrn = new Refinement("Nominal#nfn")
@@ -140,8 +140,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
   }
 
 
-    "The desugaring in DesugarOberonSimpl.rscli" should "run correctly with the abstract type executor" in {
-      val modDSOb = RascalWrapper.loadModuleFromFile(getClass.getResource("DesugarOberonSimpl.rscli").getFile)
+    "The desugaring in DesugarOberonSimpl.rsc" should "run correctly with the abstract type executor" in {
+      val modDSOb = RascalWrapper.loadModuleFromFile(getClass.getResource("DesugarOberonSimpl.rsc").getFile)
       val modDSObExecRes = modDSOb.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "desugar")
       }
@@ -150,8 +150,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
         memsOK(module, refinements, tmems, DataType("Module"))
       }
     }
-    "The expression translation in Glagol2PHP.rscli" should "only produce simple PHP expressions for simple Glagol expressions" in {
-      val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHPExpr.rscli").getFile)
+    "The expression translation in Glagol2PHP.rsc" should "only produce simple PHP expressions for simple Glagol expressions" in {
+      val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHPExpr.rsc").getFile)
       val modG2PExecRes = modG2P.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
         transmodule shouldBe a [\/-[_]]
@@ -174,8 +174,8 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       }
     }
 
-    "The expression translation in Glagol2PHP.rscli" should "should not produce unary expressions if there is no unary negation or positive markers" in {
-      val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHPExpr.rscli").getFile)
+    "The expression translation in Glagol2PHP.rsc" should "should not produce unary expressions if there is no unary negation or positive markers" in {
+      val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("Glagol2PHPExpr.rsc").getFile)
       val modG2PExecRes = modG2P.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
         transmodule shouldBe a [\/-[_]]

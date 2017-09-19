@@ -28,7 +28,7 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
     translated.foreach(m => m.withoutTests shouldBe expected)
   }
 
-  "The wrapped parser" should "parse Expr.rscli correctly" in {
+  "The wrapped parser" should "parse Expr.rsc correctly" in {
     val expected = ModuleDef(List(
       DataDef("Nat",List(ConstructorDef("zero",List()), ConstructorDef("suc",List(Parameter(DataType("Nat"),"pre"))))),
       DataDef("Expr",List(ConstructorDef("var",List(Parameter(BaseType(StringType),"nm"))),
@@ -41,10 +41,10 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                  Case(ConstructorPatt("mult", List(VarPatt("x"), ConstructorPatt("cst",List(ConstructorPatt("zero",List()))))),ConstructorExpr("cst",List(ConstructorExpr("zero",List())))),
                  Case(ConstructorPatt("mult",List(ConstructorPatt("cst",List(ConstructorPatt("suc",List(ConstructorPatt("zero",List()))))), VarPatt("y"))),VarExpr("y")),
                  Case(ConstructorPatt("mult",List(VarPatt("x"), ConstructorPatt("cst",List(ConstructorPatt("suc",List(ConstructorPatt("zero",List()))))))),VarExpr("x")))))))
-    parseAndTranslateMatchingExpected("Expr.rscli", expected)
+    parseAndTranslateMatchingExpected("Expr.rsc", expected)
   }
 
-  it should "parse NNF.rscli correctly" in {
+  it should "parse NNF.rsc correctly" in {
     val expected = ModuleDef(
       List(DataDef("Formula",List(ConstructorDef("atom",List(Parameter(BaseType(StringType),"nm"))),
                                   ConstructorDef("and",List(Parameter(DataType("Formula"),"l"), Parameter(DataType("Formula"),"r"))),
@@ -61,10 +61,10 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                       ConstructorExpr("and",List(VarExpr("l"), ConstructorExpr("neg",List(VarExpr("r")))))),
                     Case(ConstructorPatt("neg",List(ConstructorPatt("neg",List(VarPatt("f"))))),FunCallExpr("nnf",List(VarExpr("f")))),
                     Case(ConstructorPatt("imp", List(VarPatt("l"), VarPatt("r"))), ConstructorExpr("or", List(ConstructorExpr("neg", List(VarExpr("l"))), VarExpr("r")))))))))
-    parseAndTranslateMatchingExpected("NNF.rscli", expected)
+    parseAndTranslateMatchingExpected("NNF.rsc", expected)
   }
 
-  it should "parse RenameField.rscli correctly" in {
+  it should "parse RenameField.rsc correctly" in {
     val expected = ModuleDef(
       List(DataDef("Nominal", List(ConstructorDef("nfn", List()), ConstructorDef("ofn", List()), ConstructorDef("other",List()))),
            DataDef("Package", List(ConstructorDef("package",List(Parameter(MapType(BaseType(StringType),DataType("Class")), "classes"))))),
@@ -118,20 +118,20 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                                                                ConstructorExpr("fieldaccessexpr",List(VarExpr("faty"), VarExpr("target"), VarExpr("newFieldName"))),
                                                                VarExpr("fae")))))))),
                                                                LocalBlockExpr(List(),List()))))))))
-    parseAndTranslateMatchingExpected("RenameField.rscli", expected)
+    parseAndTranslateMatchingExpected("RenameField.rsc", expected)
   }
 
   val testRscliFiles =
     Table( "test file"
-         , "ExtractSuperclass.rscli"
-         , "ReplaceDelegation.rscli"
-         , "SimplifyTableau.rscli"
-         , "DeriveTableau.rscli"
-         , "NormalizeOberon.rscli"
-         , "ConstantElimOberon.rscli"
-         , "DesugarOberon.rscli"
-         , "Glagol2PHP.rscli"
-         , "IntProgs.rscli")
+         , "ExtractSuperclass.rsc"
+         , "ReplaceDelegation.rsc"
+         , "SimplifyTableau.rsc"
+         , "DeriveTableau.rsc"
+         , "NormalizeOberon.rsc"
+         , "ConstantElimOberon.rsc"
+         , "DesugarOberon.rsc"
+         , "Glagol2PHP.rsc"
+         , "IntProgs.rsc")
 
   TableDrivenPropertyChecks.forAll(testRscliFiles) { (testFile : String) =>
     it should s"parse and translate $testFile without any error" in {
