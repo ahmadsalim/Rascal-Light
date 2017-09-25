@@ -46,11 +46,37 @@ data Const = intv(int val) | strv(str val) | floatv(real val) | boolv(bool val);
 data PrecondExc = precondExc();
 data PostcondExc = postcondExc();
 
+Expression modernize(Statement stmt) {
+  Statement stmtsup = ensureSupported(stmt);
+  Statement stmtpure = ensurePure(stmtsup);
+  Statement stmtnoswitch = switchToIf(stmtpure);
+  Statement stmtifsconverted = ifsToIfElses(removeEmptyIfs(convertIfs(stmtnoswitch)));
+  Statement stmtblocksconverted = singletonBlocksToStatements(stmtifsconverted);
+  return statementToExpression(stmtblocksconverted);
+}
+
 Expression ensurePure(Expression e) = top-down-break visit (e) {
    case assign(_,_): throw precondExc();
    case postop(_, incr()): throw precondExc();
    case postop(_, decr()): throw precondExc();
    // Assume function calls are pure
+};
+
+Statement ensureAllPure(Statement s) = top-down visit(s) {
+   case \if(e,s) => \if(ensurePure(e), s)
+   case ifelse(e,s1,s2) => ifelse(ensurePure(e), s1, s2)
+   case \switch(e,cs,ds) => \switch(ensurePure(e), cs, ds)
+};
+
+Statement ensureSupported(Statement s) = top-down-break visit (s) {
+  case expr(_): throw precondExc();
+  case \while(_,_): throw precondExc();
+  case \for(_,_,_,_): throw precondExc();
+  case \continue(): throw precondExc();
+  case \break(): throw precondExc();
+  case \return(): throw precondExc();
+  case block(sskip()): throw precondExc();
+  case sseq(\if(_,_),sskip()): throw precondExc();
 };
 
 Statement switchToIf(Statement stmt) = bottom-up visit(stmt) {
@@ -92,7 +118,7 @@ Statement singletonBlocksToStatements(Statement stmt) = bottom-up visit(stmt) {
 Expression statementToExpression(Statement stmt) {
   switch (stmt) {
     case ifelse(e, st, sf): return ternary(e, statementToExpression(st), statementToExpression(sf));
-    case \return(e): return e;
+    case \returnE(e): return e;
     case _: throw postcondExc(); 
   }
 }
