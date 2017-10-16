@@ -107,7 +107,18 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
   "The negation normal form transformation in NNF.rsc" should "run correctly with the abstract type executor" in {
     val modNnfO = RascalWrapper.loadModuleFromFile(getClass.getResource("NNF.rsc").getFile)
     val modNnfExecRes = modNnfO.flatMap { moddef =>
-      AbstractRefinementTypeExecutor.execute(moddef, "nnf")
+      val transmodule = ModuleTranslator.translateModule(moddef)
+      transmodule shouldBe a [\/-[_]]
+      val datatypes = transmodule.fold({_ =>  throw new Exception("-\\/") },
+        mtr => {
+          mtr.semmod.datatypes.transform((_, conss) =>
+            mtr.semmod.constructors.filterKeys(conss.contains).mapValues(_._2.map(_.typ)))
+        })
+      val initialRefinements = new Refinements(Map())
+      val rtops = RefinementTypeOps(datatypes, initialRefinements)
+      val ordinaryFormula = rtops.excluding("Formula", Set("begin"))
+      val initialStore = TypeStoreV(Map("phi" -> VoideableRefinementType(possiblyVoid = false, ordinaryFormula)))
+      AbstractRefinementTypeExecutor.execute(moddef, "nnf", initialStore = Some(initialStore), initialRefinements = initialRefinements)
     }
     modNnfExecRes shouldBe a [\/-[_]]
     modNnfExecRes.foreach { case (module, refinements, tmems) =>
