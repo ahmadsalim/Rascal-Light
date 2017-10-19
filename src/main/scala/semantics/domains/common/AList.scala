@@ -1,7 +1,5 @@
 package semantics.domains.common
 
-import semantics.domains.abstracting.VoideableRefinementType
-
 sealed trait AList[+V]
 case object AListBot extends AList[Nothing]
 case class AListVals[V](vs: List[V]) extends AList[V]

@@ -82,17 +82,6 @@ class AbstractRefinementTypeExecutorTests extends FlatSpec with Matchers {
       }
     }
 
-  "The absolute value tree conversion procedure in IntProgs.rsc" should "run currectly with the abstract type executor" in {
-    val modIntP = RascalWrapper.loadModuleFromFile(getClass.getResource("IntProgs.rsc").getFile)
-    val modIntPExecRes = modIntP.flatMap { moddef =>
-      AbstractRefinementTypeExecutor.execute(moddef, "abstree")
-    }
-    modIntPExecRes shouldBe a [\/-[_]]
-    modIntPExecRes.foreach { case (module, refinements, tmems) =>
-      memsOK(module, refinements, tmems, DataType("IntTree"))
-    }
-  }
-
   "The even list calculation procedure in IntProgs.rsc" should "run currectly with the abstract type executor" in {
     val modIntP = RascalWrapper.loadModuleFromFile(getClass.getResource("IntProgs.rsc").getFile)
     val modIntPExecRes = modIntP.flatMap { moddef =>

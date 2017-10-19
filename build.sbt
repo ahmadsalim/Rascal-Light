@@ -11,6 +11,8 @@ version := "0.1"
 startYear := Some(2017)
 licenses += (LicenseInfo.BSD2.name, url(LicenseInfo.BSD2.url))
 
+scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
+
 organization := "com.github.itu-square"
 organizationName := "SQUARE @ IT University of Copenhagen"
 organizationHomepage := Some(url("https://github.com/models-team"))

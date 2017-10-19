@@ -1,6 +1,7 @@
 package semantics.domains.abstracting
 
 import semantics.domains.common.Lattice
+import language.implicitConversions
 
 sealed trait IntegerW
 case object IntegerInf extends IntegerW {
@@ -14,6 +15,8 @@ case object IntegerNegInf extends IntegerW {
 }
 
 object IntegerW {
+  implicit def intToIntegerW(i: Int): IntegerW = IntegerVal(i)
+
   def <=(iw1: IntegerW, iw2: IntegerW): Boolean = (iw1, iw2) match {
     case (IntegerNegInf, _) => true
     case (_, IntegerInf) => true
@@ -125,7 +128,7 @@ case class Intervals(mlb: IntegerW = IntegerNegInf, mub: IntegerW = IntegerInf) 
     override def toString: String = s"[$lb;$ub]"
   }
 
-  implicit def IntervalLattice: Lattice[Interval] = new Lattice[Interval] {
+  implicit def Lattice: Lattice[Interval] = new Lattice[Interval] {
     override def <=(i1: Interval, i2: Interval): Boolean =
       IntegerW.<=(i2.lb, i1.lb) && IntegerW.<=(i1.ub, i2.ub)
 
@@ -155,7 +158,7 @@ case class Intervals(mlb: IntegerW = IntegerNegInf, mub: IntegerW = IntegerInf) 
 
   private
   def coerceBot(i: Interval): Interval =
-    if (Lattice[Interval].isBot(i)) Lattice[Interval].bot else i
+    if (Lattice.isBot(i)) Lattice.bot else i
 
   def contains(i: Interval, iv: Int): Boolean = {
     IntegerW.<=(i.lb, IntegerVal(iv)) &&
@@ -164,7 +167,7 @@ case class Intervals(mlb: IntegerW = IntegerNegInf, mub: IntegerW = IntegerInf) 
 
   def exclude(i: Interval, iw: IntegerW): Interval = {
     val res = if (i.lb  == iw) {
-      if (iw == i.ub) Lattice[Interval].bot
+      if (iw == i.ub) Lattice.bot
       else Interval(IntegerW.+(i.lb, IntegerVal(1)), i.ub)
     } else if (iw == i.ub) {
       Interval(i.lb, IntegerW.-(i.ub, IntegerVal(1)))
@@ -174,22 +177,22 @@ case class Intervals(mlb: IntegerW = IntegerNegInf, mub: IntegerW = IntegerInf) 
     coerceBot(res)
   }
 
-  def singleton(iv: IntegerW): Interval = mkInterval(iv, iv)
+  def singleton(iv: IntegerW): Interval = makeInterval(iv, iv)
 
-  def mkInterval(lb: IntegerW, ub: IntegerW): Interval = {
+  def makeInterval(lb: IntegerW, ub: IntegerW): Interval = {
     coerceBot(Interval(boundsAdjusted(lb), boundsAdjusted(ub)))
   }
 
   def +(i1: Interval, i2: Interval): Interval = {
     val newlb = IntegerW.+(i1.lb, i2.lb)
     val newub = IntegerW.+(i1.ub, i2.ub)
-    mkInterval(newlb, newub)
+    makeInterval(newlb, newub)
   }
 
   def -(i1: Interval, i2: Interval): Interval = {
     val newlb = IntegerW.-(i1.lb, i2.lb)
     val newub = IntegerW.-(i1.ub, i2.ub)
-    mkInterval(newlb, newub)
+    makeInterval(newlb, newub)
   }
 
   def *(i1: Interval, i2: Interval): Interval = {
@@ -197,23 +200,23 @@ case class Intervals(mlb: IntegerW = IntegerNegInf, mub: IntegerW = IntegerInf) 
     val ib = IntegerW.*(i1.lb, i2.ub)
     val ic = IntegerW.*(i1.ub, i2.lb)
     val id = IntegerW.*(i1.ub, i2.ub)
-    mkInterval(IntegerW.min(ia,ib,ic,id), IntegerW.max(ia,ib,ic,id))
+    makeInterval(IntegerW.min(ia,ib,ic,id), IntegerW.max(ia,ib,ic,id))
   }
 
   def /(i1: Interval, i2: Interval): Interval = {
-    if (contains(i2, 0)) Lattice[Interval].top
+    if (contains(i2, 0)) Lattice.top
     else {
       val ia = IntegerW./(i1.lb, i2.lb)
       val ib = IntegerW./(i1.lb, i2.ub)
       val ic = IntegerW./(i1.ub, i2.lb)
       val id = IntegerW./(i1.ub, i2.ub)
-      mkInterval(IntegerW.min(ia,ib,ic,id), IntegerW.max(ia,ib,ic,id))
+      makeInterval(IntegerW.min(ia,ib,ic,id), IntegerW.max(ia,ib,ic,id))
     }
   }
 
   def %(i1: Interval, i2: Interval): Interval = {
     require(IntegerW.<(IntegerVal(0), i2.lb))
-    mkInterval(IntegerVal(0), i2.ub) // TODO Do something smarter?
+    makeInterval(IntegerVal(0), i2.ub) // TODO Do something smarter?
   }
 }
 
