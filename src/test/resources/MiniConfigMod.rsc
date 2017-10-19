@@ -31,7 +31,7 @@ data Expression = const(Const const)
                 | assign(Access acc, Expression e)
                 | ternary(Expression cond, Expression then, Expression \else)
                 ;
-                
+
 data Access = var(str name)
             | arrayaccess(Expression tar, Expression indx)
             | fieldaccess(Expression e, str field)

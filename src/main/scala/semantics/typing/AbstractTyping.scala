@@ -15,9 +15,9 @@ case class AbstractTyping(module: Module) {
       }
       BaseType(bt)
     case DataRefinementType(dataname, _) => DataType(dataname)
-    case ListRefinementType(elementType) => ListType(inferType(elementType))
-    case SetRefinementType(elementType) => SetType(inferType(elementType))
-    case MapRefinementType(keyType, valueType) =>
+    case ListRefinementType(elementType,_) => ListType(inferType(elementType))
+    case SetRefinementType(elementType,_) => SetType(inferType(elementType))
+    case MapRefinementType(keyType, valueType,_) =>
       MapType(inferType(keyType), inferType(valueType))
     case NoRefinementType => VoidType
     case ValueRefinementType => ValueType

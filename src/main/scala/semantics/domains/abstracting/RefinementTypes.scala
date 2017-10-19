@@ -1,15 +1,16 @@
 package semantics.domains.abstracting
 
-import semantics.domains.abstracting.RefinementTypes.DataTypeDefs
+import semantics.domains.abstracting.IntegerW._
+import semantics.domains.abstracting.RefinementTypes._
 import semantics.domains.common.Lattice
 import syntax._
 import util.Counter
 
 import scala.collection.mutable
-import scalaz.std.option._
 import scalaz.std.list._
+import scalaz.std.option._
 import scalaz.syntax.foldable._
-import Intervals.Unbounded._
+import Intervals.Positive.{Lattice => PosLattice}
 
 case class VoideableRefinementType(possiblyVoid: Boolean, refinementType: RefinementType)
 
@@ -20,11 +21,21 @@ case object StringRefinementType extends BasicRefinementType
 sealed trait RefinementType
 case class BaseRefinementType(basicType: BasicRefinementType) extends RefinementType
 case class DataRefinementType(dataname: TypeName, refinename: Option[Refinement]) extends RefinementType
-case class ListRefinementType(elementType: RefinementType/*, length: RefinementTypes.PositiveIntervals.Interval*/) extends RefinementType
-case class SetRefinementType(elementType: RefinementType/*, cardinality: RefinementTypes.PositiveIntervals.Interval*/) extends RefinementType
-case class MapRefinementType(keyType: RefinementType, valueType: RefinementType) extends RefinementType
+case class ListRefinementType(elementType: RefinementType, length: Intervals.Positive.Interval) extends RefinementType
+case class SetRefinementType(elementType: RefinementType, cardinality: Intervals.Positive.Interval) extends RefinementType
+case class MapRefinementType(keyType: RefinementType, valueType: RefinementType, size: Intervals.Positive.Interval) extends RefinementType
 case object NoRefinementType extends RefinementType
 case object ValueRefinementType extends RefinementType
+
+sealed trait RefinementChildren[RT] {
+  def map[RT2](f: RT => RT2): RefinementChildren[RT2]
+}
+case class FixedSeqChildren[RT](children: List[RT]) extends RefinementChildren[RT] {
+  override def map[RT2](f: (RT) => RT2): RefinementChildren[RT2] = FixedSeqChildren(children.map(f))
+}
+case class ArbitrarySeqChildren[RT](childty: RT, size: Intervals.Positive.Interval) extends RefinementChildren[RT] {
+  override def map[RT2](f: (RT) => RT2): RefinementChildren[RT2] = ArbitrarySeqChildren(f(childty), size)
+}
 
 case class RefinementDef(baseDataType: TypeName, conss: Map[ConsName, List[RefinementType]])
 case class URefinementDef(baseDataType: TypeName, conss: Map[ConsName, Set[List[RefinementType]]])
@@ -74,21 +85,140 @@ object RefinementTypes {
   def pretty(refinementType: RefinementType): String = refinementType match {
     case BaseRefinementType(basicType) =>
       basicType match {
-        case IntRefinementType(ival) => s"int[$ival]"
+        case IntRefinementType(ival) =>
+          if (Intervals.Unbounded.Lattice.isTop(ival)) "int"
+          else s"{x : int | x ∈ $ival}"
         case StringRefinementType => "string"
       }
     case DataRefinementType(dataname, refinename) =>
       refinename.fold(dataname)(_.refinementName)
-    case ListRefinementType(elementType) =>
-      s"list[${pretty(elementType)}]"
-    case SetRefinementType(elementType) =>
-      s"set[${pretty(elementType)}]"
-    case MapRefinementType(keyType, valueType) =>
-      s"map[${pretty(keyType)}, ${pretty(valueType)}]"
+    case ListRefinementType(elementType, length) =>
+      val plistty = s"list[${pretty(elementType)}]"
+      if (Intervals.Positive.Lattice.isTop(length)) plistty
+      else s"{xs : $plistty | |xs| ∈ $length}"
+    case SetRefinementType(elementType, cardinality) =>
+      val psetty = s"set[${pretty(elementType)}]"
+      if (Intervals.Positive.Lattice.isTop(cardinality)) psetty
+      else s"{xs : $psetty | |xs| ∈ $cardinality}"
+    case MapRefinementType(keyType, valueType, size) =>
+      val pmapty = s"map[${pretty(keyType)}, ${pretty(valueType)}]"
+      if (Intervals.Positive.Lattice.isTop(size)) pmapty
+      else s"{xs : $pmapty | |xs| ∈ $size}"
     case NoRefinementType =>
       s"void"
     case ValueRefinementType =>
       "value"
+  }
+}
+
+object RefinementChildren {
+  // TODO A partial lattice to allow merging some items, can be made more type safe
+  implicit def RefinementChildrenLattice[RT : Lattice]: Lattice[RefinementChildren[RT]] = new Lattice[RefinementChildren[RT]] {
+    override def <=(a1: RefinementChildren[RT], a2: RefinementChildren[RT]): Boolean = {
+      a1 match {
+        case FixedSeqChildren(cs1) =>
+          a2 match {
+            case FixedSeqChildren(cs2) if cs1.length == cs2.length =>
+              cs1.zip(cs2).forall { case (c1, c2) => Lattice[RT].<=(c1, c2) }
+            case _ => throw new UnsupportedOperationException
+          }
+        case ArbitrarySeqChildren(cty1, size1) =>
+          a2 match {
+            case ArbitrarySeqChildren(cty2, size2) =>
+              Lattice[RT].<=(cty1, cty2) && Lattice[Intervals.Positive.Interval].<=(size1, size2)
+            case _ => throw new UnsupportedOperationException
+          }
+      }
+    }
+
+    override def widen(a1: RefinementChildren[RT], a2: RefinementChildren[RT], bound: Int): RefinementChildren[RT] = {
+      a1 match {
+        case FixedSeqChildren(cs1) =>
+          a2 match {
+            case FixedSeqChildren(cs2) if cs1.length == cs2.length =>
+              FixedSeqChildren(cs1.zip(cs2).map { case (c1, c2) => Lattice[RT].widen(c1, c2, bound) })
+            case _ => throw new UnsupportedOperationException
+          }
+        case ArbitrarySeqChildren(cty1, size1) =>
+          a2 match {
+            case ArbitrarySeqChildren(cty2, size2) =>
+              ArbitrarySeqChildren(Lattice[RT].widen(cty1, cty2, bound), Lattice[Intervals.Positive.Interval].widen(size1, size2, bound))
+            case _=> throw new UnsupportedOperationException
+          }
+      }
+    }
+
+    override def isBot(a: RefinementChildren[RT]): Boolean = false
+
+    override def bot: RefinementChildren[RT] = throw new UnsupportedOperationException
+
+    override def top: RefinementChildren[RT] = throw new UnsupportedOperationException
+
+    override def lub(a1: RefinementChildren[RT], a2: RefinementChildren[RT]): RefinementChildren[RT] = {
+      a1 match {
+        case FixedSeqChildren(cs1) =>
+          a2 match {
+            case FixedSeqChildren(cs2) if cs1.length == cs2.length =>
+              FixedSeqChildren(cs1.zip(cs2).map { case (c1, c2) => Lattice[RT].lub(c1, c2) })
+            case _ => throw new UnsupportedOperationException
+          }
+        case ArbitrarySeqChildren(cty1, size1) =>
+          a2 match {
+            case ArbitrarySeqChildren(cty2, size2) =>
+              ArbitrarySeqChildren(Lattice[RT].lub(cty1, cty2), Lattice[Intervals.Positive.Interval].lub(size1, size2))
+            case _=> throw new UnsupportedOperationException
+          }
+      }
+    }
+
+    override def glb(a1: RefinementChildren[RT], a2: RefinementChildren[RT]): RefinementChildren[RT] = {
+      a1 match {
+        case FixedSeqChildren(cs1) =>
+          a2 match {
+            case FixedSeqChildren(cs2) if cs1.length == cs2.length =>
+              FixedSeqChildren(cs1.zip(cs2).map { case (c1, c2) => Lattice[RT].glb(c1, c2) })
+            case _ => throw new UnsupportedOperationException
+          }
+        case ArbitrarySeqChildren(cty1, size1) =>
+          a2 match {
+            case ArbitrarySeqChildren(cty2, size2) =>
+              ArbitrarySeqChildren(Lattice[RT].glb(cty1, cty2), Lattice[Intervals.Positive.Interval].glb(size1, size2))
+            case _=> throw new UnsupportedOperationException
+          }
+      }
+    }
+  }
+
+  def makeNil[RT: Lattice](rcs: RefinementChildren[RT]): RefinementChildren[RT] = rcs match {
+    case FixedSeqChildren(_) => FixedSeqChildren(List())
+    case ArbitrarySeqChildren(childty, size) => ArbitrarySeqChildren(Lattice[RT].bot, Intervals.Positive.singleton(0))
+  }
+
+  def makeCons[RT: Lattice](rc: RT, rcs: RefinementChildren[RT]): RefinementChildren[RT] = rcs match {
+    case FixedSeqChildren(children) => FixedSeqChildren(rc :: children)
+    case ArbitrarySeqChildren(childty, size) =>
+      ArbitrarySeqChildren(Lattice[RT].lub(rc, childty), Intervals.Positive.+(size, Intervals.Positive.singleton(1)))
+  }
+
+  def getNil[RT](refinementChildren: RefinementChildren[RT]): Boolean = refinementChildren match {
+    case FixedSeqChildren(children) => children.isEmpty
+    case ArbitrarySeqChildren(_, size) => Intervals.Positive.contains(size, 0)
+  }
+
+  def getCons[RT](refinementChildren: RefinementChildren[RT]): Option[(RT, RefinementChildren[RT])] = refinementChildren match {
+    case FixedSeqChildren(children) =>
+      children match {
+        case Nil => None
+        case c::cs => Some((c,FixedSeqChildren(cs)))
+      }
+    case ArbitrarySeqChildren(childty, size) =>
+      if (Lattice[Intervals.Positive.Interval].isBot(size) || IntegerW.<=(size.ub, 0)) None
+      else Some((childty, ArbitrarySeqChildren(childty, Intervals.Positive.-(size, Intervals.Positive.singleton(1)))))
+  }
+
+  def getSize[RT](refinementChildren: RefinementChildren[RT]): Intervals.Positive.Interval = refinementChildren match {
+    case FixedSeqChildren(children) => Intervals.Positive.singleton(children.length)
+    case ArbitrarySeqChildren(_, size) => size
   }
 }
 
@@ -100,15 +230,48 @@ object VoideableRefinementTypes {
   }
 }
 
+
 case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) {
+
+
+  def makeList(content: List[RefinementType]): ListRefinementType =
+    ListRefinementType(Lattice[RefinementType].lubs(content.toSet), Intervals.Positive.singleton(content.length))
+
+  private
+  def partitionElements(rtys: List[RefinementType]): Set[RefinementType] = {
+    rtys.foldLeft(Set[RefinementType]()) { (prtys, rty) =>
+      if (prtys.exists(prty => Lattice[RefinementType].<=(rty, prty))) {
+        prtys
+      } else {
+        prtys.filterNot(prty => Lattice[RefinementType].<=(prty, rty)) + rty
+      }
+    }
+  }
+
+  def makeSet(content: List[RefinementType]): SetRefinementType = {
+    val partitioned = partitionElements(content)
+    val minSize = partitioned.size
+    val maxSize = content.size
+    val rtylub = Lattice[RefinementType].lubs(partitioned)
+    SetRefinementType(rtylub, Intervals.Positive.makeInterval(minSize, maxSize))
+  }
+
+  def makeMap(keys: List[RefinementType], values: List[RefinementType]): MapRefinementType = {
+    val partitionedKeys = partitionElements(keys)
+    val minSize = partitionedKeys.size
+    val maxSize = keys.size
+    val krtylub = Lattice[RefinementType].lubs(partitionedKeys)
+    val vrtylub = Lattice[RefinementType].lubs(values.toSet)
+    MapRefinementType(krtylub, vrtylub, Intervals.Positive.makeInterval(minSize, maxSize))
+  }
 
   def possibleConstructors(refinementType: RefinementType): Set[ConsName] = refinementType match {
     case BaseRefinementType(_) => Set()
     case DataRefinementType(dataname, refinename) =>
       refinename.fold(datatypes(dataname).keySet)(r => refinements.definitions(r).conss.keySet)
-    case ListRefinementType(elementType) => possibleConstructors(elementType)
-    case SetRefinementType(elementType) => possibleConstructors(elementType)
-    case MapRefinementType(keyType, valueType) =>
+    case ListRefinementType(elementType, _) => possibleConstructors(elementType)
+    case SetRefinementType(elementType, _) => possibleConstructors(elementType)
+    case MapRefinementType(keyType, valueType, _) =>
       possibleConstructors(keyType) ++
         possibleConstructors(valueType)
     case NoRefinementType => Set()
@@ -127,9 +290,9 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
               else chrtys.flatMap(_.toSet[RefinementType].flatMap(crty => loop(visited + rn, crty)))
             recres + rn
           }
-        case ListRefinementType(elementType) => loop(visited, elementType)
-        case SetRefinementType(elementType) => loop(visited, elementType)
-        case MapRefinementType(keyType, valueType) => loop(visited, keyType) ++ loop(visited, valueType)
+        case ListRefinementType(elementType, _) => loop(visited, elementType)
+        case SetRefinementType(elementType, _) => loop(visited, elementType)
+        case MapRefinementType(keyType, valueType, _) => loop(visited, keyType) ++ loop(visited, valueType)
         case NoRefinementType => Set()
         case ValueRefinementType => Set()
       }
@@ -174,45 +337,46 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     }
   }
 
-  def children(vrty: VoideableRefinementType): Set[(VoideableRefinementType, List[RefinementType])] = {
-    val voidRes: Set[(VoideableRefinementType, List[RefinementType])] =
-      if (vrty.possiblyVoid) Set((VoideableRefinementType(possiblyVoid = true, NoRefinementType), List()))
+  def children(vrty: VoideableRefinementType): Set[(VoideableRefinementType, RefinementChildren[RefinementType])] = {
+    val voidRes: Set[(VoideableRefinementType, RefinementChildren[RefinementType])] =
+      if (vrty.possiblyVoid) Set((VoideableRefinementType(possiblyVoid = true, NoRefinementType), FixedSeqChildren(List())))
       else Set()
-    val typRes: Set[(VoideableRefinementType, List[RefinementType])] = vrty.refinementType match {
+    val typRes: Set[(VoideableRefinementType, RefinementChildren[RefinementType])] = vrty.refinementType match {
       case BaseRefinementType(basicType) =>
-        Set((VoideableRefinementType(possiblyVoid = false, BaseRefinementType(basicType)), List()))
+        Set((VoideableRefinementType(possiblyVoid = false, BaseRefinementType(basicType)), FixedSeqChildren(List())))
       case DataRefinementType(dataname, refinenameopt) =>
         val refinementdef = refinenameopt.fold(dataTypeDefToRefinementDef(dataname, datatypes(dataname)))(refinements.definitions)
         refinementdef.conss.toSet[(ConsName, List[RefinementType])].map { case (cons, chrtyps) =>
           val newRn = refinements.newRefinement(dataname)
           val newrhs = Map(cons -> chrtyps)
           val nrno = addRefinement(dataname, newRn, newrhs)
-          (VoideableRefinementType(possiblyVoid = false, DataRefinementType(dataname, nrno)), chrtyps)
+          (VoideableRefinementType(possiblyVoid = false, DataRefinementType(dataname, nrno)), FixedSeqChildren(chrtyps))
         }
-      case ListRefinementType(elementType) =>
-        Set((VoideableRefinementType(possiblyVoid = false, ListRefinementType(elementType)), List(elementType)))
-      case SetRefinementType(elementType) =>
-        Set((VoideableRefinementType(possiblyVoid = false, SetRefinementType(elementType)), List(elementType)))
-      case MapRefinementType(keyType, valueType) =>
-        Set((VoideableRefinementType(possiblyVoid = false, MapRefinementType(keyType, valueType)), List(keyType, valueType)))
+      case ListRefinementType(elementType, length) =>
+        Set((VoideableRefinementType(possiblyVoid = false, ListRefinementType(elementType, length)), ArbitrarySeqChildren(elementType, length)))
+      case SetRefinementType(elementType, cardinality) =>
+        Set((VoideableRefinementType(possiblyVoid = false, SetRefinementType(elementType, cardinality)), ArbitrarySeqChildren(elementType, cardinality)))
+      case MapRefinementType(keyType, valueType, size) =>
+        Set((VoideableRefinementType(possiblyVoid = false, MapRefinementType(keyType, valueType, size)),
+          ArbitrarySeqChildren(Lattice[RefinementType].lub(keyType, valueType), Intervals.Positive.*(size, Intervals.Positive.singleton(2)))))
       case NoRefinementType => Set()
       case ValueRefinementType =>
-        Set((VoideableRefinementType(possiblyVoid = false, ValueRefinementType), List(ValueRefinementType))) // multiplicitly does not matter
+        Set((VoideableRefinementType(possiblyVoid = false, ValueRefinementType), ArbitrarySeqChildren(ValueRefinementType, Intervals.Positive.Lattice.top)))
     }
     voidRes ++ typRes
   }
 
   def basetypeToRefinement(b: BasicType): BasicRefinementType = b match {
-    case IntType => IntRefinementType(Lattice[Intervals.Unbounded.Interval].top)
+    case IntType => IntRefinementType(Intervals.Unbounded.Lattice.top)
     case StringType => StringRefinementType
   }
 
   def typeToRefinement(t: Type, refs: Map[TypeName, Refinement] = Map()): RefinementType = t match {
     case BaseType(b) => BaseRefinementType(basetypeToRefinement(b))
     case DataType(name) => DataRefinementType(name, refs.get(name))
-    case ListType(elementType) => ListRefinementType(typeToRefinement(elementType, refs))
-    case SetType(elementType) => SetRefinementType(typeToRefinement(elementType, refs))
-    case MapType(keyType, valueType) => MapRefinementType(typeToRefinement(keyType, refs), typeToRefinement(valueType, refs))
+    case ListType(elementType) => ListRefinementType(typeToRefinement(elementType, refs), Intervals.Positive.Lattice.top)
+    case SetType(elementType) => SetRefinementType(typeToRefinement(elementType, refs), Intervals.Positive.Lattice.top)
+    case MapType(keyType, valueType) => MapRefinementType(typeToRefinement(keyType, refs), typeToRefinement(valueType, refs), Intervals.Positive.Lattice.top)
     case VoidType => throw new UnsupportedOperationException("Unexpected void type in data type definition")
     case ValueType => ValueRefinementType
   }
@@ -235,13 +399,13 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           val finalRn = addRefinement(dataname, newRn, newRnDef)
           DataRefinementType(dataname, finalRn)
         } else DataRefinementType(dataname, None)
-      case ListRefinementType(elementType) =>
-        ListRefinementType(RefinementTypeLattice.lub(elementType, negateRty(memo, elementType))) // To ensure overapproximation
-      case SetRefinementType(elementType) =>
-        SetRefinementType(RefinementTypeLattice.lub(elementType, negateRty(memo, elementType))) // To ensure overapproximation
-      case MapRefinementType(keyType, valueType) =>
+      case ListRefinementType(elementType, _) =>
+        ListRefinementType(RefinementTypeLattice.lub(elementType, negateRty(memo, elementType)), Intervals.Positive.Lattice.top) // To ensure overapproximation
+      case SetRefinementType(elementType, _) =>
+        SetRefinementType(RefinementTypeLattice.lub(elementType, negateRty(memo, elementType)), Intervals.Positive.Lattice.top) // To ensure overapproximation
+      case MapRefinementType(keyType, valueType, _) =>
         MapRefinementType(RefinementTypeLattice.lub(keyType, negateRty(memo, keyType)),
-          RefinementTypeLattice.lub(valueType, negateRty(memo, valueType))) // To ensure overapproximation
+          RefinementTypeLattice.lub(valueType, negateRty(memo, valueType)), Intervals.Positive.Lattice.top) // To ensure overapproximation
       case NoRefinementType => NoRefinementType
       case ValueRefinementType => ValueRefinementType
     }
@@ -254,10 +418,10 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     def removeSelfRefinements(rty: RefinementType): RefinementType = rty match {
       case DataRefinementType(dataname, refinename) if refinename.exists(r => r.refinementName == dataname) =>
         DataRefinementType(dataname, None)
-      case ListRefinementType(elementType) => ListRefinementType(removeSelfRefinements(elementType))
-      case SetRefinementType(elementType) => SetRefinementType(removeSelfRefinements(elementType))
-      case MapRefinementType(keyType, valueType) =>
-        MapRefinementType(removeSelfRefinements(keyType), removeSelfRefinements(valueType))
+      case ListRefinementType(elementType, length) => ListRefinementType(removeSelfRefinements(elementType), length)
+      case SetRefinementType(elementType, cardinality) => SetRefinementType(removeSelfRefinements(elementType), cardinality)
+      case MapRefinementType(keyType, valueType, size) =>
+        MapRefinementType(removeSelfRefinements(keyType), removeSelfRefinements(valueType), size)
       case _ => rty
     }
     val newRn = refinements.newRefinement(dn)
@@ -273,12 +437,12 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
   def substDataRefsInType(refinementType: RefinementType, rn: Refinement, nrno: Option[Refinement]): RefinementType = refinementType match {
     case DataRefinementType(dataname, refinename) =>
       DataRefinementType(dataname, refinename.flatMap(rn2 => if (rn2 == rn) nrno else Some(rn2)))
-    case ListRefinementType(elementType) =>
-      ListRefinementType(substDataRefsInType(elementType, rn, nrno))
-    case SetRefinementType(elementType) =>
-      SetRefinementType(substDataRefsInType(elementType, rn, nrno))
-    case MapRefinementType(keyType, valueType) =>
-      MapRefinementType(substDataRefsInType(keyType, rn, nrno), substDataRefsInType(valueType, rn, nrno))
+    case ListRefinementType(elementType, length) =>
+      ListRefinementType(substDataRefsInType(elementType, rn, nrno), length)
+    case SetRefinementType(elementType, cardinality) =>
+      SetRefinementType(substDataRefsInType(elementType, rn, nrno), cardinality)
+    case MapRefinementType(keyType, valueType, size) =>
+      MapRefinementType(substDataRefsInType(keyType, rn, nrno), substDataRefsInType(valueType, rn, nrno), size)
     case _ => refinementType
   }
 
@@ -293,9 +457,12 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case BaseRefinementType(_) => true
           case DataRefinementType(_, refinenameopt) =>
             refinenameopt.fold(true)(refinename => checkNonEmptyP(memo, refinename))
-          case ListRefinementType(_) => true // At least until we get lengths since empty lists are possible
-          case SetRefinementType(_) => true // At least until we get length since empty sets are possible
-          case MapRefinementType(_, _) => true // at least until we get length since empty maps are possible
+          case ListRefinementType(irty, length) =>
+            checkNonEmpty(memo, irty) && !Intervals.Positive.Lattice.isBot(length)
+          case SetRefinementType(irty, cardinality) =>
+            checkNonEmpty(memo, irty) && !Intervals.Positive.Lattice.isBot(cardinality)
+          case MapRefinementType(krty, vrty, size) =>
+            checkNonEmpty(memo, krty) && checkNonEmpty(memo, vrty) && !Intervals.Positive.Lattice.isBot(size)
           case NoRefinementType => false
           case ValueRefinementType => true
         }
@@ -322,20 +489,23 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
             (bty1, bty2) match {
               case (IntRefinementType(ival1), IntRefinementType(ival2)) =>
-                BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].lub(ival1, ival2)))
+                BaseRefinementType(IntRefinementType(Intervals.Unbounded.Lattice.lub(ival1, ival2)))
               case (StringRefinementType, StringRefinementType) => BaseRefinementType(StringRefinementType)
               case (_, _) => ValueRefinementType
             }
-          case (ListRefinementType(irty1), ListRefinementType(irty2)) =>
+          case (ListRefinementType(irty1, length1), ListRefinementType(irty2, length2)) =>
             val irtylub = merge(memo, irty1, irty2)
-            ListRefinementType(irtylub)
-          case (SetRefinementType(irty1), SetRefinementType(irty2)) =>
+            val length = Intervals.Positive.Lattice.lub(length1, length2)
+            ListRefinementType(irtylub, length)
+          case (SetRefinementType(irty1, cardinality1), SetRefinementType(irty2, cardinality2)) =>
             val irtylub = merge(memo, irty1, irty2)
-            SetRefinementType(irtylub)
-          case (MapRefinementType(krty1, vrty1), MapRefinementType(krty2, vrty2)) =>
+            val cardinality = Intervals.Positive.Lattice.lub(cardinality1, cardinality2)
+            SetRefinementType(irtylub, cardinality)
+          case (MapRefinementType(krty1, vrty1, size1), MapRefinementType(krty2, vrty2, size2)) =>
             val krtylub = merge(memo, krty1, krty2)
             val vrtylub = merge(memo, vrty1, vrty2)
-            MapRefinementType(krtylub, vrtylub)
+            val size = Intervals.Positive.Lattice.lub(size1, size2)
+            MapRefinementType(krtylub, vrtylub, size)
           case (DataRefinementType(dn1, rno1), DataRefinementType(dn2, rno2)) if dn1 == dn2 =>
             rno1.fold(DataRefinementType(dn1, None))(rn1 => rno2.fold(DataRefinementType(dn1, None)) { rn2 =>
               val newrty = mergeP(memo, dn1, rn1, rn2)
@@ -384,27 +554,39 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
             (bty1, bty2) match {
               case (IntRefinementType(ival1), IntRefinementType(ival2)) =>
-                val ivalglb = Lattice[Intervals.Unbounded.Interval].glb(ival1, ival2)
-                if (Lattice[Intervals.Unbounded.Interval].isBot(ivalglb)) NoRefinementType
+                val ivalglb = Intervals.Unbounded.Lattice.glb(ival1, ival2)
+                if (Intervals.Unbounded.Lattice.isBot(ivalglb)) NoRefinementType
                 else BaseRefinementType(IntRefinementType(ivalglb))
               case (StringRefinementType, StringRefinementType) => BaseRefinementType(StringRefinementType)
               case (_, _) => NoRefinementType
             }
-          case (ListRefinementType(irty1), ListRefinementType(irty2)) =>
-            val irtyglb = merge(memo, irty1, irty2)
-            if (isBot(irtyglb)) ListRefinementType(NoRefinementType)
-            else ListRefinementType(irtyglb)
-          case (SetRefinementType(irty1), SetRefinementType(irty2)) =>
-            val irtyglb = merge(memo, irty1, irty2)
-            if (isBot(irtyglb)) SetRefinementType(NoRefinementType)
-            else SetRefinementType(irtyglb)
-          case (MapRefinementType(krty1, vrty1), MapRefinementType(krty2, vrty2)) =>
-            val krtyglb = merge(memo, krty1, krty2)
-            if (isBot(krtyglb)) MapRefinementType(NoRefinementType, NoRefinementType)
+          case (ListRefinementType(irty1, length1), ListRefinementType(irty2, length2)) =>
+            val length = Intervals.Positive.Lattice.glb(length1, length2)
+            if (Intervals.Positive.Lattice.isBot(length)) bot
             else {
-              val vrtyglb = merge(memo, vrty1, vrty2)
-              if (isBot(vrtyglb)) MapRefinementType(NoRefinementType, NoRefinementType)
-              else MapRefinementType(krtyglb, vrtyglb)
+              val irtyglb = merge(memo, irty1, irty2)
+              if (isBot(irtyglb)) ListRefinementType(NoRefinementType, Intervals.Positive.singleton(0))
+              else ListRefinementType(irtyglb, length)
+            }
+          case (SetRefinementType(irty1, cardinality1), SetRefinementType(irty2, cardinality2)) =>
+            val cardinality = Intervals.Positive.Lattice.glb(cardinality1, cardinality2)
+            if (Intervals.Positive.Lattice.isBot(cardinality)) bot
+            else {
+              val irtyglb = merge(memo, irty1, irty2)
+              if (isBot(irtyglb)) SetRefinementType(NoRefinementType, Intervals.Positive.singleton(0))
+              else SetRefinementType(irtyglb, cardinality)
+            }
+          case (MapRefinementType(krty1, vrty1, size1), MapRefinementType(krty2, vrty2, size2)) =>
+            val size = Intervals.Positive.Lattice.glb(size1, size2)
+            if (Intervals.Positive.Lattice.isBot(size)) bot
+            else {
+              val krtyglb = merge(memo, krty1, krty2)
+              if (isBot(krtyglb)) MapRefinementType(NoRefinementType, NoRefinementType, Intervals.Positive.singleton(0))
+              else {
+                val vrtyglb = merge(memo, vrty1, vrty2)
+                if (isBot(vrtyglb)) MapRefinementType(NoRefinementType, NoRefinementType, Intervals.Positive.singleton(0))
+                else MapRefinementType(krtyglb, vrtyglb, size)
+              }
             }
           case (DataRefinementType(dn1, rn1o), DataRefinementType(dn2, rn2o)) if dn1 == dn2 =>
             rn1o.fold[RefinementType](DataRefinementType(dn2, rn2o))(rn1 =>
@@ -458,10 +640,13 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
             case (NoRefinementType, _) => true
             case (_, ValueRefinementType) => true
             case (BaseRefinementType(bty1), BaseRefinementType(bty2)) => bty1 == bty2
-            case (ListRefinementType(irty1), ListRefinementType(irty2)) => sub(assumptions, irty1, irty2)
-            case (SetRefinementType(irty1), SetRefinementType(irty2)) =>  sub(assumptions, irty1, irty2)
-            case (MapRefinementType(krty1, vrty1), MapRefinementType(krty2, vrty2)) =>
-              sub(assumptions, krty1, krty2) && sub(assumptions, vrty1, vrty2)
+            case (ListRefinementType(irty1, length1), ListRefinementType(irty2, length2)) =>
+              sub(assumptions, irty1, irty2) && Intervals.Positive.Lattice.<=(length1, length2)
+            case (SetRefinementType(irty1, cardinality1), SetRefinementType(irty2, cardinality2)) =>
+              sub(assumptions, irty1, irty2) && Intervals.Positive.Lattice.<=(cardinality1, cardinality2)
+            case (MapRefinementType(krty1, vrty1, size1), MapRefinementType(krty2, vrty2, size2)) =>
+              sub(assumptions, krty1, krty2) && sub(assumptions, vrty1, vrty2) &&
+                Intervals.Positive.Lattice.<=(size1, size2)
             case (DataRefinementType(dn1, rno1), DataRefinementType(dn2, rno2)) if dn1 == dn2 =>
               rno2.fold(true)(rn2 => rno1.fold(false)(rn1 => subR(assumptions, rn1, rn2)))
             case _ => false
@@ -507,9 +692,9 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
         def recursiveRef(karg: RefinementType): Boolean = karg match {
           case DataRefinementType(_, refinename) =>
             refinename.exists(drn => drn == rn2 || go(visited = visited + rn, drn))
-          case ListRefinementType(elementType) => recursiveRef(elementType)
-          case SetRefinementType(elementType) => recursiveRef(elementType)
-          case MapRefinementType(keyType, valueType) => recursiveRef(keyType) || recursiveRef(valueType)
+          case ListRefinementType(elementType,_) => recursiveRef(elementType)
+          case SetRefinementType(elementType,_) => recursiveRef(elementType)
+          case MapRefinementType(keyType, valueType,_) => recursiveRef(keyType) || recursiveRef(valueType)
           case _ => false
         }
         if (visited.contains(rn)) false
@@ -534,9 +719,9 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           refinename.fold((currmemo, currwrefinements)) { rn =>
             copyToWorkingRefinements(currmemo, currwrefinements, dataname, rn)
           }
-        case ListRefinementType(elementType) => copyInType(currmemo, currwrefinements, elementType)
-        case SetRefinementType(elementType) => copyInType(currmemo, currwrefinements, elementType)
-        case MapRefinementType(keyType, valueType) =>
+        case ListRefinementType(elementType, _) => copyInType(currmemo, currwrefinements, elementType)
+        case SetRefinementType(elementType, _) => copyInType(currmemo, currwrefinements, elementType)
+        case MapRefinementType(keyType, valueType, _) =>
           val (memo1, wrefinements1) = copyInType(currmemo, currwrefinements, keyType)
           copyInType(memo1, wrefinements1, valueType)
         case _ => (currmemo, currwrefinements)
@@ -606,9 +791,9 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     def applySubstTy(rty: RefinementType, subst: Map[Refinement, Refinement]): RefinementType = rty match {
       case DataRefinementType(dataname, refinename) =>
         DataRefinementType(dataname, refinename.map(rn => applySubst(rn, subst)))
-      case ListRefinementType(elementType) => ListRefinementType(applySubstTy(elementType, subst))
-      case SetRefinementType(elementType) => SetRefinementType(applySubstTy(elementType, subst))
-      case MapRefinementType(keyType, valueType) => MapRefinementType(applySubstTy(keyType, subst), applySubstTy(valueType, subst))
+      case ListRefinementType(elementType, length) => ListRefinementType(applySubstTy(elementType, subst), length)
+      case SetRefinementType(elementType, cardinality) => SetRefinementType(applySubstTy(elementType, subst), cardinality)
+      case MapRefinementType(keyType, valueType, size) => MapRefinementType(applySubstTy(keyType, subst), applySubstTy(valueType, subst), size)
       case _ => rty
     }
 
@@ -698,25 +883,28 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case (NoRefinementType, _) => (rty2, Map())
           case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
             (bty1, bty2) match {
-              case (IntRefinementType(ival1), IntRefinementType(ival2)) => (BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].widen(ival1, ival2))), Map())
+              case (IntRefinementType(ival1), IntRefinementType(ival2)) => (BaseRefinementType(IntRefinementType(Intervals.Unbounded.Lattice.widen(ival1, ival2))), Map())
               case (StringRefinementType, StringRefinementType) => (BaseRefinementType(StringRefinementType), Map())
               case (_, _) => (ValueRefinementType, Map())
             }
-          case (ListRefinementType(irty1), ListRefinementType(irty2)) =>
+          case (ListRefinementType(irty1, length1), ListRefinementType(irty2, length2)) =>
             val (irtywid, shmerges) = shallowMerge(irty1, irty2)
-            (ListRefinementType(irtywid), shmerges)
-          case (SetRefinementType(irty1), SetRefinementType(irty2)) =>
+            val length = Intervals.Positive.Lattice.widen(length1, length2)
+            (ListRefinementType(irtywid, length), shmerges)
+          case (SetRefinementType(irty1, cardinality1), SetRefinementType(irty2, cardinality2)) =>
             val (irtywid, shmerges) = shallowMerge(irty1, irty2)
-            (SetRefinementType(irtywid), shmerges)
-          case (MapRefinementType(krty1, vrty1), MapRefinementType(krty2, vrty2)) =>
+            val cardinality = Intervals.Positive.Lattice.widen(cardinality1, cardinality2)
+            (SetRefinementType(irtywid, cardinality), shmerges)
+          case (MapRefinementType(krty1, vrty1, size1), MapRefinementType(krty2, vrty2, size2)) =>
+            val size = Intervals.Positive.Lattice.widen(size1, size2)
             // Small optimization
             if (krty1 == vrty1 && krty2 == vrty2) {
               val (irtywid, shmerges) = shallowMerge(krty1, krty2)
-              (MapRefinementType(irtywid, irtywid), shmerges)
+              (MapRefinementType(irtywid, irtywid, size), shmerges)
             } else {
               val (krtywid, shmerges1) = shallowMerge(krty1, krty2)
               val (vrtywid, shmerges2) = shallowMerge(vrty1, vrty2)
-              (MapRefinementType(krtywid, vrtywid), shmerges1 ++ shmerges2)
+              (MapRefinementType(krtywid, vrtywid, size), shmerges1 ++ shmerges2)
             }
           case (DataRefinementType(dn1, rno1), DataRefinementType(dn2, rno2)) if dn1 == dn2 =>
             if (rno1.isEmpty || rno2.isEmpty) (DataRefinementType(dn1, None), Map())
@@ -750,25 +938,26 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
             (bty1, bty2) match {
               case (IntRefinementType(ival1), IntRefinementType(ival2)) =>
-                (BaseRefinementType(IntRefinementType(Lattice[Intervals.Unbounded.Interval].widen(ival1, ival2))), Map(), List(), wrefinements)
+                (BaseRefinementType(IntRefinementType(Intervals.Unbounded.Lattice.widen(ival1, ival2))), Map(), List(), wrefinements)
               case (StringRefinementType, StringRefinementType) => (BaseRefinementType(StringRefinementType), Map(), List(), wrefinements)
               case (_, _) => (ValueRefinementType, Map(), List(), wrefinements)
             }
-          case (ListRefinementType(irty1), ListRefinementType(irty2)) =>
+          case (ListRefinementType(irty1, length1), ListRefinementType(irty2, length2)) =>
             val (irtywid, subst, icrefs, nwrefinements) = merge(wrefinements, irty1, irty2)
-            (ListRefinementType(irtywid), subst, icrefs, nwrefinements)
-          case (SetRefinementType(irty1), SetRefinementType(irty2)) =>
+            (ListRefinementType(irtywid, Intervals.Positive.Lattice.widen(length1, length2)), subst, icrefs, nwrefinements)
+          case (SetRefinementType(irty1, cardinality1), SetRefinementType(irty2, cardinality2)) =>
             val (irtywid, subst, icrefs, nwrefinements) = merge(wrefinements, irty1, irty2)
-            (SetRefinementType(irtywid), subst, icrefs, nwrefinements)
-          case (MapRefinementType(krty1, vrty1), MapRefinementType(krty2, vrty2)) =>
+            (SetRefinementType(irtywid, Intervals.Positive.Lattice.widen(cardinality1, cardinality2)), subst, icrefs, nwrefinements)
+          case (MapRefinementType(krty1, vrty1, size1), MapRefinementType(krty2, vrty2, size2)) =>
             // Small optimization
+            val size = Intervals.Positive.Lattice.widen(size1, size2)
             if (krty1 == vrty1 && krty2 == vrty2) {
               val (irtywid, subst, icrefs, nwrefinements) = merge(wrefinements, krty1, krty2)
-              (MapRefinementType(irtywid, irtywid), subst, icrefs, nwrefinements)
+              (MapRefinementType(irtywid, irtywid, size), subst, icrefs, nwrefinements)
             } else {
               val (krtylub, subst1, icrefs1, nwrefinements1) = merge(wrefinements, krty1, krty2)
               val (vrtylub, subst2, icrefs2, nwrefinements2) = merge(nwrefinements1, vrty1, vrty2)
-              (MapRefinementType(krtylub, vrtylub), subst1 ++ subst2, icrefs1 ++ icrefs2, nwrefinements2)
+              (MapRefinementType(krtylub, vrtylub, size), subst1 ++ subst2, icrefs1 ++ icrefs2, nwrefinements2)
             }
           case (DataRefinementType(dn1, rno1), DataRefinementType(dn2, rno2)) if dn1 == dn2 =>
             if (rno1.isEmpty || rno2.isEmpty) (DataRefinementType(dn1, None), Map(), List(), wrefinements)
