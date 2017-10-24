@@ -458,11 +458,11 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           case DataRefinementType(_, refinenameopt) =>
             refinenameopt.fold(true)(refinename => checkNonEmptyP(memo, refinename))
           case ListRefinementType(irty, length) =>
-            checkNonEmpty(memo, irty) && !Intervals.Positive.Lattice.isBot(length)
+            !Intervals.Positive.Lattice.isBot(length)
           case SetRefinementType(irty, cardinality) =>
-            checkNonEmpty(memo, irty) && !Intervals.Positive.Lattice.isBot(cardinality)
+            !Intervals.Positive.Lattice.isBot(cardinality)
           case MapRefinementType(krty, vrty, size) =>
-            checkNonEmpty(memo, krty) && checkNonEmpty(memo, vrty) && !Intervals.Positive.Lattice.isBot(size)
+            !Intervals.Positive.Lattice.isBot(size)
           case NoRefinementType => false
           case ValueRefinementType => true
         }
