@@ -357,8 +357,8 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
       case SetRefinementType(elementType, cardinality) =>
         Set((VoideableRefinementType(possiblyVoid = false, SetRefinementType(elementType, cardinality)), ArbitrarySeqChildren(elementType, cardinality)))
       case MapRefinementType(keyType, valueType, size) =>
-        Set((VoideableRefinementType(possiblyVoid = false, MapRefinementType(keyType, valueType, size)),
-          ArbitrarySeqChildren(Lattice[RefinementType].lub(keyType, valueType), Intervals.Positive.*(size, Intervals.Positive.singleton(2)))))
+        // TODO Fix to use arbitrary seq children without losing precision (now slightly incorrect on stateful programs)
+        Set((VoideableRefinementType(possiblyVoid = false, MapRefinementType(keyType, valueType, size)), FixedSeqChildren(List(keyType, valueType))))
       case NoRefinementType => Set()
       case ValueRefinementType =>
         Set((VoideableRefinementType(possiblyVoid = false, ValueRefinementType), ArbitrarySeqChildren(ValueRefinementType, Intervals.Positive.Lattice.top)))

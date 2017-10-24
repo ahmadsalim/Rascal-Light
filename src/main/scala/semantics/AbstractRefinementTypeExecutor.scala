@@ -124,20 +124,33 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
             exRes ++ succRes
           case _ => assert(false); throw new UnsupportedOperationException()
         }
-      case MapRefinementType(_, _, _) =>
+      case MapRefinementType(_, _, size) =>
         cvtchildren match {
-          case ArbitrarySeqChildren(childty, size) =>
+          case FixedSeqChildren(cvtys) =>
             val exRes =
-              if (childty.possiblyVoid)
-                Set(ExceptionalResult(Error(Set(ReconstructError(scrtyp, List(childty))))))
+              if (cvtys.exists(_.possiblyVoid)) Set(ExceptionalResult(Error(Set(ReconstructError(scrtyp, cvtys)))))
               else Set()
-            val newSize = Lattice[Intervals.Positive.Interval].lub(Intervals.Positive.singleton(0),
-              Intervals.Positive./(size, Intervals.Positive.singleton(2)))
-            // We lose a bit of precision here since we combine the sequences
-            val succRes = Set(SuccessResult(VoideableRefinementType(possiblyVoid = false,
-                                 MapRefinementType(childty.refinementType, childty.refinementType, newSize))))
-            exRes ++ succRes
-          case _ => assert(false); throw new UnsupportedOperationException()
+            val (nktys, nvtys) = cvtys.map(_.refinementType).splitAt(cvtys.length / 2)
+            val newKeyType = Lattice[RefinementType].lubs(nktys.toSet)
+            val newValType = Lattice[RefinementType].lubs( nvtys.toSet)
+            val sucRes = Set(SuccessResult(VoideableRefinementType(scrtyp.possiblyVoid, MapRefinementType(newKeyType, newValType, size))))
+            exRes ++ sucRes
+          case _ =>
+            // TODO Fix so it works with more precise sequence of children
+            /*
+            case ArbitrarySeqChildren(childty, size) =>
+              val exRes =
+                if (childty.possiblyVoid)
+                  Set(ExceptionalResult(Error(Set(ReconstructError(scrtyp, List(childty))))))
+                else Set()
+              val newSize = Lattice[Intervals.Positive.Interval].lub(Intervals.Positive.singleton(0),
+                Intervals.Positive./(size, Intervals.Positive.singleton(2)))
+              // We lose a bit of precision here since we combine the sequences
+              val succRes = Set(SuccessResult(VoideableRefinementType(possiblyVoid = false,
+                                   MapRefinementType(childty.refinementType, childty.refinementType, newSize))))
+              exRes ++ succRes
+            */
+            assert(false); throw new UnsupportedOperationException()
         }
       case NoRefinementType =>
         cvtchildren match {
