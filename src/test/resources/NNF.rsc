@@ -28,8 +28,9 @@ test bool test1() {
 }
 
 test bool test2() {
-	Formula phi = imp(neg(atom("a")), neg(atom("a")));
-	return nnf(phi) == phi;
+	Formula phi_in = imp(neg(atom("a")), neg(atom("a")));
+	Formula phi_out = or(atom("a"), neg(atom("a")));
+	return nnf(phi_in) == phi_out;
 }
 
 test bool test3() {

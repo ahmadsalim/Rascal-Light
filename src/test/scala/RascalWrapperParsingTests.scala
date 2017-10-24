@@ -1,4 +1,4 @@
-import org.scalatest.prop.{GeneratorDrivenPropertyChecks, TableDrivenPropertyChecks}
+import org.scalatest.prop.TableDrivenPropertyChecks
 import org.scalatest.prop.Tables.Table
 import org.scalatest.{FlatSpec, Matchers}
 import syntax._
@@ -45,22 +45,29 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
   }
 
   it should "parse NNF.rsc correctly" in {
-    val expected = ModuleDef(
-      List(DataDef("Formula",List(ConstructorDef("atom",List(Parameter(BaseType(StringType),"nm"))),
-                                  ConstructorDef("and",List(Parameter(DataType("Formula"),"l"), Parameter(DataType("Formula"),"r"))),
-                                  ConstructorDef("or",List(Parameter(DataType("Formula"),"l"), Parameter(DataType("Formula"),"r"))),
-                                  ConstructorDef("imp",List(Parameter(DataType("Formula"),"l"), Parameter(DataType("Formula"),"r"))),
-                                  ConstructorDef("neg",List(Parameter(DataType("Formula"),"f"))))),
-           FunDef(DataType("Formula"),"nnf", List(Parameter(DataType("Formula"), "phi")),
-             VisitExpr(TopDown,VarExpr("phi"),
-               List(Case(ConstructorPatt("neg", List(ConstructorPatt("or",List(VarPatt("l"), VarPatt("r"))))),
-                              ConstructorExpr("and",List(ConstructorExpr("neg",List(VarExpr("l"))), ConstructorExpr("neg",List(VarExpr("r")))))),
-                    Case(ConstructorPatt("neg",List(ConstructorPatt("and",List(VarPatt("l"), VarPatt("r"))))),
-                              ConstructorExpr("or",List(ConstructorExpr("neg",List(VarExpr("l"))), ConstructorExpr("neg",List(VarExpr("r")))))),
-                    Case(ConstructorPatt("neg",List(ConstructorPatt("imp",List(VarPatt("l"), VarPatt("r"))))),
-                      ConstructorExpr("and",List(VarExpr("l"), ConstructorExpr("neg",List(VarExpr("r")))))),
-                    Case(ConstructorPatt("neg",List(ConstructorPatt("neg",List(VarPatt("f"))))),FunCallExpr("nnf",List(VarExpr("f")))),
-                    Case(ConstructorPatt("imp", List(VarPatt("l"), VarPatt("r"))), ConstructorExpr("or", List(ConstructorExpr("neg", List(VarExpr("l"))), VarExpr("r")))))))))
+    val expected = ModuleDef(List(
+      DataDef("Formula", List(ConstructorDef("atom", List(Parameter(BaseType(StringType), "arg0"))),
+                              ConstructorDef("and", List(Parameter(DataType("Formula"), "l"), Parameter(DataType("Formula"), "r"))),
+                              ConstructorDef("or", List(Parameter(DataType("Formula"), "l"), Parameter(DataType("Formula"), "r"))),
+                              ConstructorDef("imp", List(Parameter(DataType("Formula"), "l"), Parameter(DataType("Formula"), "r"))),
+                              ConstructorDef("neg", List(Parameter(DataType("Formula"), "f"))), ConstructorDef("begin", List(Parameter(DataType("Formula"), "f"))))),
+                              FunDef(DataType("Formula"), "rawnnf", List(Parameter(DataType("Formula"), "phi")),
+                                VisitExpr(TopDown,VarExpr("phi"), List(
+                                  Case(ConstructorPatt("neg", List(ConstructorPatt("or", List(VarPatt("l"), VarPatt("r"))))),
+                                    ConstructorExpr("and", List(ConstructorExpr("neg",List(VarExpr("l"))), ConstructorExpr("neg",List(VarExpr("r")))))),
+                                  Case(ConstructorPatt("neg",List(ConstructorPatt("and", List(VarPatt("l"), VarPatt("r"))))),
+                                    ConstructorExpr("or",List(ConstructorExpr("neg",List(VarExpr("l"))), ConstructorExpr("neg",List(VarExpr("r")))))),
+                                  Case(ConstructorPatt("neg",List(ConstructorPatt("imp",List(VarPatt("l"), VarPatt("r"))))),
+                                    ConstructorExpr("and",List(VarExpr("l"), ConstructorExpr("neg",List(VarExpr("r")))))),
+                                  Case(ConstructorPatt("neg",List(ConstructorPatt("neg",List(VarPatt("f"))))),
+                                    ConstructorExpr("begin",List(VarExpr("f")))),
+                                  Case(ConstructorPatt("imp",List(VarPatt("l"), VarPatt("r"))),
+                                    ConstructorExpr("or",List(ConstructorExpr("neg",List(VarExpr("l"))), VarExpr("r"))))))),
+                              FunDef(DataType("Formula"), "nobegin", List(Parameter(DataType("Formula"), "phi")),
+                                VisitExpr(BottomUp,VarExpr("phi"), List(
+                                  Case(ConstructorPatt("begin",List(VarPatt("f"))),VarExpr("f"))))),
+                              FunDef(DataType("Formula"), "nnf", List(Parameter(DataType("Formula"), "phi")),
+                                FunCallExpr("nobegin",List(FunCallExpr("rawnnf",List(VarExpr("phi"))))))))
     parseAndTranslateMatchingExpected("NNF.rsc", expected)
   }
 
