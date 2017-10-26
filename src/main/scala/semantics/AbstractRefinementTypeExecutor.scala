@@ -1967,7 +1967,8 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                 case TypeMemory(res, store_) =>
                   res match {
                     case SuccessResult(ty) =>
-                      TypeMemories(Set(TypeMemory(SuccessResult(FlatValue(tys :+ ty)), store_)))
+                      if (Lattice[VoideableRefinementType].isBot(ty)) Lattice[TypeMemories[Flat[List[VoideableRefinementType]]]].bot
+                      else TypeMemories(Set(TypeMemory(SuccessResult(FlatValue(tys :+ ty)), store_)))
                     case ExceptionalResult(exres) => TypeMemories(Set(TypeMemory(ExceptionalResult(exres), store_)))
                   }
               })
