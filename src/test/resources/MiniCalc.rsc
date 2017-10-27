@@ -33,7 +33,7 @@ Nat addnat(Nat i1, Nat i2) {
 
 Nat pred(Nat i) {
   switch(i) {
-    case zero(): zero;
+    case zero(): zero();
     case suc(i1n): i1n;
   }
 }
@@ -223,7 +223,10 @@ Nat lookupCVar(list[CRVal] cenv, CRVal v) {
 
 int counter = 0;
 
-str mklabel() = "label" + "<counter++>";
+str mklabel() {
+  counter = counter + 1;
+  "label" + "<counter>";
+}
 
 list[CInstr] compile(CExpr e, list[CRVal] cenv) {
   switch(e) {

@@ -57,6 +57,13 @@ object RascalWrapper {
   }
 
   private
+  def literalToBoolean(booleanLiteral: BooleanLiteral): Boolean = {
+    booleanLiteral match {
+      case lexical: BooleanLiteral.Lexical => lexical.getString.toBoolean
+    }
+  }
+
+  private
   def nameToString(name: org.rascalmpl.ast.Name): String = {
     name match {
       case lexical: Name.Lexical => lexical.getString
@@ -110,6 +117,9 @@ object RascalWrapper {
         BasicPatt(IntLit(literalToInteger(lit.getIntegerLiteral))).right
       } else if (lit.isString && lit.getStringLiteral.isNonInterpolated) {
         BasicPatt(StringLit(literalToString(lit.getStringLiteral.getConstant))).right
+      } else if (lit.isBoolean) {
+        val boolval = literalToBoolean(lit.getBooleanLiteral)
+        if (boolval) ConstructorPatt("true", Seq()).right else ConstructorPatt("false", Seq()).right
       } else {
         s"Unsupported literal: $lit".left
       }
@@ -444,17 +454,6 @@ object RascalWrapper {
     } else s"Unsupported type: $ty".left
   }
 
-  def literalToBool(boolLit: BooleanLiteral): syntax.Expr = {
-    boolLit match {
-      case lexical : BooleanLiteral.Lexical =>
-        val lexicalString = lexical.getString
-        lexicalString match {
-          case "true" => ConstructorExpr("true", List())
-          case "false" => ConstructorExpr("false", List())
-        }
-    }
-  }
-
   private
   def translateExpression(expr: Expression): String \/ syntax.Expr = {
     if (expr.isQualifiedName) {
@@ -475,8 +474,8 @@ object RascalWrapper {
           s"Unsupported string literal: $stringLit".left
         }
       } else if (lit.isBoolean) {
-        val boolLit = lit.getBooleanLiteral
-        literalToBool(boolLit).right
+        val boolval = literalToBoolean(lit.getBooleanLiteral)
+        if (boolval) ConstructorExpr("true", Seq()).right else ConstructorExpr("false", Seq()).right
       } else {
         s"Unsupported literal: $lit".left
       }

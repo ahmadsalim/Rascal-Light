@@ -1,11 +1,10 @@
-import semantics.domains.abstracting._
-import semantics.{AbstractRefinementTypeExecutor, ModuleTranslator}
+import semantics.{AbstractRefinementTypeExecutor}
 import syntax._
 import util.rascalwrapper.RascalWrapper
 
 import scalaz.\/-
 
-class GeneralAbstractExecutorTests extends AbstractExecutorTests {
+class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
     "The expression simplification procedure in Expr.rsc" should "run correctly with the abstract type executor" in {
       val modExprO = RascalWrapper.loadModuleFromFile(getClass.getResource("Expr.rsc").getFile)
       val modExprExecRes = modExprO.flatMap { moddef =>
@@ -60,6 +59,4 @@ class GeneralAbstractExecutorTests extends AbstractExecutorTests {
         memsOK(module, refinements, tmems, ListType(BaseType(IntType)))
       }
     }
-
-  override def loggername: String = "test"
 }

@@ -138,7 +138,9 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
          , "ConstantElimOberon.rsc"
          , "DesugarOberon.rsc"
          , "Glagol2PHP.rsc"
-         , "IntProgs.rsc")
+         , "IntProgs.rsc"
+         , "MiniCalc.rsc"
+         , "MiniConfigMod.rsc")
 
   TableDrivenPropertyChecks.forAll(testRscliFiles) { (testFile : String) =>
     it should s"parse and translate $testFile without any error" in {

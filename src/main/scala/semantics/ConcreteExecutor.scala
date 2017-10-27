@@ -903,7 +903,7 @@ case class ConcreteExecutor(module: Module) {
 object ConcreteExecutor {
   private
   def evaluateGlobalVariables(executor: ConcreteExecutor, globVars: List[(VarName, Expr)]) = {
-    val initStore = Store(globVars.toMap.mapValues(_ => BottomValue))
+    val initStore = Store(globVars.toMap.transform((_,_) => BottomValue))
     globVars.reverse.foldLeftM[String \/ ?, Store](initStore) {
       (store, unevalglobvar) =>
         val (varname, varexpr) = unevalglobvar

@@ -5,7 +5,7 @@ import util.rascalwrapper.RascalWrapper
 
 import scalaz.\/-
 
-class Evaluation extends AbstractExecutorTests {
+class Evaluation extends AbstractExecutorTests("evaluation") {
   "The negation normal form transformation in NNF.rsc" should "run correctly with the abstract type executor" in {
     val modNnfO = RascalWrapper.loadModuleFromFile(getClass.getResource("NNF.rsc").getFile)
     val modNnfExecRes = modNnfO.flatMap { moddef =>
@@ -110,5 +110,14 @@ class Evaluation extends AbstractExecutorTests {
     }
   }
 
-  override def loggername: String = "evaluation"
+  "The simplification procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
+    val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("MiniCalc.rsc").getFile)
+    val modMCExecRes = modMC.flatMap { moddef =>
+      AbstractRefinementTypeExecutor.execute(moddef, "simplify")
+    }
+    modMCExecRes shouldBe a [\/-[_]]
+    modMCExecRes.foreach { case (module, refinements, tmems) =>
+      memsOK(module, refinements, tmems, DataType("CExpr"))
+    }
+  }
 }

@@ -2025,13 +2025,29 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
 object AbstractRefinementTypeExecutor {
 
-  // TODO Handle Global Variables
+  def executeGlobalVariables(executor: AbstractRefinementTypeExecutor, globVars: List[(VarName, Expr)]): String \/ TypeStore = {
+    import executor.typememoriesops._
+    import typestoreops._
+    val initStore = TypeStoreV(globVars.toMap.transform((_,_) => VoideableRefinementType(possiblyVoid = true, NoRefinementType)))
+    globVars.reverse.foldLeftM[String \/ ?, TypeStore](initStore) { (store, unevalglobvar) =>
+      val (varname, varexpr) = unevalglobvar
+      val resmems = executor.eval(store, varexpr)
+      resmems.memories.toList.traverse[String \/ ?, TypeStore] { case TypeMemory(res, store_) =>
+          res match {
+            case SuccessResult(value) => joinStores(store_, TypeStoreV(Map(varname -> value))).right
+            case ExceptionalResult(exres) => s"Evaluation of left-hand side for variable $varname failed with $exres".left
+          }
+      }.map(_.head)
+    }
+  }
+
   def execute(module: ModuleDef, function: VarName,
               initialRefinements: Refinements = new Refinements,
               initialStore: Option[TypeStore] = None,
               precise: Boolean = true): String \/ (Module, Refinements, TypeMemories[VoideableRefinementType]) = {
     for (transr <- ModuleTranslator.translateModule(module);
          executor = AbstractRefinementTypeExecutor(transr.semmod, initialRefinements = initialRefinements, precise = precise);
+         store <- executeGlobalVariables(executor, transr.globalVarDefs);
          funcDef <- transr.semmod.funs.get(function).fold(s"Unknown function $function".left[(Type, List[Parameter], FunBody)])(_.right);
          (_, pars, funcBody) = funcDef;
          funcBodyExpr <- funcBody match {
@@ -2041,9 +2057,11 @@ object AbstractRefinementTypeExecutor {
       yield {
         import executor.typememoriesops._
         import refinementtypeops._
-        val funcstore =
+        import typestoreops._
+        val precallstore =
           initialStore.getOrElse(TypeStoreV(pars.map(p => p.name -> VoideableRefinementType(possiblyVoid = false, typeToRefinement(p.typ))).toMap))
-        val funcBodyRes = executor.evalLocal(pars.map(p => p.name -> p.typ).toMap, funcstore, funcBodyExpr, Map.empty)
+        val callstore = joinStores(store, precallstore)
+        val funcBodyRes = executor.evalLocal(pars.map(p => p.name -> p.typ).toMap, callstore, funcBodyExpr, Map.empty)
         val reslub = Lattice[TypeMemories[VoideableRefinementType]].lubs(funcBodyRes.memories.map { case TypeMemory(res, store_) =>
           res match {
             case ExceptionalResult(Return(retty)) => TypeMemories[VoideableRefinementType](Set(TypeMemory(SuccessResult(retty), store_)))

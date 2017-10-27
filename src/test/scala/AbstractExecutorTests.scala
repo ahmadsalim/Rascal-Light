@@ -9,10 +9,8 @@ import syntax.Type
 /**
   * Created by asal on 26/10/2017.
   */
-trait AbstractExecutorTests extends FlatSpec with Matchers {
-  def loggername: String
-
-  def logger = Logger(LoggerFactory.getLogger(loggername))
+abstract class AbstractExecutorTests(loggername: String) extends FlatSpec with Matchers {
+  val logger = Logger(LoggerFactory.getLogger(loggername))
 
   private def checkError(exres: Exceptional[VoideableRefinementType]) = {
     exres shouldNot be(an[Error])

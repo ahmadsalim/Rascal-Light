@@ -1,6 +1,6 @@
 appender("TEST-FILE", FileAppender) {
     file = "./log/absint-rascal-test.log"
-    append = true
+    append = false
     encoder(PatternLayoutEncoder) {
         pattern = "%msg%n"
     }
@@ -8,7 +8,7 @@ appender("TEST-FILE", FileAppender) {
 
 appender("EVALUATION-FILE", FileAppender) {
     file = "./log/absint-rascal-evaluation.log"
-    append = true
+    append = false
     encoder(PatternLayoutEncoder) {
         pattern = "%msg%n"
     }

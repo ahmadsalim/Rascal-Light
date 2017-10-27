@@ -41,7 +41,7 @@ data Preop = neg() | not() | deref() | ref();
 data Postop = incr() | decr();
 data Binop = and() | or() | times() | plus() | minus() | div() | eq() | leq() ;
 
-data Const = intv(int val) | strv(str val) | floatv(real val) | boolv(bool val);
+data Const = intv(int val) | strv(str val) | boolv(bool val);
 
 data PrecondExc = precondExc();
 data PostcondExc = postcondExc();
@@ -56,9 +56,9 @@ Expression modernize(Statement stmt) {
 }
 
 Expression ensurePure(Expression e) = top-down-break visit (e) {
-   case assign(_,_): throw precondExc();
-   case postop(_, incr()): throw precondExc();
-   case postop(_, decr()): throw precondExc();
+   case assign(_,_) => ({ throw precondExc(); })
+   case postop(_, incr()) => ({ throw precondExc(); })
+   case postop(_, decr()) => ({ throw precondExc(); })
    // Assume function calls are pure
 };
 
@@ -69,14 +69,14 @@ Statement ensureAllPure(Statement s) = top-down visit(s) {
 };
 
 Statement ensureSupported(Statement s) = top-down-break visit (s) {
-  case expr(_): throw precondExc();
-  case \while(_,_): throw precondExc();
-  case \for(_,_,_,_): throw precondExc();
-  case \continue(): throw precondExc();
-  case \break(): throw precondExc();
-  case \return(): throw precondExc();
-  case block(sskip()): throw precondExc();
-  case sseq(\if(_,_),sskip()): throw precondExc();
+  case expr(_) => ({ throw precondExc(); })
+  case \while(_,_) => ({ throw precondExc(); })
+  case \for(_,_,_,_) => ({ throw precondExc(); })
+  case \continue() => ({ throw precondExc(); })
+  case \break() => ({ throw precondExc(); })
+  case \return() => ({ throw precondExc(); })
+  case block(sskip()) => ({ throw precondExc(); })
+  case sseq(\if(_,_),sskip()) => ({ throw precondExc(); })
 };
 
 Statement switchToIf(Statement stmt) = bottom-up visit(stmt) {
