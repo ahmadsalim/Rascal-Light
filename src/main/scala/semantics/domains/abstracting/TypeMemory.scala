@@ -10,11 +10,11 @@ case object TypeStoreTop extends TypeStore
 case class TypeStoreV(vals: Map[VarName, VoideableRefinementType]) extends TypeStore
 case object TypeStoreBot extends TypeStore
 
-case class TypeMemory[T](result: TypeResult[T], store: TypeStore)
-case class TypeMemories[T](memories: Set[TypeMemory[T]])
+case class TypeMemory[T,F](result: TypeResult[T,F], store: TypeStore)
+case class TypeMemories[T,F](memories: Set[TypeMemory[T,F]])
 
 object TypeResult {
-  def pretty(typeResult: TypeResult[VoideableRefinementType]): String = typeResult match {
+  def pretty(typeResult: TypeResult[VoideableRefinementType, Unit]): String = typeResult match {
     case SuccessResult(t) =>
       s"success ${VoideableRefinementTypes.pretty(t)}"
     case ExceptionalResult(exres) =>
@@ -23,7 +23,7 @@ object TypeResult {
         case Throw(value) => s"throw ${VoideableRefinementTypes.pretty(value)}"
         case Break => "break"
         case Continue => "continue"
-        case Fail => "fail"
+        case Fail(_) => s"fail"
         case Error(kinds) =>
           s"errors: \n ${kinds.map(errk => "\t" + errk).mkString("\n")}"
       }
@@ -31,17 +31,17 @@ object TypeResult {
 }
 
 object TypeStore {
-  def pretty(store: TypeStore) = store match {
+  def pretty(store: TypeStore): VarName = store match {
     case TypeStoreTop => "store⊤"
     case TypeStoreV(vals) => vals.map { case (vr, vl) => s"$vr ↦ ${VoideableRefinementTypes.pretty(vl)}" }.mkString("[", ",", "]")
     case TypeStoreBot => "store⊥"
   }
 
-  type TypeResult[T] = ResultV[VoideableRefinementType, T]
+  type TypeResult[T, F] = ResultV[VoideableRefinementType, T, F]
 }
 
 object TypeMemory {
-  def pretty(mem: TypeMemory[VoideableRefinementType]): String = {
+  def pretty(mem: TypeMemory[VoideableRefinementType, Unit]): String = {
     val prettyRes = TypeResult.pretty(mem.result)
     val prettyStore = TypeStore.pretty(mem.store)
     s"""result:
@@ -53,7 +53,7 @@ object TypeMemory {
 }
 
 object TypeMemories {
-  def pretty(mems: TypeMemories[VoideableRefinementType]): String = {
+  def pretty(mems: TypeMemories[VoideableRefinementType, Unit]): String = {
     mems.memories.map(TypeMemory.pretty).mkString("\n")
   }
 }
@@ -99,7 +99,7 @@ case class TypeStoreOps(datatypes: DataTypeDefs, refinements: Refinements) {
     case TypeStoreTop => TypeStoreTop
   }
 
-  implicit def TypeStoreLattice = new Lattice[TypeStore] {
+  implicit def TypeStoreLattice: Lattice[TypeStore] = new Lattice[TypeStore] {
     override def bot: TypeStore = TypeStoreBot
 
     override def top: TypeStore = TypeStoreTop
@@ -178,10 +178,10 @@ case class TypeMemoriesOps(module: Module, refinements: Refinements) {
   val refinementtypeops = RefinementTypeOps(datatypes, refinements)
   import refinementtypeops._
 
-  implicit def TypeMemoriesLatticeFromRS[T](implicit lattt: Lattice[T]) = new Lattice[TypeMemories[T]] {
-    override def bot: TypeMemories[T] = TypeMemories(Set())
+  implicit def TypeMemoriesLatticeFromRS[T,F](implicit lattt: Lattice[T], lattf: Lattice[F]): Lattice[TypeMemories[T, F]] = new Lattice[TypeMemories[T,F]] {
+    override def bot: TypeMemories[T,F] = TypeMemories(Set())
 
-    override def top: TypeMemories[T] = {
+    override def top: TypeMemories[T,F] = {
       val topstore = Lattice[TypeStore].top
       TypeMemories(
         Set(TypeMemory(SuccessResult(Lattice[T].top), topstore)
@@ -189,62 +189,63 @@ case class TypeMemoriesOps(module: Module, refinements: Refinements) {
           , TypeMemory(ExceptionalResult(Throw(Lattice[VoideableRefinementType].top)), topstore)
           , TypeMemory(ExceptionalResult(Break), topstore)
           , TypeMemory(ExceptionalResult(Continue), topstore)
-          , TypeMemory(ExceptionalResult(Fail), topstore)
+          , TypeMemory(ExceptionalResult(Fail(Lattice[F].top)), topstore)
           , TypeMemory(ExceptionalResult(Error(Set(OtherError))), topstore)
         ))
     }
 
     private
-    def groupMemories(a1: TypeMemories[T], a2: TypeMemories[T]): Set[List[TypeMemory[T]]] = {
+    def groupMemories(a1: TypeMemories[T,F], a2: TypeMemories[T,F]): Set[List[TypeMemory[T,F]]] = {
       val grouped = (a1.memories.toList ++ a2.memories.toList).groupBy[String](_.result.kind)
       grouped.values.toSet
     }
 
     private
-    def upperBound(a1: TypeMemories[T], a2: TypeMemories[T],
-                            storeOp: (TypeStore, TypeStore) => TypeStore, tOp: (T, T) => T,
-                            vrtOp: (VoideableRefinementType, VoideableRefinementType) => VoideableRefinementType): TypeMemories[T] =
+    def upperBound(a1: TypeMemories[T,F], a2: TypeMemories[T,F],
+                            storeOp: (TypeStore, TypeStore) => TypeStore, tOp: (T, T) => T, fOp: (F, F) => F,
+                            vrtOp: (VoideableRefinementType, VoideableRefinementType) => VoideableRefinementType): TypeMemories[T,F] =
     {
-      TypeMemories(groupMemories(a1, a2).flatMap[TypeMemory[T], Set[TypeMemory[T]]] {
-        case ress@(List() | List(_)) => ress.toSet[TypeMemory[T]]
+      TypeMemories(groupMemories(a1, a2).flatMap[TypeMemory[T,F], Set[TypeMemory[T,F]]] {
+        case ress@(List() | List(_)) => ress.toSet[TypeMemory[T,F]]
         case List(tmem1, tmem2) =>
           val nstore = storeOp(tmem1.store, tmem2.store)
           tmem1.result match {
             case SuccessResult(t1) =>
               val SuccessResult(t2) = tmem2.result
               val tlub = tOp(t1, t2)
-              Set(TypeMemory[T](SuccessResult(tlub), nstore))
+              Set(TypeMemory[T,F](SuccessResult(tlub), nstore))
             case ExceptionalResult(exres) =>
               exres match {
                 case Return(vrty1) =>
                   val ExceptionalResult(Return(vrty2)) = tmem2.result
                   val vrtylub = vrtOp(vrty1, vrty2)
-                  Set(TypeMemory[T](ExceptionalResult(Return(vrtylub)), nstore))
+                  Set(TypeMemory[T,F](ExceptionalResult(Return(vrtylub)), nstore))
                 case Throw(vrty1) =>
                   val ExceptionalResult(Throw(vrty2)) = tmem2.result
                   val vrtylub = vrtOp(vrty1, vrty2)
-                  Set(TypeMemory[T](ExceptionalResult(Throw(vrtylub)), nstore))
+                  Set(TypeMemory[T,F](ExceptionalResult(Throw(vrtylub)), nstore))
                 case Break =>
-                  Set(TypeMemory[T](ExceptionalResult(Break), nstore))
+                  Set(TypeMemory[T,F](ExceptionalResult(Break), nstore))
                 case Continue =>
-                  Set(TypeMemory[T](ExceptionalResult(Continue), nstore))
-                case Fail =>
-                  Set(TypeMemory[T](ExceptionalResult(Fail), nstore))
+                  Set(TypeMemory[T,F](ExceptionalResult(Continue), nstore))
+                case Fail(refin1) =>
+                  val ExceptionalResult(Fail(refin2)) = tmem2.result
+                  val flub = fOp(refin1, refin2)
+                  Set(TypeMemory[T,F](ExceptionalResult(Fail(flub)), nstore))
                 case Error(kinds1) =>
                   val ExceptionalResult(Error(kinds2)) = tmem2.result
-                  Set(TypeMemory[T](ExceptionalResult(Error(kinds1 union kinds2)), nstore))
+                  Set(TypeMemory[T,F](ExceptionalResult(Error(kinds1 union kinds2)), nstore))
               }
           }
         case _ => throw NonNormalFormMemories
       })
     }
 
-    override def lub(a1: TypeMemories[T], a2: TypeMemories[T]): TypeMemories[T] =
-      upperBound(a1, a2, Lattice[TypeStore].lub,
-        Lattice[T].lub, Lattice[VoideableRefinementType].lub)
+    override def lub(a1: TypeMemories[T,F], a2: TypeMemories[T,F]): TypeMemories[T,F] =
+      upperBound(a1, a2, Lattice[TypeStore].lub, Lattice[T].lub, Lattice[F].lub, Lattice[VoideableRefinementType].lub)
 
-    override def glb(a1: TypeMemories[T], a2: TypeMemories[T]): TypeMemories[T] =
-      TypeMemories(groupMemories(a1, a2).flatMap[TypeMemory[T], Set[TypeMemory[T]]] {
+    override def glb(a1: TypeMemories[T,F], a2: TypeMemories[T,F]): TypeMemories[T,F] =
+      TypeMemories(groupMemories(a1, a2).flatMap[TypeMemory[T,F], Set[TypeMemory[T,F]]] {
         case List() | List(_) => Set()
         case List(tmem1, tmem2) =>
           val nstore = Lattice[TypeStore].glb(tmem1.store, tmem2.store)
@@ -252,29 +253,32 @@ case class TypeMemoriesOps(module: Module, refinements: Refinements) {
             case SuccessResult(t1) =>
               val SuccessResult(t2) = tmem2.result
               val tglb = Lattice[T].glb(t1, t2)
-              Set(TypeMemory[T](SuccessResult(tglb), nstore))
+              Set(TypeMemory[T,F](SuccessResult(tglb), nstore))
             case ExceptionalResult(exres) =>
               exres match {
                 case Return(vrt1) =>
                   val ExceptionalResult(Return(vrt2)) = tmem2.result
                   val vrtglb = Lattice[VoideableRefinementType].glb(vrt1, vrt2)
-                  Set(TypeMemory[T](ExceptionalResult(Return(vrtglb)), nstore))
+                  Set(TypeMemory[T,F](ExceptionalResult(Return(vrtglb)), nstore))
                 case Throw(vrt1) =>
                   val ExceptionalResult(Throw(vrt2)) = tmem2.result
                   val vrtglb = Lattice[VoideableRefinementType].glb(vrt1, vrt2)
-                  Set(TypeMemory[T](ExceptionalResult(Throw(vrtglb)), nstore))
-                case Break => Set(TypeMemory[T](ExceptionalResult(Break), nstore))
-                case Continue => Set(TypeMemory[T](ExceptionalResult(Continue), nstore))
-                case Fail => Set(TypeMemory[T](ExceptionalResult(Fail), nstore))
+                  Set(TypeMemory[T,F](ExceptionalResult(Throw(vrtglb)), nstore))
+                case Break => Set(TypeMemory[T,F](ExceptionalResult(Break), nstore))
+                case Continue => Set(TypeMemory[T,F](ExceptionalResult(Continue), nstore))
+                case Fail(refin1) =>
+                  val ExceptionalResult(Fail(refin2)) = tmem2.result
+                  val refinglb = Lattice[F].glb(refin1, refin2)
+                  Set(TypeMemory[T,F](ExceptionalResult(Fail(refinglb)), nstore))
                 case Error(kinds1) =>
                   val ExceptionalResult(Error(kinds2)) = tmem2.result
-                  Set(TypeMemory[T](ExceptionalResult(Error(kinds1 intersect kinds2)), nstore))
+                  Set(TypeMemory[T,F](ExceptionalResult(Error(kinds1 intersect kinds2)), nstore))
               }
           }
         case _ => throw NonNormalFormMemories
       })
 
-    override def <=(a1: TypeMemories[T], a2: TypeMemories[T]): Boolean = a1.memories.forall(tymem1 => tymem1.result match {
+    override def <=(a1: TypeMemories[T,F], a2: TypeMemories[T,F]): Boolean = a1.memories.forall(tymem1 => tymem1.result match {
       case SuccessResult(t1) =>
         a2.memories.exists(tymem2 => tymem2.result match {
           case SuccessResult(t2) =>
@@ -309,10 +313,11 @@ case class TypeMemoriesOps(module: Module, refinements: Refinements) {
                 Lattice[TypeStore].<=(tymem1.store, tymem2.store)
               case _ => false
             })
-          case Fail =>
+          case Fail(refin1) =>
             a2.memories.exists(tymem2 => tymem2.result match {
-              case ExceptionalResult(Fail) =>
-                Lattice[TypeStore].<=(tymem1.store, tymem2.store)
+              case ExceptionalResult(Fail(refin2)) =>
+                Lattice[F].<=(refin1, refin2) &&
+                  Lattice[TypeStore].<=(tymem1.store, tymem2.store)
               case _ => false
             })
           case Error(_) =>
@@ -324,9 +329,9 @@ case class TypeMemoriesOps(module: Module, refinements: Refinements) {
         }
     })
 
-    override def widen(a1: TypeMemories[T], a2: TypeMemories[T], depth: Int): TypeMemories[T] =
+    override def widen(a1: TypeMemories[T,F], a2: TypeMemories[T,F], depth: Int): TypeMemories[T,F] =
       upperBound(a1, a2, Lattice[TypeStore].widen(_,_,depth),
-        Lattice[T].widen(_,_,depth),
+        Lattice[T].widen(_,_,depth), Lattice[F].widen(_,_,depth),
         Lattice[VoideableRefinementType].widen(_,_,depth))
   }
 }

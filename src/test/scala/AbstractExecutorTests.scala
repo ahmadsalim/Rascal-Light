@@ -12,12 +12,12 @@ import syntax.Type
 abstract class AbstractExecutorTests(loggername: String) extends FlatSpec with Matchers {
   val logger = Logger(LoggerFactory.getLogger(loggername))
 
-  private def checkError(exres: Exceptional[VoideableRefinementType]) = {
+  private def checkError(exres: Exceptional[VoideableRefinementType, Unit]) = {
     exres shouldNot be(an[Error])
   }
 
   protected
-  def memsOK(module: Module, refinements: Refinements, mems: TypeMemories[VoideableRefinementType], targetType: Type): Unit = {
+  def memsOK(module: Module, refinements: Refinements, mems: TypeMemories[VoideableRefinementType, Unit], targetType: Type): Unit = {
     logger.info("=" * 100)
     refinements.prettyDefs.sorted.foreach(x => logger.info(x))
     logger.info(TypeMemories.pretty(mems))

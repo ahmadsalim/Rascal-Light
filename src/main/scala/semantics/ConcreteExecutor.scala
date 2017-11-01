@@ -63,7 +63,7 @@ case class ConcreteExecutor(module: Module) {
 
   private
   def ifFail[A](rs1: Result[A], v:A): A = rs1 match {
-    case ExceptionalResult(Fail) => v
+    case ExceptionalResult(Fail(())) => v
     case SuccessResult(v_) => v_
     case _ => throw new UnsupportedOperationException(s"ifFail($rs1, $v)")
   }
@@ -269,8 +269,8 @@ case class ConcreteExecutor(module: Module) {
   }
 
   def combineVals(cvres: Result[Value], cvsres: Result[List[Value]], cvl: Value, cvls: List[Value]): Result[List[Value]] = {
-    if (cvres == ExceptionalResult(Fail) &&
-         cvsres == ExceptionalResult(Fail)) ExceptionalResult(Fail)
+    if (cvres == ExceptionalResult(Fail(())) &&
+         cvsres == ExceptionalResult(Fail(()))) ExceptionalResult(Fail(()))
     else {
       SuccessResult(ifFail(cvres, cvl) :: ifFail(cvsres, cvls))
     }
@@ -280,13 +280,13 @@ case class ConcreteExecutor(module: Module) {
   def evalTD(localVars: Map[VarName, Type], store: Store, scrutineeval: Value, cases: List[Case], break: Boolean): (Result[Value], Store) = {
     def evalTDAll(vals: List[Value], store: Store): (Result[List[Value]], Store) =
       vals match {
-        case Nil => (ExceptionalResult(Fail), store)
+        case Nil => (ExceptionalResult(Fail(())), store)
         case cvl::cvls =>
           val (cvres, store__) = evalTD(localVars, store, cvl, cases, break)
           def evalRest = {
             val (cvsres, store_) = evalTDAll(cvls, store__)
             cvsres match {
-              case SuccessResult(_) | ExceptionalResult(Fail) => (combineVals(cvres, cvsres, cvl, cvls), store_)
+              case SuccessResult(_) | ExceptionalResult(Fail(())) => (combineVals(cvres, cvsres, cvl, cvls), store_)
               case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
             }
           }
@@ -294,7 +294,7 @@ case class ConcreteExecutor(module: Module) {
             case SuccessResult(cvl_) =>
               if (break) (SuccessResult(cvl_ :: cvls), store__)
               else evalRest
-            case ExceptionalResult(Fail) => evalRest
+            case ExceptionalResult(Fail(())) => evalRest
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
       }
@@ -305,7 +305,7 @@ case class ConcreteExecutor(module: Module) {
        val (cvsres, store_) = evalTDAll(value.children, store__)
        cvsres match {
          case SuccessResult(cvs) => (reconstruct(vl, cvs), store_)
-         case ExceptionalResult(Fail) => (scres, store_)
+         case ExceptionalResult(Fail(())) => (scres, store_)
          case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
        }
      }
@@ -313,7 +313,7 @@ case class ConcreteExecutor(module: Module) {
       case SuccessResult(vl) =>
         if (break) (SuccessResult(vl), store__)
         else evalRest(scres, vl)
-      case ExceptionalResult(Fail) => evalRest(scres, scrutineeval)
+      case ExceptionalResult(Fail(())) => evalRest(scres, scrutineeval)
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
      }
    }
@@ -322,13 +322,13 @@ case class ConcreteExecutor(module: Module) {
   def evalBU(localVars: Map[VarName, Type], store: Store, scrutineeval: Value, cases: List[Case], break: Boolean): (Result[Value], Store) = {
     def evalBUAll(vals: List[Value], store: Store): (Result[List[Value]], Store) =
       vals match {
-        case Nil => (ExceptionalResult(Fail), store)
+        case Nil => (ExceptionalResult(Fail(())), store)
         case cvl::cvls =>
           val (cvres, store__) = evalBU(localVars, store, cvl, cases, break)
           def evalRest = {
             val (cvsres, store_) = evalBUAll(cvls, store__)
             cvsres match {
-              case SuccessResult(_) | ExceptionalResult(Fail) => (combineVals(cvres, cvsres, cvl, cvls), store_)
+              case SuccessResult(_) | ExceptionalResult(Fail(())) => (combineVals(cvres, cvsres, cvl, cvls), store_)
               case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
             }
           }
@@ -336,7 +336,7 @@ case class ConcreteExecutor(module: Module) {
             case SuccessResult(cvl_) =>
               if (break) (SuccessResult(cvl_ :: cvls), store__)
               else evalRest
-            case ExceptionalResult(Fail) => evalRest
+            case ExceptionalResult(Fail(())) => evalRest
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
       }
@@ -350,13 +350,13 @@ case class ConcreteExecutor(module: Module) {
             case SuccessResult(cvl2) =>
               val (cvres2, store_) = evalCases(localVars, store__, cvl2, cases)
               cvres2 match {
-                case SuccessResult(_) | ExceptionalResult(Fail) => (SuccessResult(ifFail(cvres2, cvl2)), store_)
+                case SuccessResult(_) | ExceptionalResult(Fail(())) => (SuccessResult(ifFail(cvres2, cvl2)), store_)
                 case ExceptionalResult(exres) => (ExceptionalResult(exres), store_)
               }
             case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
           }
         }
-      case ExceptionalResult(Fail) => evalCases(localVars, store__, scrutineeval, cases)
+      case ExceptionalResult(Fail(())) => evalCases(localVars, store__, scrutineeval, cases)
       case ExceptionalResult(exres) => (ExceptionalResult(exres), store__)
     }
   }
@@ -386,7 +386,7 @@ case class ConcreteExecutor(module: Module) {
         }
     }
     res match {
-      case ExceptionalResult(Fail) => (SuccessResult(scrutineeval), store_)
+      case ExceptionalResult(Fail(())) => (SuccessResult(scrutineeval), store_)
       case _ => (res, store_)
     }
   }
@@ -395,21 +395,21 @@ case class ConcreteExecutor(module: Module) {
   def evalCases(localVars: Map[VarName, Type], store : Store, scrutineeval: Value, cases: List[Case]): (Result[Value], Store) = {
     def evalCase(store: Store, action: Expr, envs: Stream[Pure, Map[VarName, Value]]): (Result[Value], Store) =
       envs.head.toList match {
-        case Nil => (ExceptionalResult(Fail), store)
+        case Nil => (ExceptionalResult(Fail(())), store)
         case env :: _ =>
           val (actres, store_) = evalLocal(localVars, Store(store.map ++ env), action)
           actres match {
-            case ExceptionalResult(Fail) => evalCase(store, action, envs.tail)
+            case ExceptionalResult(Fail(())) => evalCase(store, action, envs.tail)
             case _ => (actres, Store(store_.map -- env.keySet))
           }
       }
     cases match {
-      case Nil => (ExceptionalResult(Fail), store)
+      case Nil => (ExceptionalResult(Fail(())), store)
       case Case(cspatt, csaction) :: css =>
         val envs = matchPatt(store, scrutineeval, cspatt)
         val (cres, store_) = evalCase(store, csaction, envs)
         cres match {
-          case ExceptionalResult(Fail) => evalCases(localVars, store, scrutineeval, css)
+          case ExceptionalResult(Fail(())) => evalCases(localVars, store, scrutineeval, css)
           case _ => (cres, store_)
         }
     }
@@ -613,7 +613,7 @@ case class ConcreteExecutor(module: Module) {
           case SuccessResult(caseval) => (caseval.point[Result], store_)
           case ExceptionalResult(exres) =>
             exres match {
-              case Fail => (scrval.point[Result], store_)
+              case Fail(()) => (scrval.point[Result], store_)
               case _ => (ExceptionalResult(exres), store_)
             }
         }
@@ -631,7 +631,7 @@ case class ConcreteExecutor(module: Module) {
             (caseval.point[Result], store_)
           case ExceptionalResult(exres) =>
             exres match {
-              case Fail => (BottomValue.point[Result], store_)
+              case Fail(()) => (BottomValue.point[Result], store_)
               case _ => (ExceptionalResult(exres), store_)
             }
         }
@@ -729,7 +729,7 @@ case class ConcreteExecutor(module: Module) {
               exres match {
                 case Return(value) => funcallsuccess(value)
                 case Throw(value) => (ExceptionalResult(Throw(value)), store_)
-                case Break | Continue | Fail => (ExceptionalResult(Error(Set(EscapedControlOperator))), store_)
+                case Break | Continue | Fail(()) => (ExceptionalResult(Error(Set(EscapedControlOperator))), store_)
                 case _ => (ExceptionalResult(exres), store_)
               }
           }
@@ -885,7 +885,7 @@ case class ConcreteExecutor(module: Module) {
       case VisitExpr(strategy, scrutinee, cases) => evalVisit(localVars, store, strategy, scrutinee, cases)
       case BreakExpr => (ExceptionalResult(Break), store)
       case ContinueExpr => (ExceptionalResult(Continue), store)
-      case FailExpr => (ExceptionalResult(Fail), store)
+      case FailExpr => (ExceptionalResult(Fail(())), store)
       case LocalBlockExpr(vardefs, exprs) => evalBlock(localVars, store, vardefs, exprs)
       case ForExpr(enum, body) => evalFor(localVars, store, enum, body)
       case WhileExpr(cond, body) => evalWhile(localVars, store, cond, body)
