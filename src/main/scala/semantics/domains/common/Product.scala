@@ -5,7 +5,7 @@ package semantics.domains.common
   */
 object Product {
 
-  implicit def cartesianLattice[E1 : Lattice, E2 : Lattice] = new Lattice[(E1, E2)] {
+  implicit def cartesianLattice[E1 : Lattice, E2 : Lattice]: Lattice[(E1, E2)] = new Lattice[(E1, E2)] {
     override def bot: (E1, E2) = (Lattice[E1].bot, Lattice[E2].bot)
 
     override def top: (E1, E2) = (Lattice[E1].top, Lattice[E2].top)

@@ -9,35 +9,35 @@ sealed trait AccessPath[+T]
 case class MapAccessPath[T](value: T) extends AccessPath[T]
 case class FieldAccessPath(fieldName: FieldName) extends AccessPath[Nothing]
 
-sealed trait ResultV[+V,+T] {
+sealed trait ResultV[+V,+T,+F] {
   def kind: String
 }
-case class SuccessResult[T](t: T) extends ResultV[Nothing,T] {
+case class SuccessResult[T](t: T) extends ResultV[Nothing,T,Nothing] {
   override def kind: String = productPrefix
 }
-case class ExceptionalResult[V,T](exres: Exceptional[V]) extends ResultV[V,T] {
+case class ExceptionalResult[V,T,F](exres: Exceptional[V,F]) extends ResultV[V,T,F] {
   override def kind: String = exres.kind
 }
 
-sealed trait Exceptional[+T] {
+sealed trait Exceptional[+T,+F] {
   def kind: String
 }
-case class Return[T](value: T) extends Exceptional[T] {
+case class Return[T](value: T) extends Exceptional[T,Nothing] {
   override def kind: String = productPrefix
 }
-case class Throw[T](value: T) extends Exceptional[T] {
+case class Throw[T](value: T) extends Exceptional[T,Nothing] {
   override def kind: String = productPrefix
 }
-case object Break extends Exceptional[Nothing] {
+case object Break extends Exceptional[Nothing,Nothing] {
   override def kind: String = productPrefix
 }
-case object Continue extends Exceptional[Nothing] {
+case object Continue extends Exceptional[Nothing,Nothing] {
   override def kind: String = productPrefix
 }
-case object Fail extends Exceptional[Nothing] {
+case class Fail[F](refinement: F) extends Exceptional[Nothing,F] {
   override def kind: String = productPrefix
 }
-case class Error(kinds: Set[ErrorKind]) extends Exceptional[Nothing] {
+case class Error(kinds: Set[ErrorKind]) extends Exceptional[Nothing, Nothing] {
   override def kind: String = productPrefix
 
   override def toString: TypeName = "Error(...)"
