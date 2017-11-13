@@ -28,12 +28,15 @@ case object NoRefinementType extends RefinementType
 case object ValueRefinementType extends RefinementType
 
 sealed trait RefinementChildren[RT] {
+  def isFixed: Boolean
   def map[RT2](f: RT => RT2): RefinementChildren[RT2]
 }
 case class FixedSeqChildren[RT](children: List[RT]) extends RefinementChildren[RT] {
+  override def isFixed: Boolean = true
   override def map[RT2](f: (RT) => RT2): RefinementChildren[RT2] = FixedSeqChildren(children.map(f))
 }
 case class ArbitrarySeqChildren[RT](childty: RT, size: Intervals.Positive.Interval) extends RefinementChildren[RT] {
+  override def isFixed: Boolean = false
   override def map[RT2](f: (RT) => RT2): RefinementChildren[RT2] = ArbitrarySeqChildren(f(childty), size)
 }
 

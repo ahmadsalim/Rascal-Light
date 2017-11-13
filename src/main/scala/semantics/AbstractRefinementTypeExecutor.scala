@@ -1428,7 +1428,8 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                 case TypeMemory(ctyres, store__) =>
                   def evalRest: TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
                     Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs {
-                      val ctysmems = memoFixAll(crtys, store__, memoall.updated(cs, (store, prevRes)))
+                      val newmemoall = if (!cs.isFixed) memoall.updated(cs, (store, prevRes)) else memoall
+                      val ctysmems = memoFixAll(crtys, store__, newmemoall)
                       ctysmems.memories.map { case TypeMemory(ctysres, store_) =>
                         ctysres match {
                           case SuccessResult(_) | ExceptionalResult(Fail(_)) =>
@@ -1457,10 +1458,14 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
             }
           }
           val newRes = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(nilRes.toSet ++ consRes.toSet)
-          if (Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].<=(newRes, prevRes)) newRes
-          else {
-            val widened = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].widen(prevRes, newRes)
-            go(cs, store, widened)
+          if (!cs.isFixed) {
+            if (Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].<=(newRes, prevRes)) newRes
+            else {
+              val widened = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].widen(prevRes, newRes)
+              go(cs, store, widened)
+            }
+          } else {
+            newRes
           }
         }
         memoall.get(cs).fold(go(cs, store, Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].bot)) {
@@ -1551,7 +1556,8 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                 case TypeMemory(crtyres, store__) =>
                   def evalRest:
                   TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
-                    val chres = memoFixAll(crtys, store__, memoall.updated(cs, (store, prevRes)))
+                    val newmemoall = if (!cs.isFixed) memoall.updated(cs, (store, prevRes)) else memoall
+                    val chres = memoFixAll(crtys, store__, newmemoall)
                     Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(chres.memories.map {
                       case TypeMemory(crtysres, store_) =>
                         crtysres match {
@@ -1582,11 +1588,13 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
             }
           }
           val newRes = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(nilRes.toSet ++ consRes.toSet)
-          if (Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].<=(newRes, prevRes)) newRes
-          else {
-            val widened = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].widen(prevRes, newRes)
-            go(cs, store, widened)
-          }
+          if (!cs.isFixed) {
+            if (Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].<=(newRes, prevRes)) newRes
+            else {
+              val widened = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].widen(prevRes, newRes)
+              go(cs, store, widened)
+            }
+          } else newRes
         }
         memoall.get(cs).fold(go(cs, store, Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].bot)) {
           case (prevstore, prevres) =>
