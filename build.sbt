@@ -21,6 +21,8 @@ scalaVersion := "2.12.1"
 
 resolvers += Resolver.sonatypeRepo("releases")
 
+libraryDependencies += "com.twitter" %% "util-collection" % "17.11.0"
+
 libraryDependencies += "org.scalaz" %% "scalaz-core" % "7.2.9"
 libraryDependencies += "co.fs2" %% "fs2-core" % "0.9.4"
 libraryDependencies += "org.bitbucket.inkytonik.kiama" %% "kiama" % "2.0.0"

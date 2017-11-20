@@ -89,22 +89,23 @@ case class ConcreteExecutor(module: Module) {
                    extract: Value => Option[List[Value]],
                    construct: List[Value] => Value,
                    allPartitions: (List[Value]) => Stream[Pure, List[Value]],
+                   allHeads: (List[Value]) => Stream[Pure, Value],
                    restPartition: (List[Value], List[Value]) => Option[List[Value]]): Stream[Pure, Map[VarName, Value]] = spatts match {
       case Nil => if (vals.isEmpty) Stream() else Stream(Map())
       case sp :: sps =>
         sp match {
-          case OrdinaryPatt(p) => vals match {
-            case Nil => Stream()
-            case v :: vs =>
+          case OrdinaryPatt(p) =>
+            allHeads(vals).flatMap { v =>
+              val vs = restPartition(List(v), vals)
               merge(List(matchPatt(store, v, p),
-                matchPattAll(store, vs, sps, extract, construct, allPartitions, restPartition)))
-          }
+                matchPattAll(store, vs.get, sps, extract, construct, allPartitions, allHeads, restPartition)))
+            }
           case ArbitraryPatt(sx) =>
             if (store.map.contains(sx)) {
               extract(store.map(sx)) match {
                 case Some(vs) =>
                   restPartition(vs, vals) match {
-                    case Some(vs_) => matchPattAll(store, vs_, sps, extract, construct, allPartitions, restPartition)
+                    case Some(vs_) => matchPattAll(store, vs_, sps, extract, construct, allPartitions, allHeads, restPartition)
                     case None => Stream()
                   }
                 case None => Stream()
@@ -113,7 +114,7 @@ case class ConcreteExecutor(module: Module) {
             else
               allPartitions(vals).flatMap(part =>
                 matchPattAll(Store(store.map.updated(sx, construct(part))), // Optimization to avoid heavy back-tracking
-                  restPartition(part, vals).get, sps, extract, construct, allPartitions, restPartition).map(_.updated(sx, construct(part))))
+                  restPartition(part, vals).get, sps, extract, construct, allPartitions, allHeads, restPartition).map(_.updated(sx, construct(part))))
         }
     }
 
@@ -154,9 +155,10 @@ case class ConcreteExecutor(module: Module) {
           vs.foldRight(Stream(List[Value]())) { (x, sxs) =>
             Stream(List()) append sxs.map(x :: _)
           }
+        def heads(vs: List[Value]): Stream[Pure, Value] = Stream.emits(vs.headOption.toSeq)
         tval match {
           case ListValue(vals) =>
-            matchPattAll(store, vals, spatts.toList, extractList, ListValue, sublists, restList)
+            matchPattAll(store, vals, spatts.toList, extractList, ListValue, sublists, heads, restList)
           case _ => Stream()
         }
       case SetPatt(spatts) =>
@@ -172,9 +174,10 @@ case class ConcreteExecutor(module: Module) {
         }
         def subsets(vs: List[Value]): Stream[Pure, List[Value]] =
           Stream.emits(vs.toSet.subsets.toList).map(_.toList)
+        def heads(vs: List[Value]): Stream[Pure, Value] = Stream.emits(vs)
         tval match {
           case SetValue(vals) =>
-            matchPattAll(store, vals.toList, spatts.toList, extractSet, vs => SetValue(vs.toSet), subsets, restSet)
+            matchPattAll(store, vals.toList, spatts.toList, extractSet, vs => SetValue(vs.toSet), subsets, heads, restSet)
           case _ => Stream()
         }
       case NegationPatt(inpatt) =>
