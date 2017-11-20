@@ -17,6 +17,7 @@ import scalaz.syntax.either._
 import IntegerW._
 import Intervals.Positive.{Lattice => PosLattice}
 import Intervals.Unbounded.{Lattice => UnboundedLattice}
+import semantics.domains.abstracting.RefinementChildren.{getCons, getNil, makeCons, makeNil}
 
 import scala.reflect.ClassTag
 import util.Memoization._
@@ -43,6 +44,12 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
   private
   type FunMemo = Map[(VarName, List[Type]), ((List[VoideableRefinementType], TypeStore), TypeMemories[VoideableRefinementType, Unit])]
+
+  private
+  type VMemo = Map[(Type, Set[ConsName]), ((VoideableRefinementType, TypeStore), TypeMemories[VoideableRefinementType, VoideableRefinementType])]
+
+  private
+  type VMemoAll = Map[RefinementChildren[RefinementType], (TypeStore, TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]])]
 
   private
   def ifFail[T](res: TypeResult[T,T]): T = res match {
@@ -1418,262 +1425,268 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     }
   }
 
-  def evalTD(localVars: Map[VarName, Type], store: TypeStore, scrtyp: VoideableRefinementType, cases: List[Case], break: Boolean, funMemo: FunMemo): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
-    import RefinementChildren._
-    type VMemo = Map[(Type, Set[ConsName]), ((VoideableRefinementType, TypeStore), TypeMemories[VoideableRefinementType, VoideableRefinementType])]
-    type VMemoAll = Map[RefinementChildren[RefinementType], (TypeStore, TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]])]
-    def evalTDAll(cs: RefinementChildren[RefinementType], store: TypeStore, memo: VMemo): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
-      def memoFixAll(cs: RefinementChildren[RefinementType], store: TypeStore, memoall: VMemoAll): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
-        @tailrec
-        def go(cs: RefinementChildren[RefinementType], store: TypeStore, prevRes: TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
-          val nilRes: Option[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]] = {
-            if (getNil(cs))
-              Some(TypeMemories(Set(TypeMemory(ExceptionalResult(Fail(makeNil(cs).map(VoideableRefinementType(possiblyVoid = false, _)))), store))))
-            else None
-          }
-          val consRes: Option[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]] = {
-            getCons(cs).map { case (crty, crtys) =>
-              val ctymems = memoFix(VoideableRefinementType(possiblyVoid = false, crty), store, memo)
-              val resmems = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(ctymems.memories.map {
-                case TypeMemory(ctyres, store__) =>
-                  def evalRest: TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
-                    Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs {
-                      val newmemoall = if (!cs.isFixed) memoall.updated(cs, (store, prevRes)) else memoall
-                      val ctysmems = memoFixAll(crtys, store__, newmemoall)
-                      ctysmems.memories.map { case TypeMemory(ctysres, store_) =>
-                        ctysres match {
-                          case SuccessResult(_) | ExceptionalResult(Fail(_)) =>
-                            val combineres = combineVals(ctyres, ctysres)
-                            TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(combineres, store_)))
-                          case ExceptionalResult(exres) =>
-                            TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(ExceptionalResult(exres), store_)))
-                        }
+  private
+  def evalTDAll(localVars: Map[VarName, Type], break: Boolean, cases: List[Case], funMemo: FunMemo, cs: RefinementChildren[RefinementType], store: TypeStore, memo: VMemo): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
+    def memoFixAll(cs: RefinementChildren[RefinementType], store: TypeStore, memoall: VMemoAll): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
+      @tailrec
+      def go(cs: RefinementChildren[RefinementType], store: TypeStore, prevRes: TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
+        val nilRes: Option[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]] = {
+          if (getNil(cs))
+            Some(TypeMemories(Set(TypeMemory(ExceptionalResult(Fail(makeNil(cs).map(VoideableRefinementType(possiblyVoid = false, _)))), store))))
+          else None
+        }
+        val consRes: Option[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]] = {
+          getCons(cs).map { case (crty, crtys) =>
+            val ctymems = evalTDMemoFix(localVars, break, cases, funMemo, VoideableRefinementType(possiblyVoid = false, crty), store, memo)
+            val resmems = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(ctymems.memories.map {
+              case TypeMemory(ctyres, store__) =>
+                def evalRest: TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
+                  Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs {
+                    val newmemoall = if (!cs.isFixed) memoall.updated(cs, (store, prevRes)) else memoall
+                    val ctysmems = memoFixAll(crtys, store__, newmemoall)
+                    ctysmems.memories.map { case TypeMemory(ctysres, store_) =>
+                      ctysres match {
+                        case SuccessResult(_) | ExceptionalResult(Fail(_)) =>
+                          val combineres = combineVals(ctyres, ctysres)
+                          TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(combineres, store_)))
+                        case ExceptionalResult(exres) =>
+                          TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(ExceptionalResult(exres), store_)))
                       }
                     }
                   }
-
-                  ctyres match {
-                    case SuccessResult(cty_) =>
-                      if (break)
-                        TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](
-                          Set(TypeMemory(SuccessResult(makeCons(cty_, crtys.map(VoideableRefinementType(possiblyVoid = false, _)))), store__)))
-                      else evalRest
-                    case ExceptionalResult(Fail(_)) => evalRest
-                    case ExceptionalResult(exres) =>
+                }
+                ctyres match {
+                  case SuccessResult(cty_) =>
+                    if (break)
                       TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](
-                        Set(TypeMemory(ExceptionalResult(exres).asInstanceOf[TypeResult[Nothing, Nothing]], store__)))
-                  }
-              })
-              resmems
-            }
-          }
-          val newRes = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(nilRes.toSet ++ consRes.toSet)
-          if (!cs.isFixed) {
-            if (Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].<=(newRes, prevRes)) newRes
-            else {
-              val widened = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].widen(prevRes, newRes)
-              go(cs, store, widened)
-            }
-          } else {
-            newRes
+                        Set(TypeMemory(SuccessResult(makeCons(cty_, crtys.map(VoideableRefinementType(possiblyVoid = false, _)))), store__)))
+                    else evalRest
+                  case ExceptionalResult(Fail(_)) => evalRest
+                  case ExceptionalResult(exres) =>
+                    TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](
+                      Set(TypeMemory(ExceptionalResult(exres).asInstanceOf[TypeResult[Nothing, Nothing]], store__)))
+                }
+            })
+            resmems
           }
         }
-        memoall.get(cs).fold(go(cs, store, Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].bot)) {
-          case (prevstore, prevres) =>
-            if (Lattice[TypeStore].<=(store, prevstore)) prevres
-            else {
-              val storewid = Lattice[TypeStore].widen(prevstore, store)
-              go(cs, storewid, Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].bot)
-            }
-        }
-      }
-      memoFixAll(cs, store, Map())
-    }
-
-    lazy val memoFix: (VoideableRefinementType, TypeStore, VMemo) => TypeMemories[VoideableRefinementType, VoideableRefinementType] = memoized[VoideableRefinementType, TypeStore, VMemo, TypeMemories[VoideableRefinementType, VoideableRefinementType]](memocacheSize) { (scrtyp, store, memo) =>
-      def go(scrtyp: VoideableRefinementType, store: TypeStore, prevRes: TypeMemories[VoideableRefinementType, VoideableRefinementType]): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
-        val scmems = evalCases(localVars, store, scrtyp, cases, funMemo)
-        val newRes = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(scmems.memories.map { case TypeMemory(scres, store__) =>
-            def evalRest(scres: TypeResult[VoideableRefinementType, VoideableRefinementType]): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
-              val ty = ifFail(scres)
-              val res = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(children(ty).map { case (nnrtyp, ctys) =>
-                val chres = evalTDAll(ctys, store__, memo.updated(memoVisitKey(scrtyp), ((scrtyp, store), prevRes)))
-                Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(chres.memories.map { case TypeMemory(ctysres, store_) =>
-                  ctysres match {
-                    case SuccessResult(ctys2) =>
-                      TypeMemories[VoideableRefinementType, VoideableRefinementType](
-                        reconstruct(nnrtyp, ctys2).map(TypeMemory[VoideableRefinementType, VoideableRefinementType](_, store_)))
-                    case ExceptionalResult(Fail(failrestys)) =>
-                      val newscres = scres match {
-                        case SuccessResult(_) => SuccessResult(safeReconstruct(nnrtyp, failrestys))
-                        case ExceptionalResult(Fail(_)) => ExceptionalResult(Fail(safeReconstruct(nnrtyp, failrestys)))
-                        case ExceptionalResult(exres) => ExceptionalResult(exres)
-                      }
-                      TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(newscres, store_)))
-                    case ExceptionalResult(exres) =>
-                       TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres).asInstanceOf[TypeResult[Nothing, Nothing]], store_)))
-                  }
-                })
-              })
-              res
-            }
-            scres match {
-              case SuccessResult(ty) =>
-                if (break)
-                  TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(SuccessResult(ty), store__)))
-                else evalRest(scres)
-              case ExceptionalResult(Fail(_)) => evalRest(scres)
-              case ExceptionalResult(exres) =>
-                TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store__)))
-            }
-        })
-        if (Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].<=(newRes, prevRes)) newRes
-        else {
-          val widened = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].widen(prevRes, newRes)
-          go(scrtyp, store, widened)
-        }
-      }
-      memo.get(memoVisitKey(scrtyp)).fold(
-        go(scrtyp, store, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot)) { case ((prevscrtyp, prevstore), prevres) =>
-          if (Lattice[VoideableRefinementType].<=(scrtyp, prevscrtyp)) prevres
+        val newRes = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(nilRes.toSet ++ consRes.toSet)
+        if (!cs.isFixed) {
+          if (Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].<=(newRes, prevRes)) newRes
           else {
-            val scrtypwid = Lattice[VoideableRefinementType].widen(prevscrtyp, scrtyp)
+            val widened = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].widen(prevRes, newRes)
+            go(cs, store, widened)
+          }
+        } else {
+          newRes
+        }
+      }
+      memoall.get(cs).fold(go(cs, store, Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].bot)) {
+        case (prevstore, prevres) =>
+          if (Lattice[TypeStore].<=(store, prevstore)) prevres
+          else {
             val storewid = Lattice[TypeStore].widen(prevstore, store)
-            go(scrtypwid, storewid, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot)
+            go(cs, storewid, Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].bot)
           }
       }
     }
-    memoFix(scrtyp, store, Map())
+    memoFixAll(cs, store, Map())
   }
 
-  def evalBU(localVars: Map[VarName, Type], store: TypeStore, scrtyp: VoideableRefinementType, cases: List[Case], break: Boolean, funMemo: FunMemo): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
-    import RefinementChildren._
-    type VMemo = Map[(Type, Set[ConsName]), ((VoideableRefinementType, TypeStore), TypeMemories[VoideableRefinementType, VoideableRefinementType])]
-    type VMemoAll = Map[RefinementChildren[RefinementType], (TypeStore, TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]])]
-    def evalBUAll(cs: RefinementChildren[RefinementType], store: TypeStore, memo: VMemo): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
-      def memoFixAll(cs: RefinementChildren[RefinementType], store: TypeStore, memoall: VMemoAll): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
-        def go(cs: RefinementChildren[RefinementType], store: TypeStore, prevRes: TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
-          val nilRes: Option[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]] = {
-            if (getNil(cs))
-              Some(TypeMemories(Set(TypeMemory(
-                ExceptionalResult(Fail(makeNil(cs).map(VoideableRefinementType(possiblyVoid = false, _)))), store))))
-            else None
-          }
-          val consRes: Option[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]] = {
-            getCons(cs).map { case (crty, crtys) =>
-              val crtymems = memoFix(store, VoideableRefinementType(possiblyVoid = false, crty), memo)
-              val resmems = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(crtymems.memories.map {
-                case TypeMemory(crtyres, store__) =>
-                  def evalRest:
-                  TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
-                    val newmemoall = if (!cs.isFixed) memoall.updated(cs, (store, prevRes)) else memoall
-                    val chres = memoFixAll(crtys, store__, newmemoall)
-                    Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(chres.memories.map {
-                      case TypeMemory(crtysres, store_) =>
-                        crtysres match {
-                          case SuccessResult(_) =>
-                            val combineres = combineVals(crtyres, crtysres)
-                            TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(combineres, store_)))
-                          case ExceptionalResult(Fail(_)) =>
-                            val combineres = combineVals(crtyres, crtysres)
-                            TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(combineres, store_)))
-                          case ExceptionalResult(exres) =>
-                            TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(ExceptionalResult(exres), store_)))
-                        }
-                    })
-                  }
+  @tailrec
+  private final
+  def evalTDMemoFixGo(localVars: Map[VarName, Type], break: Boolean, cases: List[Case], funMemo: FunMemo, scrtyp: VoideableRefinementType, store: TypeStore, prevRes: TypeMemories[VoideableRefinementType, VoideableRefinementType], memo: VMemo): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
+    val scmems = evalCases(localVars, store, scrtyp, cases, funMemo)
+    val newRes = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(scmems.memories.map { case TypeMemory(scres, store__) =>
+      def evalRest(scres: TypeResult[VoideableRefinementType, VoideableRefinementType]): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
+        val ty = ifFail(scres)
+        val res = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(children(ty).map { case (nnrtyp, ctys) =>
+          val chres = evalTDAll(localVars, break, cases, funMemo, ctys, store__, memo.updated(memoVisitKey(scrtyp), ((scrtyp, store), prevRes)))
+          Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(chres.memories.map { case TypeMemory(ctysres, store_) =>
+            ctysres match {
+              case SuccessResult(ctys2) =>
+                TypeMemories[VoideableRefinementType, VoideableRefinementType](
+                  reconstruct(nnrtyp, ctys2).map(TypeMemory[VoideableRefinementType, VoideableRefinementType](_, store_)))
+              case ExceptionalResult(Fail(failrestys)) =>
+                val newscres = scres match {
+                  case SuccessResult(_) => SuccessResult(safeReconstruct(nnrtyp, failrestys))
+                  case ExceptionalResult(Fail(_)) => ExceptionalResult(Fail(safeReconstruct(nnrtyp, failrestys)))
+                  case ExceptionalResult(exres) => ExceptionalResult(exres)
+                }
+                TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(newscres, store_)))
+              case ExceptionalResult(exres) =>
+                TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres).asInstanceOf[TypeResult[Nothing, Nothing]], store_)))
+            }
+          })
+        })
+        res
+      }
+      scres match {
+        case SuccessResult(ty) =>
+          if (break)
+            TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(SuccessResult(ty), store__)))
+          else evalRest(scres)
+        case ExceptionalResult(Fail(_)) => evalRest(scres)
+        case ExceptionalResult(exres) =>
+          TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store__)))
+      }
+    })
+    if (Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].<=(newRes, prevRes)) newRes
+    else {
+      val widened = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].widen(prevRes, newRes)
+      evalTDMemoFixGo(localVars, break, cases, funMemo, scrtyp, store, widened, memo)
+    }
+  }
 
-                  crtyres match {
-                    case SuccessResult(crty_) =>
-                      if (break)
-                        TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(
-                          SuccessResult(makeCons(crty_, crtys.map(VoideableRefinementType(possiblyVoid = false, _)))), store__)))
-                      else evalRest
-                    case ExceptionalResult(Fail(_)) => evalRest
-                    case ExceptionalResult(exres) =>
-                      TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(ExceptionalResult(exres).asInstanceOf[TypeResult[Nothing, Nothing]], store__)))
-                  }
-              })
-              resmems
-            }
-          }
-          val newRes = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(nilRes.toSet ++ consRes.toSet)
-          if (!cs.isFixed) {
-            if (Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].<=(newRes, prevRes)) newRes
-            else {
-              val widened = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].widen(prevRes, newRes)
-              go(cs, store, widened)
-            }
-          } else newRes
+  private
+  lazy val evalTDMemoFix: (Map[VarName, Type], Boolean, List[Case], FunMemo, VoideableRefinementType, TypeStore, VMemo) => TypeMemories[VoideableRefinementType, VoideableRefinementType] =
+    memoized[Map[VarName, Type], Boolean, List[Case], FunMemo, VoideableRefinementType, TypeStore, VMemo, TypeMemories[VoideableRefinementType, VoideableRefinementType]](memocacheSize) { (localVars, break, cases, funMemo, scrtyp, store, memo) =>
+      memo.get(memoVisitKey(scrtyp)).fold(
+        evalTDMemoFixGo(localVars, break, cases, funMemo, scrtyp, store, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot, memo)) { case ((prevscrtyp, prevstore), prevres) =>
+        if (Lattice[VoideableRefinementType].<=(scrtyp, prevscrtyp)) prevres
+        else {
+          val scrtypwid = Lattice[VoideableRefinementType].widen(prevscrtyp, scrtyp)
+          val storewid = Lattice[TypeStore].widen(prevstore, store)
+          evalTDMemoFixGo(localVars, break, cases, funMemo, scrtypwid, storewid, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot, memo)
+      }
+    }
+  }
+
+  def evalTD(localVars: Map[VarName, Type], store: TypeStore, scrtyp: VoideableRefinementType, cases: List[Case], break: Boolean, funMemo: FunMemo): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
+    evalTDMemoFix(localVars, break, cases, funMemo, scrtyp, store, Map())
+  }
+
+  private
+  def evalBUAll(localVars: Map[VarName, Type], break: Boolean, cases: List[Case], funMemo: FunMemo, cs: RefinementChildren[RefinementType], store: TypeStore, memo: VMemo): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
+    def memoFixAll(cs: RefinementChildren[RefinementType], store: TypeStore, memoall: VMemoAll): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
+      @tailrec
+      def go(cs: RefinementChildren[RefinementType], store: TypeStore, prevRes: TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
+        val nilRes: Option[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]] = {
+          if (getNil(cs))
+            Some(TypeMemories(Set(TypeMemory(
+              ExceptionalResult(Fail(makeNil(cs).map(VoideableRefinementType(possiblyVoid = false, _)))), store))))
+          else None
         }
-        memoall.get(cs).fold(go(cs, store, Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].bot)) {
-          case (prevstore, prevres) =>
-            if (Lattice[TypeStore].<=(store, prevstore)) prevres
-            else {
-              val storewid = Lattice[TypeStore].widen(prevstore, store)
-              go(cs, storewid, Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].bot)
+        val consRes: Option[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]] = {
+          getCons(cs).map { case (crty, crtys) =>
+            val crtymems = evalBUMemoFix(localVars, break, cases, funMemo, store, VoideableRefinementType(possiblyVoid = false, crty), memo)
+            val resmems = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(crtymems.memories.map {
+              case TypeMemory(crtyres, store__) =>
+                def evalRest:
+                TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
+                  val newmemoall = if (!cs.isFixed) memoall.updated(cs, (store, prevRes)) else memoall
+                  val chres = memoFixAll(crtys, store__, newmemoall)
+                  Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(chres.memories.map {
+                    case TypeMemory(crtysres, store_) =>
+                      crtysres match {
+                        case SuccessResult(_) =>
+                          val combineres = combineVals(crtyres, crtysres)
+                          TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(combineres, store_)))
+                        case ExceptionalResult(Fail(_)) =>
+                          val combineres = combineVals(crtyres, crtysres)
+                          TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(combineres, store_)))
+                        case ExceptionalResult(exres) =>
+                          TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(ExceptionalResult(exres), store_)))
+                      }
+                  })
+                }
+
+                crtyres match {
+                  case SuccessResult(crty_) =>
+                    if (break)
+                      TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(
+                        SuccessResult(makeCons(crty_, crtys.map(VoideableRefinementType(possiblyVoid = false, _)))), store__)))
+                    else evalRest
+                  case ExceptionalResult(Fail(_)) => evalRest
+                  case ExceptionalResult(exres) =>
+                    TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]](Set(TypeMemory(ExceptionalResult(exres).asInstanceOf[TypeResult[Nothing, Nothing]], store__)))
+                }
+            })
+            resmems
+          }
+        }
+        val newRes = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].lubs(nilRes.toSet ++ consRes.toSet)
+        if (!cs.isFixed) {
+          if (Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].<=(newRes, prevRes)) newRes
+          else {
+            val widened = Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].widen(prevRes, newRes)
+            go(cs, store, widened)
+          }
+        } else newRes
+      }
+      memoall.get(cs).fold(go(cs, store, Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].bot)) {
+        case (prevstore, prevres) =>
+          if (Lattice[TypeStore].<=(store, prevstore)) prevres
+          else {
+            val storewid = Lattice[TypeStore].widen(prevstore, store)
+            go(cs, storewid, Lattice[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]].bot)
+          }
+      }
+    }
+    memoFixAll(cs, store, Map())
+  }
+
+  @tailrec
+  private final
+  def evalBUMemoFixGo(localVars: Map[VarName, Type], break: Boolean, cases: List[Case], funMemo: FunMemo, scrtyp: VoideableRefinementType, store: TypeStore, prevRes: TypeMemories[VoideableRefinementType, VoideableRefinementType], memo: VMemo): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
+    val newRes = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(children(scrtyp).map {
+      case (nnrtyp, crtys) =>
+        val chrmems = evalBUAll(localVars, break, cases, funMemo, crtys, store, memo.updated(memoVisitKey(scrtyp), ((scrtyp, store), prevRes)))
+        Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(chrmems.memories.map {
+          case TypeMemory(crtyres, store__) =>
+            crtyres match {
+              case SuccessResult(crtys2) =>
+                if (break) {
+                  TypeMemories[VoideableRefinementType, VoideableRefinementType](
+                    reconstruct(nnrtyp, crtys2).map(TypeMemory[VoideableRefinementType, VoideableRefinementType](_, store__)))
+                } else {
+                  Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(reconstruct(nnrtyp, crtys2).map {
+                    case SuccessResult(rty) =>
+                      val rtyresmems = evalCases(localVars, store__, rty, cases, funMemo)
+                      Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(rtyresmems.memories.map {
+                        case TypeMemory(rtyres, store_) =>
+                          rtyres match {
+                            case SuccessResult(vfres) =>
+                              TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(SuccessResult(vfres), store_)))
+                            case ExceptionalResult(Fail(failresty)) =>
+                              TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(SuccessResult(failresty), store_)))
+                            case ExceptionalResult(exres) =>
+                              TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store_)))
+                          }
+                      })
+                    case ExceptionalResult(exres) =>
+                      TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store__)))
+                  })
+                }
+              case ExceptionalResult(Fail(failrestys)) =>
+                evalCases(localVars, store__, safeReconstruct(nnrtyp, failrestys), cases, funMemo)
+              case ExceptionalResult(exres) =>
+                TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres).asInstanceOf[TypeResult[Nothing, Nothing]], store__)))
             }
+        })
+    })
+    if (Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].<=(newRes, prevRes)) newRes
+    else {
+      val widened = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].widen(prevRes, newRes)
+      evalBUMemoFixGo(localVars, break, cases, funMemo, scrtyp, store, widened, memo)
+    }
+  }
+
+  private
+  lazy val evalBUMemoFix: (Map[VarName, Type], Boolean, List[Case], FunMemo, TypeStore, VoideableRefinementType, VMemo) => TypeMemories[VoideableRefinementType, VoideableRefinementType] =
+    memoized[Map[VarName, Type], Boolean, List[Case], FunMemo, TypeStore, VoideableRefinementType, VMemo, TypeMemories[VoideableRefinementType, VoideableRefinementType]] (memocacheSize) { (localVars, break, cases, funMemo, store, scrtyp, memo) =>
+      memo.get(memoVisitKey(scrtyp)).fold(evalBUMemoFixGo(localVars, break, cases, funMemo, scrtyp, store, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot, memo)) { case ((prevscrtyp, prevstore), prevres) =>
+        if (Lattice[VoideableRefinementType].<=(scrtyp, prevscrtyp)) prevres
+        else {
+          val scrtypwid = Lattice[VoideableRefinementType].widen(prevscrtyp, scrtyp)
+          val storewid = Lattice[TypeStore].widen(prevstore, store)
+          evalBUMemoFixGo(localVars, break, cases, funMemo, scrtypwid, storewid, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot, memo)
         }
       }
-      memoFixAll(cs, store, Map())
     }
 
-    lazy val memoFix: (TypeStore, VoideableRefinementType, VMemo) => TypeMemories[VoideableRefinementType, VoideableRefinementType] =
-      memoized[TypeStore, VoideableRefinementType, VMemo, TypeMemories[VoideableRefinementType, VoideableRefinementType]] (memocacheSize) { (store, scrtyp, memo) =>
-        @tailrec
-        def go(scrtyp: VoideableRefinementType, store: TypeStore, prevRes: TypeMemories[VoideableRefinementType, VoideableRefinementType]): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
-          val newRes = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(children(scrtyp).map {
-            case (nnrtyp, crtys) =>
-              val chrmems = evalBUAll(crtys, store, memo.updated(memoVisitKey(scrtyp), ((scrtyp, store), prevRes)))
-              Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(chrmems.memories.map {
-                case TypeMemory(crtyres, store__) =>
-                  crtyres match {
-                    case SuccessResult(crtys2) =>
-                      if (break) {
-                        TypeMemories[VoideableRefinementType, VoideableRefinementType](
-                          reconstruct(nnrtyp, crtys2).map(TypeMemory[VoideableRefinementType, VoideableRefinementType](_, store__)))
-                      } else {
-                        Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(reconstruct(nnrtyp, crtys2).map {
-                          case SuccessResult(rty) =>
-                            val rtyresmems = evalCases(localVars, store__, rty, cases, funMemo)
-                            Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(rtyresmems.memories.map {
-                              case TypeMemory(rtyres, store_) =>
-                                rtyres match {
-                                  case SuccessResult(vfres) =>
-                                      TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(SuccessResult(vfres), store_)))
-                                  case ExceptionalResult(Fail(failresty)) =>
-                                      TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(SuccessResult(failresty), store_)))
-                                  case ExceptionalResult(exres) =>
-                                      TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store_)))
-                                }
-                            })
-                          case ExceptionalResult(exres) =>
-                            TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres), store__)))
-                        })
-                      }
-                    case ExceptionalResult(Fail(failrestys)) =>
-                      evalCases(localVars, store__, safeReconstruct(nnrtyp, failrestys), cases, funMemo)
-                    case ExceptionalResult(exres) =>
-                      TypeMemories[VoideableRefinementType, VoideableRefinementType](Set(TypeMemory(ExceptionalResult(exres).asInstanceOf[TypeResult[Nothing, Nothing]], store__)))
-                  }
-              })
-          })
-          if (Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].<=(newRes, prevRes)) newRes
-          else {
-            val widened = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].widen(prevRes, newRes)
-            go(scrtyp, store, widened)
-          }
-        }
-        memo.get(memoVisitKey(scrtyp)).fold(go(scrtyp, store, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot)) { case ((prevscrtyp, prevstore), prevres) =>
-          if (Lattice[VoideableRefinementType].<=(scrtyp, prevscrtyp)) prevres
-          else {
-            val scrtypwid = Lattice[VoideableRefinementType].widen(prevscrtyp, scrtyp)
-            val storewid = Lattice[TypeStore].widen(prevstore, store)
-            go(scrtypwid, storewid, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot)
-          }
-        }
-      }
-    memoFix(store, scrtyp, Map())
+  def evalBU(localVars: Map[VarName, Type], store: TypeStore, scrtyp: VoideableRefinementType, cases: List[Case], break: Boolean, funMemo: FunMemo): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
+    evalBUMemoFix(localVars, break, cases, funMemo, store, scrtyp, Map())
   }
 
   def evalVisitStrategy(strategy: Strategy, localVars: Map[VarName, Type], store: TypeStore, scrtyp: VoideableRefinementType, cases: List[Case], funMemo: FunMemo): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
