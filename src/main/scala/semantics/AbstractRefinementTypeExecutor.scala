@@ -987,8 +987,10 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     })
   }
 
-  def evalFunCall(localVars: Map[VarName, Type], store: TypeStore, functionName: VarName, args: Seq[Expr], funMemo: FunMemo): TypeMemories[VoideableRefinementType, Unit] =
-  {
+  lazy val evalFunCall:
+    (Map[VarName, Type], TypeStore, VarName, Seq[Expr], FunMemo) => TypeMemories[VoideableRefinementType, Unit] =
+   memoized[Map[VarName, Type], TypeStore, VarName, Seq[Expr], FunMemo,TypeMemories[VoideableRefinementType, Unit]](memocacheSize) {
+     (localVars, store, functionName, args, funMemo) =>
       def memoFix(argtys: List[VoideableRefinementType], store: TypeStore): TypeMemories[VoideableRefinementType, Unit] = {
       def go(argtys: List[VoideableRefinementType], store: TypeStore, prevRes: TypeMemories[VoideableRefinementType, Unit], reccount: Int): TypeMemories[VoideableRefinementType, Unit] = {
         val newFunMemo: FunMemo = funMemo.updated(functionName -> argtys.map(at => atyping.inferType(at.refinementType)), ((argtys, store), prevRes))
@@ -1099,7 +1101,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
         val paapairs = prevargtys.zip(argtys)
         val allLess = paapairs.forall { case (praty, aty) => Lattice[VoideableRefinementType].<=(aty, praty) }
         val memores =
-          if (allLess && Lattice[TypeStore].<=(prevstore, store)) prevres
+          if (allLess && Lattice[TypeStore].<=(store, prevstore)) prevres
           else {
             // Widen current input with previous input (strategy S2)
             val newargtys = paapairs.foldLeft(List[VoideableRefinementType]()) { (prevargtys, paap) =>
