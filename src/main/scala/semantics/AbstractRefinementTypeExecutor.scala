@@ -1,33 +1,30 @@
 package semantics
 
-import semantics.domains.abstracting._
+import semantics.domains.abstracting.IntegerW._
+import semantics.domains.abstracting.Intervals.Positive.{Lattice => PosLattice}
+import semantics.domains.abstracting.Intervals.Unbounded.{Lattice => UnboundedLattice}
+import semantics.domains.abstracting.RefinementChildren.{getCons, getNil, makeCons, makeNil}
 import semantics.domains.abstracting.TypeStore.TypeResult
+import semantics.domains.abstracting._
+import semantics.domains.common.Unit._
 import semantics.domains.common._
 import semantics.domains.concrete.TypeOps._
-import Unit._
-import Option._
 import semantics.typing.AbstractTyping
 import syntax._
-
-import scalaz.\/
-import scalaz.std.list._
-import scalaz.std.option._
-import scalaz.syntax.traverse._
-import scalaz.syntax.either._
-import IntegerW._
-import Intervals.Positive.{Lattice => PosLattice}
-import Intervals.Unbounded.{Lattice => UnboundedLattice}
-import semantics.domains.abstracting.RefinementChildren.{getCons, getNil, makeCons, makeNil}
-
-import scala.reflect.ClassTag
 import util.Memoization._
 
 import scala.annotation.tailrec
+import scala.reflect.ClassTag
+import scalaz.\/
+import scalaz.std.list._
+import scalaz.std.option._
+import scalaz.syntax.either._
+import scalaz.syntax.traverse._
 
 // TODO: Convert lub(...flatMap) to map(...lub)
 case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Refinements, precise: Boolean = false) {
   private
-  val memocacheSize = 100
+  val memocacheSize = 10000
 
   private
   val atyping = AbstractTyping(module)
@@ -39,8 +36,8 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   val typememoriesops = TypeMemoriesOps(module, refinements)
 
   import typememoriesops._
-  import typestoreops._
   import refinementtypeops._
+  import typestoreops._
 
   private
   type FunMemo = Map[(VarName, List[Type]), ((List[VoideableRefinementType], TypeStore), TypeMemories[VoideableRefinementType, Unit])]
@@ -987,70 +984,105 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     })
   }
 
+  /*
+  A memoization strategy must be chosen such that it satifies two conditions:
+  1: The result is sound
+  2: The procedure terminates
+
+  In order to satisfy (1) we must ensure that the resulting output on recursion is always larger than the result from the provided
+   input, and to satisfy (2) we must choose a way to conflate the traces based on input.
+
+   Conflating traces of input can happen according to the following strategies:
+   S1: Conflate all recursions to the same syntactic judgement
+   S2: Conflate recursions to the same syntactic judgement according to some partitioning
+   S3: Conflate recursions to the same or larger previous input (works if the input domain is finite)
+
+   S1 is too unprecise in practice, so S2-S4 are preferable.
+
+   In both the cases S1 and S2, we need to widen the current input with the closest previous input to the same judgment in order to get a sound result (otherwise
+   the recursion is potentially not monotone).
+
+   If the input domain is not finite, one could also do a further abstraction to the input to a new finite domain and use strategy S3, but this might also lose precision.
+   */
   lazy val evalFunCall:
     (Map[VarName, Type], TypeStore, VarName, Seq[Expr], FunMemo) => TypeMemories[VoideableRefinementType, Unit] =
    memoized[Map[VarName, Type], TypeStore, VarName, Seq[Expr], FunMemo,TypeMemories[VoideableRefinementType, Unit]](memocacheSize) {
      (localVars, store, functionName, args, funMemo) =>
       def memoFix(argtys: List[VoideableRefinementType], store: TypeStore): TypeMemories[VoideableRefinementType, Unit] = {
-      def go(argtys: List[VoideableRefinementType], store: TypeStore, prevRes: TypeMemories[VoideableRefinementType, Unit], reccount: Int): TypeMemories[VoideableRefinementType, Unit] = {
-        val newFunMemo: FunMemo = funMemo.updated(functionName -> argtys.map(at => atyping.inferType(at.refinementType)), ((argtys, store), prevRes))
         val (funresty, funpars, funbody) = module.funs(functionName)
-        val newRes = {
-          val argpartyps = argtys.zip(funpars.map(_.typ))
+        val argpartyps = argtys.zip(funpars.map(_.typ))
+        def go(argtys: List[VoideableRefinementType], callstore: TypeStore, prevRes: TypeMemories[VoideableRefinementType, Unit], reccount: Int): TypeMemories[VoideableRefinementType, Unit] = {
+          val memoKey = functionName -> argtys.map(at => atyping.inferType(at.refinementType))
+          val newFunMemo: FunMemo = funMemo.updated(memoKey, ((argtys, callstore), prevRes))
+          val newRes = funbody match {
+            case ExprFunBody(exprfunbody) =>
+              evalLocal(funpars.map(par => par.name -> par.typ).toMap, callstore, exprfunbody, newFunMemo)
+            case PrimitiveFunBody =>
+              functionName match {
+                case "delete" =>
+                  val mapvrty = getVar(callstore, "emap").get
+                  val keyvrty = getVar(callstore, "ekey").get
+                  val errRes = TypeMemory[VoideableRefinementType, Unit](ExceptionalResult(Error(Set(OtherError))), callstore)
+                  val voidRes =
+                    if (mapvrty.possiblyVoid || keyvrty.possiblyVoid) Set(errRes)
+                    else Set[TypeMemory[VoideableRefinementType, Unit]]()
+                  val typRes = {
+                    mapvrty.refinementType match {
+                      case MapRefinementType(kty, vty, size) =>
+                        Set(TypeMemory[VoideableRefinementType, Unit](SuccessResult(VoideableRefinementType(possiblyVoid = false,
+                          MapRefinementType(kty, vty, Intervals.Positive.makeInterval(IntegerW.-(size.lb, 1), size.ub)))), callstore))
+                      case _ => Set(errRes)
+                    }
+                  }
+                  TypeMemories(voidRes ++ typRes)
+                case "toString" =>
+                  val _ = getVar(callstore, "earg").get
+                  TypeMemories[VoideableRefinementType, Unit](
+                    Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType))), callstore)))
+                case _ => TypeMemories[VoideableRefinementType, Unit](Set(TypeMemory(ExceptionalResult(Error(Set(OtherError))), callstore)))
+              }
+          }
+          if (Lattice[TypeMemories[VoideableRefinementType, Unit]].<=(newRes, prevRes)) newRes
+          else {
+            val widened = Lattice[TypeMemories[VoideableRefinementType, Unit]].widen(prevRes, newRes)
+            go(argtys, callstore, widened, reccount = reccount + 1)
+          }
+        }
+        val posEx: TypeMemories[VoideableRefinementType, Unit] = {
           val errRes = TypeMemory[VoideableRefinementType, Unit](
             ExceptionalResult(Error(Set(SignatureMismatch(functionName, argtys, funpars.map(_.typ))))), store)
-          val posEx: TypeMemories[VoideableRefinementType, Unit] =
-            if (argtys.length != funpars.length ||
-                  argpartyps.exists { case (avrty, party) => atyping.checkType(avrty.refinementType, party).contains(false) })
-              TypeMemories[VoideableRefinementType, Unit](Set(errRes))
-            else Lattice[TypeMemories[VoideableRefinementType, Unit]].bot
-          val posSuc: TypeMemories[VoideableRefinementType, Unit] = {
-            if (argtys.length == funpars.length &&
-                argpartyps.forall { case (avrty, party) => atyping.checkType(avrty.refinementType, party).contains(true) }) {
-              val callRes: TypeMemories[VoideableRefinementType, Unit] = {
-                val callstore = TypeStoreV(module.globalVars.map { case (x, _) => x -> getVar(store, x).get } ++
-                  funpars.map(_.name).zip(argtys).toMap)
-                funbody match {
-                  case ExprFunBody(exprfunbody) =>
-                    evalLocal(funpars.map(par => par.name -> par.typ).toMap, callstore, exprfunbody, newFunMemo)
-                  case PrimitiveFunBody =>
-                    functionName match {
-                      case "delete" =>
-                        val mapvrty = callstore.vals("emap")
-                        val keyvrty = callstore.vals("ekey")
-                        val errRes = TypeMemory[VoideableRefinementType, Unit](ExceptionalResult(Error(Set(OtherError))), callstore)
-                        val voidRes =
-                          if (mapvrty.possiblyVoid || keyvrty.possiblyVoid) Set(errRes)
-                          else Set[TypeMemory[VoideableRefinementType, Unit]]()
-                        val typRes = {
-                          mapvrty.refinementType match {
-                            case MapRefinementType(kty, vty, size) =>
-                              Set(TypeMemory[VoideableRefinementType, Unit](SuccessResult(VoideableRefinementType(possiblyVoid = false,
-                                MapRefinementType(kty, vty, Intervals.Positive.makeInterval(IntegerW.-(size.lb, 1), size.ub)))), callstore))
-                            case _ => Set(errRes)
-                          }
-                        }
-                        TypeMemories(voidRes ++ typRes)
-                      case "toString" =>
-                        val _ = callstore.vals("earg")
-                        TypeMemories[VoideableRefinementType, Unit](
-                          Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType))), callstore)))
-                      case _ => TypeMemories[VoideableRefinementType, Unit](Set(TypeMemory(ExceptionalResult(Error(Set(OtherError))), callstore)))
-                    }
-                }
-              }
-              callRes
-            }
-            else Lattice[TypeMemories[VoideableRefinementType, Unit]].bot
-          }
-          Lattice[TypeMemories[VoideableRefinementType, Unit]].lub(posEx, posSuc)
+          if (argtys.length != funpars.length ||
+            argpartyps.exists { case (avrty, party) => atyping.checkType(avrty.refinementType, party).contains(false) })
+            TypeMemories[VoideableRefinementType, Unit](Set(errRes))
+          else Lattice[TypeMemories[VoideableRefinementType, Unit]].bot
         }
-        val resmems = if (Lattice[TypeMemories[VoideableRefinementType, Unit]].<=(newRes, prevRes)) newRes
-                      else {
-                        val widened = Lattice[TypeMemories[VoideableRefinementType, Unit]].widen(prevRes, newRes)
-                        go(argtys, store, widened, reccount = reccount + 1)
-                      }
-        Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(resmems.memories.map { case TypeMemory(res, resstore) =>
+        val posSuc: TypeMemories[VoideableRefinementType, Unit] = {
+          if (argtys.length == funpars.length &&
+              argpartyps.forall { case (avrty, party) => atyping.checkType(avrty.refinementType, party).contains(true) }) {
+            val callstore = TypeStoreV(module.globalVars.map { case (x, _) => x -> getVar(store, x).get } ++
+                              funpars.map(_.name).zip(argtys).toMap)
+            funMemo.get(functionName -> argtys.map(at => atyping.inferType(at.refinementType))).fold(go(argtys, callstore, Lattice[TypeMemories[VoideableRefinementType, Unit]].bot, reccount = 0)) { case ((prevargtys, prevstore), prevres) =>
+              val paapairs = prevargtys.zip(argtys)
+              val allLess = paapairs.forall { case (praty, aty) => Lattice[VoideableRefinementType].<=(aty, praty) }
+              val memores =
+                if (allLess && Lattice[TypeStore].<=(callstore, prevstore)) prevres
+                else {
+                  // Widen current input with previous input (strategy S2)
+                  val newargtys = paapairs.foldLeft(List[VoideableRefinementType]()) { (prevargtys, paap) =>
+                    val (praty, aty) = paap
+                    val paapwid = Lattice[VoideableRefinementType].widen(praty, aty)
+                    prevargtys :+ paapwid
+                  }
+                  val newstore = Lattice[TypeStore].widen(prevstore, callstore)
+                  go(newargtys, newstore, Lattice[TypeMemories[VoideableRefinementType, Unit]].bot, reccount = 0)
+                }
+              memores
+            }
+          }
+          else Lattice[TypeMemories[VoideableRefinementType, Unit]].bot
+        }
+        val callres = Lattice[TypeMemories[VoideableRefinementType, Unit]].lub(posEx, posSuc)
+        Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(callres.memories.map { case TypeMemory(res, resstore) =>
           val store_ = joinStores(store, TypeStoreV(module.globalVars.map { case (x, _) => x -> getVar(resstore, x).get }))
 
           def funcallsuccess(resvrtyp: VoideableRefinementType): TypeMemories[VoideableRefinementType, Unit] = {
@@ -1076,44 +1108,6 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
               }
           }
         })
-      }
-      /*
-        A memoization strategy must be chose such that it satifies two conditions:
-        1: The result is sound
-        2: The procedure terminates
-
-        In order to satisfy (1) we must ensure that the resulting output on recursion is always larger than the result from the provided
-         input, and to satisfy (2) we must choose a way to conflate the traces based on input.
-
-         Conflating traces of input can happen according to the following strategies:
-         S1: Conflate all recursions to the same syntactic judgement
-         S2: Conflate recursions to the same syntactic judgement according to some partitioning
-         S3: Conflate recursions to the same or larger previous input (works if the input domain is finite)
-
-         S1 is too unprecise in practice, so S2-S4 are preferable.
-
-         In both the cases S1 and S2, we need to widen the current input with the closest previous input to the same judgment in order to get a sound result (otherwise
-         the recursion is potentially not monotone).
-
-         If the input domain is not finite, one could also do a further abstraction to the input to a new finite domain and use strategy S3, but this might also lose precision.
-       */
-      funMemo.get(functionName -> argtys.map(at => atyping.inferType(at.refinementType))).fold(go(argtys, store, Lattice[TypeMemories[VoideableRefinementType, Unit]].bot, reccount = 0)) { case ((prevargtys, prevstore), prevres) =>
-        val paapairs = prevargtys.zip(argtys)
-        val allLess = paapairs.forall { case (praty, aty) => Lattice[VoideableRefinementType].<=(aty, praty) }
-        val memores =
-          if (allLess && Lattice[TypeStore].<=(store, prevstore)) prevres
-          else {
-            // Widen current input with previous input (strategy S2)
-            val newargtys = paapairs.foldLeft(List[VoideableRefinementType]()) { (prevargtys, paap) =>
-              val (praty, aty) = paap
-              val paapwid = Lattice[VoideableRefinementType].widen(praty, aty)
-              prevargtys :+ paapwid
-            }
-            val newstore = Lattice[TypeStore].widen(prevstore, store)
-            go(newargtys, newstore, Lattice[TypeMemories[VoideableRefinementType, Unit]].bot, reccount = 0)
-          }
-        memores
-      }
     }
     val argmems = evalLocalAll(localVars, store, args, funMemo)
     Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(argmems.memories.map { case TypeMemory(argres, store__) =>
