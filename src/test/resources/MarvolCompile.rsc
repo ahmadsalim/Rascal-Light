@@ -4,74 +4,24 @@ module MarvolCompile
  * Example Compilation of robot DSL
  * Ported from https://github.com/cwi-swat/marvo
  */
+ 
+ // Changes: From concrete syntax to abstract syntax, elimination of comprehension, renaming and merging of datatypes, avoiding stringiness
 
-start syntax Program = Definition* defs Dance main;
+data Dance = movePart(Part part, DanceMove move)
+           | repeat(int count, Dance dance)
+           | backforth(int count, Dance dance)
+           | danceset(set[Dance] dances)
+           | danceseq(list[Dance] dances)
+           | mirror(Dance dance)
+           | call(str name)
+           | nop()
+           | say(str speech);
 
-syntax Definition = "def" Id name "=" Dance dance;
+data Part = arm() | legs() | elbow() | hand() | look() | arms() | elbows() | hands();
 
-lexical Speech = "\"" ![\n\r\"]* text "\"";
-
-syntax Dance
-  = Part Move+ ";"
-  | "repeat" Nat Dance
-  | "backforth" Nat Dance
-  | @Foldable "{" Dance* "}"
-  | @Foldable "{|" Dance* "|}"
-  | "mirror" Dance
-  | @category="Identifier" call: Id name ";"
-  | "nop" ";"
-  | "say" Speech speech ";"?
-  ;
-
-syntax Part
-  = "arm"
-  | "legs"
-  | "elbow"
-  | "hand"
-  | "chin"
-  | "look"
-  | "arms"
-  | "elbows"
-  | "hands"
-  ;
-
-syntax Move
-  = @category="Constant" "up"
-  | @category="Constant" "down"
-  | @category="Constant" "twist"
-  | @category="Constant" "bend"
-  | @category="Constant" "stretch"
-  | @category="Constant" "close"
-  | @category="Constant" "open"
-  | @category="Constant" "far"
-  | @category="Constant" "forwards"
-  | @category="Constant" "sideways"
-  | @category="Constant" "inwards"
-  | @category="Constant" "outwards"
-  | @category="Constant" "left"
-  | @category="Constant" "right"
-  | @category="Constant" "forward"
-  | @category="Constant" "squat"
-  | @category="Constant" "hawaii"
-  | @category="Constant" "luckyluke"
-  ;
-
-keyword Reserved
-	= "repeat" | "backforth" | "mirror" | "nop"
-	;
-
-keyword Reserved
-	= "arm" | "legs" | "elbow" | "hand" | "chin" | "look" | "arms" | "elbows" | "hands"
-	;
-
-keyword Reserved
-	= "up" | "down" | "twist" | "bend" | "stretch" | "close" |  "open" |  "far"
-	| "forwards" | "sideways" | "inwards" | "outwards" | "left" | "right" | "forward" | "squat"
- 	| "hawaii" | "luckyluke";
-
-lexical Id = ([a-zA-Z_] !<< [a-zA-Z_][a-zA-Z0-9_]* !>> [a-zA-Z0-9_]) \ Reserved;
-
-lexical Nat = [0-9]+ !>> [0-9];
+data DanceMove = up() | down() | twist() | bend() | stretch() | close() | open() | far()
+               | forwards() | sideways() | inwards() | outwards() | left() | right()
+               | forward() | squat() | hawaii() | luckyluke();
 
 data LookMove
   = FarLeft()
@@ -147,7 +97,10 @@ public BodyPosition INIT_POS = BodyMove (
    LegStretch(),
    silence());
 
-alias Move = tuple[str part, set[str] moves];
+data StrOrDanceMove = strval(str v) | dancemove(DanceMove move);
+data MouthOrPart = mouth() | part(Part part);
+
+data Move = move(MouthOrPart part, set[StrOrDanceMove] moves); //Avoid stringiness here
 
 list[BodyMove] compile(list[Dance] ds) {
   lst = [];
@@ -160,19 +113,12 @@ list[BodyMove] compile(list[Dance] ds) {
   return lst;
 }
 
-set[Move] toMoves((Dance) `say <Speech sp>`) = {<"mouth", {"<sp.text>"}>};
-set[Move] toMoves((Dance) `say <Speech sp>;`) = {<"mouth", {"<sp.text>"}>};
 
-set[Move] toMoves((Dance)`nop;`) = {};
-
-set[Move] toMoves((Dance)`<Part p> <Move+ ms>;`)
-  = {<"<p>", { "<m>" | m <- ms }>};
-
-set[Move] toMoves((Dance)`{|<Dance* ds>|}`)
-  = ( {} | it + toMoves(d) | d <- ds, bprintln("D = <d>") );
-
-
-set[Move] toMoves((Dance)`mirror <Dance d>`) {
+set[Move] toMoves(say(sp)) = {<"mouth", sp>};
+set[Move] toMoves(nop()) = {};
+set[Move] toMoves(movePart(p, ms)) = {<"<p>", { "<m>" | m <- ms }>};
+set[Move] toMoves(danceset(ds)) = ( {} | it + toMoves(d) | d <- ds );
+set[Move] toMoves(mirror(d)) {
   ms = {};
   for (m <- toMoves(d)) {
     if ("left" in m.moves) {
@@ -187,10 +133,6 @@ set[Move] toMoves((Dance)`mirror <Dance d>`) {
   }
   return ms;
 }
-
-
-/* Unfortunate heavy coupling with Config. */
-/* Todo: allow twists with forward etc. */
 
 BodyMove compile("arm", {"right", "up"}, BodyMove m) = m[rightArm=ArmMove::Up()];
 BodyMove compile("arm", {"right", "down"} , BodyMove m) = m[rightArm=ArmMove::Down()];
