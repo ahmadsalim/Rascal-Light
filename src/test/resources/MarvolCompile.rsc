@@ -5,7 +5,6 @@ module MarvolCompile
  * Ported from https://github.com/cwi-swat/marvo
  */
 
-
 start syntax Program = Definition* defs Dance main;
 
 syntax Definition = "def" Id name "=" Dance dance;
@@ -74,23 +73,12 @@ lexical Id = ([a-zA-Z_] !<< [a-zA-Z_][a-zA-Z0-9_]* !>> [a-zA-Z0-9_]) \ Reserved;
 
 lexical Nat = [0-9]+ !>> [0-9];
 
-
 data LookMove
   = FarLeft()
   | Left()
   | LForward()
   | Right()
   | FarRight();
-
-LookMove mirror(LookMove m) {
-  switch (m) {
-    case FarLeft()  : return FarRight();
-    case Left()     : return Right();
-    case LForward() : return LForward();
-    case Right()    : return Left();
-    case FarRight() : return FarLeft();
-  }
-}
 
 data ChinMove
   = CForward()
@@ -136,15 +124,6 @@ data LegsMove
   | HawaiiRight()
   | LuckyLuke(); // More to come...
 
-LegsMove mirror(LegsMove m) {
-  switch(m) {
-    case LegStretch()  : return LegStretch();
-    case Squat()     : return Squat();
-    case HawaiiLeft()  : return HawaiiRight();
-    case LuckyLuke()    : return LuckyLuke();
-    }
-}
-
 data BodyMove = BodyMove(
 	  LookMove look,
 	  ChinMove chin,
@@ -168,33 +147,9 @@ public BodyPosition INIT_POS = BodyMove (
    LegStretch(),
    silence());
 
-BodyPosition mirror(BodyPosition pos) =
-  BodyMove( mirror(pos.look) , pos.chin,
-           pos.rightArm, pos.leftArm,
-           pos.rightArmTwist, pos.leftArmTwist,
-           pos.rightElbow, pos.leftElbow,
-           pos.rightHand, pos.leftHand,
-           mirror(pos.legs));
-
-bool armIsStraightDown(ArmMove arm, ElbowMove elbow) = (arm == Down() && elbow == Stretch());
-
-bool armInsideSelf(ArmMove arm, ElbowMove elbow, ArmTwistMove twist) = (arm == Down() && elbow == Bend() && twist != Outwards);
-bool armIsForward(ArmMove arm) = arm == Forward() || arm == ForwardsUp() || arm == ForwardsDown();
-
-bool isIllegalMove(BodyMove m) =
-	(m.legs == Squat() && armIsStraightDown(leftArm,leftElbow) || armIsStraightDown(rightArm,rightElbow)) ||
-	(armForward(m.leftArm) && armIsForward(m.rightArm) && m.leftArm == m.rightArm && m.leftElbow == Bend() && m.rightElbow == Bend() && m.leftArmTwist == Inwards() && m.rightArmTwist == Inwards()) ||
-	armInsideSelf(m.leftArm, m.leftElbow, m.leftArmTwist) ||
-        armInsideSelf(m.rightArm, m.rightElbow, m.rightArmTwist)
-	;
-bool isLegalTransition(BodyPosition a, BodyPosition b) = true;
-
-
 alias Move = tuple[str part, set[str] moves];
 
-
 list[BodyMove] compile(list[Dance] ds) {
-
   lst = [];
   for (d <- ds) {
     cur = INIT_POS;
@@ -232,15 +187,6 @@ set[Move] toMoves((Dance)`mirror <Dance d>`) {
   }
   return ms;
 }
-
-
-bool hasConflicts({<"arm", {str x, *_}>, <"arm", {x, *_}>, *_}) = true;
-bool hasConflicts({<"hand", {str x, *_}>, <"hand", {x, *_}>, *_}) = true;
-bool hasConflicts({<"elbow", {str x, *_}>, <"elbow", {x, *_}>, *_}) = true;
-bool hasConflicts({<"look", set[str] ms>, <"look", ms>, *_}) = true;
-bool hasConflicts({<"chin", set[str] ms>, <"chin", ms>, *_}) = true;
-bool hasConflicts({<"legs", set[str] ms>, <"legs", ms>, *_}) = true;
-default bool hasConflicts(set[Move] _) = false;
 
 
 /* Unfortunate heavy coupling with Config. */

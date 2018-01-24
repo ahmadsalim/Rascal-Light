@@ -2,7 +2,7 @@ import com.typesafe.scalalogging.Logger
 import org.scalatest.{FlatSpec, Matchers}
 import org.slf4j.LoggerFactory
 import semantics.domains.abstracting.{Refinements, TypeMemories, TypeMemory, VoideableRefinementType}
-import semantics.domains.common.{Error, Exceptional, ExceptionalResult, Module, SuccessResult}
+import semantics.domains.common.{AssertionError, Break, Continue, Error, EscapedControlOperator, Exceptional, ExceptionalResult, Fail, FieldError, InvalidOperationError, Module, NotEnumerableError, OtherError, ReconstructError, Return, SignatureMismatch, SuccessResult, Throw, TypeError, UnassignedVarError}
 import semantics.typing.AbstractTyping
 import syntax.Type
 
@@ -11,10 +11,6 @@ import syntax.Type
   */
 abstract class AbstractExecutorTests(loggername: String) extends FlatSpec with Matchers {
   val logger = Logger(LoggerFactory.getLogger(loggername))
-
-  private def checkError(exres: Exceptional[VoideableRefinementType, Unit]) = {
-    exres shouldNot be(an[Error])
-  }
 
   protected
   def memsOK(module: Module, refinements: Refinements, mems: TypeMemories[VoideableRefinementType, Unit], targetType: Type): Unit = {
@@ -31,9 +27,8 @@ abstract class AbstractExecutorTests(loggername: String) extends FlatSpec with M
     } shouldBe true
     mems.memories.foreach { case TypeMemory(res, _) => res match {
       case SuccessResult(restype) =>
-        restype.possiblyVoid shouldBe false
         atyping.inferType(restype.refinementType) shouldBe targetType
-      case ExceptionalResult(exres) =>  checkError(exres)
+      case ExceptionalResult(exres) =>
     }
     }
   }
