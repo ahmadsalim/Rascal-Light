@@ -32,15 +32,15 @@ data LookMove
 
 data ChinMove
   = CForward()
-  | Down()
-  | Up();
+  | CDown()
+  | CUp();
 
 data ArmMove
-  = Up()
+  = AUp()
   | ForwardsUp()
   | Forwards()
   | ForwardsDown()
-  | Down()
+  | ADown()
   | ForwardsUpSideways()
   | ForwardsSideways()
   | ForwardsDownSideways()
@@ -85,19 +85,17 @@ data BodyMove = BodyMove(
 	  SayMove mouth
 	);
 
-alias BodyPosition = BodyMove;
-
-public BodyPosition INIT_POS = BodyMove (
+public BodyMove INIT_POS = BodyMove (
    LForward(),
    CForward(),
-   ArmMove::Down(),    ArmMove::Down(),
+   ADown(),    ADown(),
    Inwards(), Inwards(),
    Stretch(), Stretch(),
    Close(),   Close(),
    LegStretch(),
    silence());
 
-data StrOrDanceMove = strval(str v) | dancemove(DanceMove move);
+data SpeechOrDanceMove = speech(str v) | dancemove(DanceMove move);
 data MouthOrPart = mouth() | part(Part part);
 
 data Move = move(MouthOrPart part, set[StrOrDanceMove] moves); //Avoid stringiness here
@@ -105,94 +103,271 @@ data Move = move(MouthOrPart part, set[StrOrDanceMove] moves); //Avoid stringine
 list[BodyMove] compile(list[Dance] ds) {
   lst = [];
   for (d <- ds) {
-    cur = INIT_POS;
-    ms = toMoves(d);
-    cur = ( cur | compile(m.part, m.moves, it) | m <- ms );
-    lst += [cur];
+    set[Move] ms = toMoves(d);
+    BodyMove cur = INIT_POS;
+    for (m <- ms)
+      cur = compile(m.part, m.moves, cur);
+    lst = lst + [cur];
   }
   return lst;
 }
 
-
-set[Move] toMoves(say(sp)) = {<"mouth", sp>};
-set[Move] toMoves(nop()) = {};
-set[Move] toMoves(movePart(p, ms)) = {<"<p>", { "<m>" | m <- ms }>};
-set[Move] toMoves(danceset(ds)) = ( {} | it + toMoves(d) | d <- ds );
-set[Move] toMoves(mirror(d)) {
-  ms = {};
-  for (m <- toMoves(d)) {
-    if ("left" in m.moves) {
-      ms += {<m.part, m.moves - {"left"} + {"right"}>};
+set[Move] toMoves(Dance d) {
+  switch(d) {
+    case say(sp): return { move(mouth(), speech(sp)) };
+    case nop(): return {};
+    case movePart(p,ms): {
+      set[SpeechOrDanceMove] dmoves = {};
+      for (m <- ms) 
+        dmoves = dmoves + {dancemove(m)};
+      return {move(part(p), dmoves)};
     }
-    else if ("right" in m.moves) {
-      ms += {<m.part, m.moves - {"right"} + {"left"}>};
+    case danceset(ds): {
+      set[Moves] moves = {};
+      for (d <- ds)
+        moves = moves + toMoves(d);
+      return moves;
     }
-    else {
-      ms += {m};
+    case mirror(d): {
+      ms = {};
+      for (m <- toMoves(d)) {
+        if (dancemove(left()) in m.moves) {
+          ms = ms + {move(m.part, m.moves - {dancemove(left())} + {dancemove(right())})};
+        }
+        else if (dancemove(right()) in m.moves) {
+          ms = ms + {move(m.part, m.moves - {dancemove(right())} + {dancemove(left())})};
+        }
+        else {
+          ms = ms + {m};
+        }
+      }
+      return ms;
     }
-  }
-  return ms;
+  };
 }
 
-BodyMove compile("arm", {"right", "up"}, BodyMove m) = m[rightArm=ArmMove::Up()];
-BodyMove compile("arm", {"right", "down"} , BodyMove m) = m[rightArm=ArmMove::Down()];
-BodyMove compile("arm", {"right", "forwards"} , BodyMove m) = m[rightArm=Forwards()];
-BodyMove compile("arm", {"right", "forwards", "up"} , BodyMove m) = m[rightArm=ForwardsUp()];
-BodyMove compile("arm", {"right", "forwards", "down"} , BodyMove m) = m[rightArm=ForwardsDown()];
-BodyMove compile("arm", {"right", "forwards", "up", "sideways"} , BodyMove m) = m[rightArm=ForwardsUpSideways()];
-BodyMove compile("arm", {"right", "forwards", "down", "sideways"} , BodyMove m) = m[rightArm=ForwardsDownSideways()];
-BodyMove compile("arm", {"right", "forwards", "sideways"} , BodyMove m) = m[rightArm=ForwardsSideways()];
-BodyMove compile("arm", {"right", "sideways"} , BodyMove m) = m[rightArm=Sideways()];
-BodyMove compile("arm", {"right", "sideways", "up"} , BodyMove m) = m[rightArm=SidewaysUp()];
-BodyMove compile("arm", {"right", "sideways", "down"} , BodyMove m) = m[rightArm=SidewaysDown()];
-
-BodyMove compile("arm", {"right", "twist", "inwards"} , BodyMove m) = m[rightArmTwist=Inwards()];
-BodyMove compile("arm", {"right", "twist", "outwards"} , BodyMove m) = m[rightArmTwist=Outwards()];
-BodyMove compile("arm", {"right", "twist", "far", "inwards"} , BodyMove m) = m[rightArmTwist=FarInwards()];
-
-BodyMove compile("arm", {"left", "up"}, BodyMove m) = m[leftArm=ArmMove::Up()];
-BodyMove compile("arm", {"left", "down"} , BodyMove m) = m[leftArm=ArmMove::Down()];
-BodyMove compile("arm", {"left", "forwards"} , BodyMove m) = m[leftArm=Forwards()];
-BodyMove compile("arm", {"left", "forwards", "up"} , BodyMove m) = m[leftArm=ForwardsUp()];
-BodyMove compile("arm", {"left", "forwards", "down"} , BodyMove m) = m[leftArm=ForwardsDown()];
-BodyMove compile("arm", {"left", "forwards", "up", "sideways"} , BodyMove m) = m[leftArm=ForwardsUpSideways()];
-BodyMove compile("arm", {"left", "forwards", "down", "sideways"} , BodyMove m) = m[leftArm=ForwardsDownSideways()];
-BodyMove compile("arm", {"left", "forwards", "sideways"} , BodyMove m) = m[leftArm=ForwardsSideways()];
-BodyMove compile("arm", {"left", "sideways"} , BodyMove m) = m[leftArm=Sideways()];
-BodyMove compile("arm", {"left", "sideways", "up"} , BodyMove m) = m[leftArm=SidewaysUp()];
-BodyMove compile("arm", {"left", "sideways", "down"} , BodyMove m) = m[leftArm=SidewaysDown()];
-
-BodyMove compile("arm", {"left", "twist", "inwards"} , BodyMove m) = m[leftArmTwist=Inwards()];
-BodyMove compile("arm", {"left", "twist", "outwards"} , BodyMove m) = m[leftArmTwist=Outwards()];
-BodyMove compile("arm", {"left", "twist", "far", "inwards"} , BodyMove m) = m[leftArmTwist=FarInwards()];
-
-
-
-BodyMove compile("elbow", {"right", "stretch"}, BodyMove m) = m[rightElbow=Stretch()];
-BodyMove compile("elbow", {"right", "bend"}, BodyMove m) = m[rightElbow=Bend()];
-
-BodyMove compile("hand", {"right", "open"}, BodyMove m) = m[rightHand=Open()];
-BodyMove compile("hand", {"right", "close"}, BodyMove m) = m[rightHand=Close()];
-
-BodyMove compile("elbow", {"left", "stretch"}, BodyMove m) = m[leftElbow=Stretch()];
-BodyMove compile("elbow", {"left", "bend"}, BodyMove m) = m[leftElbow=Bend()];
-
-BodyMove compile("hand", {"left", "open"}, BodyMove m) = m[leftHand=Open()];
-BodyMove compile("hand", {"left", "close"}, BodyMove m) = m[leftHand=Close()];
-
-BodyMove compile("chin", {"forward"}, BodyMove m) = m[chin=CForward()];
-BodyMove compile("chin", {"up"}, BodyMove m) = m[chin=ChinMove::Up()];
-BodyMove compile("chin", {"down"}, BodyMove m) = m[chin=ChinMove::Down()];
-
-BodyMove compile("legs", {"forward"}, BodyMove m) = m[legs=Stretch()];
-BodyMove compile("legs", {"squat"}, BodyMove m) = m[legs=Squat()];
-BodyMove compile("legs", {"hawaii", "left"}, BodyMove m) = m[legs=HawaiiLeft()];
-BodyMove compile("legs", {"hawaii", "right"}, BodyMove m) = m[legs=HawaiiRight()];
-BodyMove compile("legs", {"luckyluke"}, BodyMove m) = m[legs=LuckyLuke()];
-
-BodyMove compile("look", {"far", "left"}, BodyMove m) = m[look=FarLeft()];
-BodyMove compile("look", {"far", "right"}, BodyMove m) = m[look=FarRight()];
-BodyMove compile("look", {"left"}, BodyMove m) = m[look=Left()];
-BodyMove compile("look", {"right"}, BodyMove m) = m[look=Right()];
-BodyMove compile("look", {"forward"}, BodyMove m) = m[look=LForward()];
-BodyMove compile("mouth", {str uttering}, BodyMove m) = m[mouth=say(uttering)];
+BodyMove compile(MouthOrPart mop, set[SpeechOrDanceMove] sods, BodyMove m) {
+  switch(mop) {
+    case part(arm()):
+      switch(sods) {
+        case {dancemove(right()), dancemove(up())}: {
+          m.rightArm = AUp();
+          return m;
+        }
+        case {dancemove(right()), dancemove(down())}: {
+          m.rightArm = ADown();
+          return m;
+        }
+        case {dancemove(right()), dancemove(forwards())}: {
+          m.rightArm = Forwards();
+          return m;
+        }
+        case {dancemove(right()), dancemove(forwards()), dancemove(up())}: {
+          m.rightArm = ForwardsUp();
+          return m;
+        }
+        case {dancemove(right()), dancemove(forwards()), dancemove(down())}: {
+          m.rightArm = ForwardsDown();
+          return m;
+        }
+        case {dancemove(right()), dancemove(forwards()), dancemove(up()), dancemove(sideways())}: {
+          m.rightArm = ForwardsUpSideways();
+          return m;
+        }
+        case {dancemove(right()), dancemove(forwards()), dancemove(down()), dancemove(sideways())}: {
+          m.rightArm = ForwardsDownSideways();
+          return m;
+        }
+        case {dancemove(right()), dancemove(forwards()), dancemove(sideways())}: {
+          m.rightArm = ForwardsSideways();
+          return m;
+        }
+        case {dancemove(right()), dancemove(sideways())}: {
+          m.rightArm = Sideways();
+          return m;
+        }
+        case {dancemove(right()), dancemove(sideways()), dancemove(up())}: {
+          m.rightArm = SidewaysUp();
+          return m;
+        }
+        case {dancemove(right()), dancemove(sideways()), dancemove(down())}: {
+          m.rightArm = SidewaysDown();
+          return m;
+        }
+        case {dancemove(right()), dancemove(twist()), dancemove(inwards())}: {
+          m.rightArmTwist = Inwards();
+          return m;
+        }
+        case {dancemove(right()), dancemove(twist()), dancemove(outwards())}: {
+          m.rightArmTwist = Outwards();
+          return m;
+        }
+        case {dancemove(right()), dancemove(twist()), dancemove(far()), dancemove(inwards())}: {
+          m.rightArmTwist = FarInwards();
+          return m;
+        }
+        case {dancemove(left()), dancemove(up())}: {
+          m.leftArm = AUp();
+          return m;
+        }
+        case {dancemove(left()), dancemove(down())}: {
+          m.leftArm = ADown();
+          return m;
+        }
+        case {dancemove(left()), dancemove(forwards())}: {
+          m.leftArm = Forwards();
+          return m;
+        }
+        case {dancemove(left()), dancemove(forwards()), dancemove(up())}: {
+          m.leftArm = ForwardsUp();
+          return m;
+        }
+        case {dancemove(left()), dancemove(forwards()), dancemove(down())}: {
+          m.leftArm = ForwardsDown();
+          return m;
+        }
+        case {dancemove(left()), dancemove(forwards()), dancemove(up()), dancemove(sideways())}: {
+          m.leftArm = ForwardsUpSideways();
+          return m;
+        }
+        case {dancemove(left()), dancemove(forwards()), dancemove(down()), dancemove(sideways())}: {
+          m.leftArm = ForwardsDownSideways();
+          return m;
+        }
+        case {dancemove(left()), dancemove(forwards()), dancemove(sideways())}: {
+          m.leftArm = ForwardsSideways();
+          return m;
+        }
+        case {dancemove(left()), dancemove(sideways())}: {
+          m.leftArm = Sideways();
+          return m;
+        }
+        case {dancemove(left()), dancemove(sideways()), dancemove(up())}: {
+          m.leftArm = SidewaysUp();
+          return m;
+        }
+        case {dancemove(left()), dancemove(sideways()), dancemove(down())}: {
+          m.leftArm = SidewaysDown();
+          return m;
+        }
+        case {dancemove(left()), dancemove(twist()), dancemove(inwards())}: {
+          m.leftArmTwist = Inwards();
+          return m;
+        }
+        case {dancemove(left()), dancemove(twist()), dancemove(outwards())}: {
+          m.leftArmTwist = Outwards();
+          return m;
+        }
+        case {dancemove(left()), dancemove(twist()), dancemove(far()), dancemove(inwards())}: {
+          m.leftArmTwist = FarInwards();
+          return m;
+        }
+      }
+    case part(elbow()):
+      switch(sods) {
+        case {dancemove(right()), dancemove(stretch())}: {
+          m.rightElbow = Stretch();
+          return m;
+        }
+        case {dancemove(right()), dancemove(bend())}: {
+          m.rightElbow = Bend();
+          return m;
+        }
+        case {dancemove(left()), dancemove(stretch())}: {
+          m.leftElbow = Stretch();
+          return m;
+        }
+        case {dancemove(left()), dancemove(bend())}: {
+          m.leftElbow = Bend();
+          return m;
+        }
+      }
+    case part(hand()):
+      switch(sods) {
+        case {dancemove(right()), dancemove(open())}: {
+          m.rightHand = Open();
+          return m;
+        }
+        case {dancemove(right()), dancemove(close())}: {
+          m.rightHand = Close();
+          return m;
+        }
+        case {dancemove(left()), dancemove(open())}: {
+          m.leftHand = Open();
+          return m;
+        }
+        case {dancemove(left()), dancemove(close())}: {
+          m.leftHand = Close();
+          return m;
+        }
+      }
+    case part(chin()):
+      switch(sods) {
+        case {dancemove(forward())}: {
+          m.chin = CForward();
+          return m;
+        }
+        case {dancemove(up())}: {
+          m.chin = CUp();
+          return m;
+        }
+        case {dancemove(down())}: {
+          m.chin = CDown();
+          return m;
+        }
+      }
+    case part(legs()):
+      switch(sods) {
+        case {dancemove(forward())}: {
+          m.legs = Stretch();
+          return m;
+        }
+        case {dancemove(squat())}: {
+          m.legs = Squat();
+          return m;
+        }
+        case {dancemove(hawaii()), dancemove(left())}: {
+          m.legs = HawaiiLeft();
+          return m;
+        }
+        case {dancemove(hawaii()), dancemove(right())}: {
+          m.legs = HawaiiRight();
+          return m;
+        }
+        case {dancemove(luckyluke())}: {
+          m.legs = LuckyLuke();
+          return m;
+        }
+      }
+    case part(look()):
+      switch(sods) {
+        case {dancemove(far()), dancemove(left())}: {
+          m.look = FarLeft();
+          return m;
+        }
+        case {dancemove(far()), dancemove(right())}: {
+          m.look = FarRight();
+          return m;
+        }
+        case {dancemove(left())}: {
+          m.look = Left();
+          return m;
+        }
+        case {dancemove(right())}: {
+          m.look = Right();
+          return m;
+        }
+        case {dancemove(forward())}: {
+          m.look = LForward();
+          return m;
+        }
+      }
+    case mouth(): 
+      switch(sods) {
+        case {speech(uttering)}: {
+          m.mouth=say(uttering);
+          return m;
+        }
+      }
+  };
+}
