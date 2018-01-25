@@ -5,132 +5,81 @@
 
 module ConvertRascalType
 
-syntax UserType
-	= name: QualifiedName name
-    | parametric: QualifiedName name >> "[" "[" {Type ","}+ parameters "]" ;
-
-syntax StructuredType
-    = \default: BasicType basicType "[" {TypeArg ","}+ arguments "]" ;
-
-syntax BasicType
-	= \value: "value"
-	| \loc: "loc"
-	| \node: "node"
-	| \num: "num"
-	| \type: "type"
-	| \bag: "bag"
-	| \int: "int"
-	| rational: "rat"
-	| relation: "rel"
-	| listRelation: "lrel"
-	| \real: "real"
-	| \tuple: "tuple"
-	| string: "str"
-	| \bool: "bool"
-	| \void: "void"
-	| dateTime: "datetime"
-	| \set: "set"
-	| \map: "map"
-	| \list: "list"
-;
-
-syntax TypeVar
-	= free: "&" Name name
-    | bounded: "&" Name name "\<:" Type bound ;
-
 // Rascal
-lexical Name
-    // Names are surrounded by non-alphabetical characters, i.e. we want longest match.
-	=  ([A-Z a-z _] !<< [A-Z _ a-z] [0-9 A-Z _ a-z]* !>> [0-9 A-Z _ a-z]) \ RascalKeywords
-	| [\\] [A-Z _ a-z] [\- 0-9 A-Z _ a-z]* !>> [\- 0-9 A-Z _ a-z]
-;
+data UserType = name(QualifiedName name)
+             | parametric(QualifiedName name, list[Type] /* + */ parameters);
 
-syntax QualifiedName
-    = \default: {Name "::"}+ names !>> "::" ;
+data StructuredType = \default(BasicType basicType, list[TypeArg] /* + */ arguments);
 
-syntax DataTypeSelector
-    = selector: QualifiedName sort "." Name production ;
+data BasicType = \value() | \loc() | \node() | \num() | \type() | \bag() | \int() | rational()
+               | relation() | listRelation() | \real() | \tuple() | string() | \bool()
+               | \void() | dateTime() | \set() | \map() | \list() ;
 
-syntax TypeArg
-	= \default: Type type
-    | named: Type type Name name ;
+data TypeVar = free(str name) | bounded(str name, Type bound);
 
-syntax FunctionType
-    = typeArguments: Type type "(" {TypeArg ","}* arguments ")" ;
+data QualifiedName = \default(list[str] /* + */ names);
 
+data DataTypeSelector = selector(QualifiedName sort, str production);
 
-syntax Class
-	= simpleCharclass: "[" Range* ranges "]"
-	| complement: "!" Class charClass
-	> left difference: Class lhs "-" Class rhs
-	> left intersection: Class lhs "&&" Class rhs
-	> left union: Class lhs "||" Class rhs
-    | bracket \bracket: "(" Class charclass ")" ;
+data TypeArg = \default(Type \type) | named(Type \type, str name);
 
-lexical StringConstant
-    = @category="Constant" "\"" StringCharacter* chars "\"" ;
+data FunctionType = typeArguments(Type \type, list[TypeArg] arguments);
 
-lexical CaseInsensitiveStringConstant
-    = @category="Constant" "\'" StringCharacter* chars "\'" ;
+data Class = simpleCharclass(list[Range] ranges)
+           | complement(Class charClass)
+           | difference(Class lhs, Class rhs)
+           | intersection(Class lhs, Class rhs)
+           | union(Class lhs, Class rhs)
+           | \bracket(Class charClass);
 
-syntax Sym
-// named non-terminals
-	= nonterminal: Nonterminal nonterminal !>> "[" // Can't find Nonterminal and NonterminalLabel
-	| parameter: "&" Nonterminal nonterminal
-	| parametrized: Nonterminal nonterminal >> "[" "[" {Sym ","}+ parameters "]"
-	| \start: "start" "[" Nonterminal nonterminal "]"
-	| labeled: Sym symbol NonterminalLabel label
-// literals
-	| characterClass: Class charClass
-	| literal: StringConstant string
-	| caseInsensitiveLiteral: CaseInsensitiveStringConstant cistring
-// regular expressions
-	| iter: Sym symbol "+"
-	| iterStar: Sym symbol "*"
-	| iterSep: "{" Sym symbol Sym sep "}" "+"
-	| iterStarSep: "{" Sym symbol Sym sep "}" "*"
-	| optional: Sym symbol "?"
-	| alternative: "(" Sym first "|" {Sym "|"}+ alternatives ")"
-	| sequence: "(" Sym first Sym+ sequence ")"
-	| empty: "(" ")"
-// conditionals
-	| column: Sym symbol "@" IntegerLiteral column
-	| endOfLine: Sym symbol "$"
-	| startOfLine: "^" Sym symbol
-	| except:   Sym symbol "!" NonterminalLabel label
-	>
-	assoc (
-	  left  ( follow:     Sym symbol  "\>\>" Sym match
-	        | notFollow:  Sym symbol "!\>\>" Sym match
-	        )
-	  |
-	  right ( precede:    Sym match "\<\<" Sym symbol
-	        | notPrecede: Sym match "!\<\<" Sym symbol
-	        )
-	)
-	>
-	left unequal:  Sym symbol "\\" Sym match
-;
+// Can't find Nonterminal and NonterminalLabel
+data Nonterminal = mknonterminal(); 
+data NonterminalLabel = mknonterminallabel(str label);
+data IntegerLiteral = intlit(int i);
 
-syntax Type
-	= bracket \bracket: "(" Type type ")"
-	| user: UserType user
-	| function: FunctionType function
-	| structured: StructuredType structured
-	| basic: BasicType basic
-	| selector: DataTypeSelector selector
-	| variable: TypeVar typeVar
-	| symbol: Sym!nonterminal!labeled!parametrized!parameter symbol
-;
+data Sym = nonterminal(Nonterminal nonterminal)
+         | parameter(Nonterminal nonterminal)
+         | parametrized(Nonterminal nonterminal, list[Sym] /* + */ parameters)
+         | \start(Nonterminal nonterminal)
+         | labeled(Sym symbol, NonterminalLabel label)
+         | characterClass(Class charClass)
+         | literal(str string)
+         | caseInsensitiveLiteral(str cistring)
+         | iter(Symbol symbol)
+         | iterStar(Sym symbol)
+         | iterSep(Sym symbol, Sym sep)
+         | iterStarSep(Sym symbol, Sym sep)
+         | optional(Sym symbol)
+         | alternative(Sym first, list[Sym] /* + */ alternatives)
+         | sequence(Sym first, list[Sym] /* + */ sequence)
+         | empty()
+         | column(Sym symbol, IntegerLiteral i)
+         | endOfLine(Sym symbol)
+         | startOfLine(Sym symbol)
+         | except(Sym symbol, NonterminalLabel label)
+         | follow(Sym symbol, Sym match)
+         | notFollow(Sym symbol, Sym match)
+         | precede(Sym match, Sym symbol)
+         | notPrecede(Sym match, Sym symbol)
+         | unequal(Sym symbol, Sym match);
+         
+data Type = \bracket(Type \type)
+          | user(UserType user)
+          | function(FunctionType function)
+          | structured(StructuredType structured)
+          | basic(BasicType basic)
+          | selector(DataTypeSelector selector)
+          | variable(TypeVar typeVar)
+          | symbol(Sym symbol)
+          ;
 
 // AType
-
-alias Keyword     = tuple[str fieldName, AType fieldType, Expression defaultExp];
-alias NamedField  = tuple[str fieldName, AType fieldType] ;
-
+data Keyword = mkkeyword(str fieldName, AType fieldType, Expression defaultExp);
+data NamedField  = mknamefield(str fieldName, AType fieldType);
 data QName        = qualName(str qualifier, str name);
 
-data AType (str label = "")
+
+data AType
     =  aint()
      | abool()
      | areal()
@@ -160,82 +109,22 @@ data AType (str label = "")
      | amodule(str mname, str deprecationMessage="")
      | aparameter(str pname, AType bound)
      | areified(AType atype)
-     ;
+     | \start(AType symbol)
+     | \lit(str string)
+     | \cilit(str string)
+     | \char-class(list[ACharRange] ranges) 
+     | \empty()
+     | \opt(AType symbol)
+     | \iter(AType symbol)
+     | \iter-star(AType symbol)
+     | \iter-seps(AType symbol, list[AType] separators)
+     | \iter-star-seps(AType symbol, list[AType] separators)
+     | \alt(set[AType] alternatives)
+     | \seq(list[AType] symbols)
+     | \conditional(AType symbol, set[ACondition] conditions);
 
-
-@doc{
-.Synopsis
-Character ranges and character class
-.Description
-*  `CharRange` defines a range of characters.
-*  A `CharClass` consists of a list of characters ranges.
-}
 data ACharRange = range(int begin, int end);
 
-alias ACharClass = list[ACharRange];
-
-@doc{
-.Synopsis
-Symbols that can occur in a ParseTree
-.Description
-The type `Symbol` is introduced in <<Prelude-Type>>, see <<Type-Symbol>>, to represent the basic Rascal types,
-e.g., `int`, `list`, and `rel`. Here we extend it with the symbols that may occur in a ParseTree.
-<1>  The `start` symbol wraps any symbol to indicate that it is a start symbol of the grammar and
-        may occur at the root of a parse tree.
-<2>  Context-free non-terminal
-<3>  Lexical non-terminal
-<4>  Layout symbols
-<5>  Terminal symbols that are keywords
-<6>  Parameterized context-free non-terminal
-<7> Parameterized lexical non-terminal
-<8>  Terminal.
-<9>  Case-insensitive terminal.
-<10> Character class
-<11> Empty symbol
-<12> Optional symbol
-<13> List of one or more symbols without separators
-<14> List of zero or more symbols without separators
-<15> List of one or more symbols with separators
-<16> List of zero or more symbols with separators
-<17> Alternative of symbols
-<18> Sequence of symbols
-<19> Conditional occurrence of a symbol.
-}
-
-data AType // <1>
-     = \start(AType symbol);
-
-// These are the terminal symbols.
-data AType
-     = \lit(str string)   // <8>
-     | \cilit(str string) // <9>
-     | \char-class(list[ACharRange] ranges) // <10>
-     ;
-
-// These are the regular expressions.
-data AType
-     = \empty() // <11>
-     | \opt(AType symbol)  // <12>
-     | \iter(AType symbol) // <13>
-     | \iter-star(AType symbol)  // <14>
-     | \iter-seps(AType symbol, list[AType] separators)      // <15>
-     | \iter-star-seps(AType symbol, list[AType] separators) // <16>
-     | \alt(set[AType] alternatives) // <17>
-     | \seq(list[AType] symbols)     // <18>
-     ;
-
-data AType // <19>
-     = \conditional(AType symbol, set[ACondition] conditions);
-
-@doc{
-.Synopsis
-Datatype for declaring preconditions and postconditions on symbols
-.Description
-A `Condition` can be attached to a symbol; it restricts the applicability
-of that symbol while parsing input text. For instance, `follow` requires that it
-is followed by another symbol and `at-column` requires that it occurs
-at a certain position in the current line of the input text.
-}
 data ACondition
      = \follow(AType atype)
      | \not-follow(AType atype)
@@ -245,8 +134,7 @@ data ACondition
      | \at-column(int column)
      | \begin-of-line()
      | \end-of-line()
-     | \except(str label)
-;
+     | \except(str label);
 
 public AType sym2AType(Sym sym) {
   switch (sym) {
@@ -313,32 +201,34 @@ public list[AType] separgs2ATypes({Sym ","}+ args) {
   return [sym2AType(s) | Sym s <- args];
 }
 
-// flattening rules for regular expressions
-public AType \seq([*AType a, \seq(list[AType] b), *AType c]) = \seq(a + b + c);
 
-public AType \alt({*AType a, \alt(set[AType] b)}) = \alt(a + b);
 
-// flattening for conditionals
-
-public AType \conditional(\conditional(AType s, set[ACondition] cs1), set[ACondition] cs2)
-  = \conditional(s, cs1 + cs2);
-
-public AType \conditional(AType s, set[ACondition] cs) {
+public AType flatten(AType at) =
+  innermost visit(at) {
+  // flattening rules for regular expressions
+    case \seq([*AType a, \seq(list[AType] b), *AType c]) => \seq(a + b + c)
+    case \alt({*AType a, \alt(set[AType] b)}) => \alt(a + b)
+  // flattening for conditionals
+    case \conditional(\conditional(AType s, set[ACondition] cs1), set[ACondition] cs2) => \conditional(s, cs1 + cs2)
   // if there is a nested conditional, lift the nested conditions toplevel and make the nested AType unconditional.
-  if (c <- cs, c has symbol, c.atype is conditional) {
-     return \conditional(s, {c[symbol=c.symbol.symbol], *c.symbol.conditions, *(cs - {c})}); //SPLICING
-  }
-  else fail;
-}
+    
+    case \conditional(AType s, set[ACondition] cs) =>
+      ({
+        if (c <- cs, c has symbol, c.atype is conditional) {
+           \conditional(s, {c[symbol=c.symbol.symbol], *c.symbol.conditions, *(cs - {c})}); //SPLICING
+        } else fail;
+      })
+  };
+
 
 @doc{Convert qualified names into an abstract representation.}
 public QName convertName(QualifiedName qn) {
-    parts = split("::", "<qn>");
+    list[Str] parts = qn.names;
     if(size(parts) == 1){
         part = parts[0];
         return qualName("", part[0] == "\\" ? part[1..] : part);
     }
-    unescapedParts = [part[0] == "\\" ? part[1..] : part | part <- parts];
+    list[Str] unescapedParts = [part[0] == "\\" ? part[1..] : part | part <- parts];
     return qualName(intercalate("::", unescapedParts[..-1]), unescapedParts[-1]);
 }
 
@@ -348,6 +238,7 @@ public QName convertName(Name n) {
     return qualName("", part[0] == "\\" ? part[1..] : part);
 }
 
+/*
 public str prettyPrintName(QualifiedName qn){
     if ((QualifiedName)`<{Name "::"}+ nl>` := qn) {
         nameParts = [ (startsWith("<n>","\\") ? substring("<n>",1) : "<n>") | n <- nl ];
@@ -607,4 +498,4 @@ public AType convertType(Type t, TBuilder tb) {
         case (Type) `( <Type tp> )` : return convertType(tp, tb);
         default : { throw "Error in convertType, unexpected type syntax: <t>"; }
     }
-}
+}*/
