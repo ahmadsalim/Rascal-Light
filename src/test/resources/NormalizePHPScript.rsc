@@ -90,7 +90,6 @@ public data Scalar
 	| methodConstant()
 	| namespaceConstant()
 	| traitConstant()
-	| float(real realVal)
 	| integer(int intVal)
 	| string(str strVal)
 	| encapsed(list[Expr] parts)
@@ -184,35 +183,35 @@ public Script oldNamespaces(Script s) {
 	return s;
 }
 
-public Stmt createIf(ElseIf e:elseIf(Expr cond, list[Stmt] body), OptionElse oe) {
-	return \if(cond, body, [], oe)[@at=e@at];
+public Stmt createIf(ElseIf e, OptionElse oe) {
+    switch (e) {
+      case elseIf(Expr cond, list[Stmt] body): return \if(cond, body, [], oe);
+    }
 }
 
 public Script normalizeIf(Script s) {
-	// NOTE: We copy the locations over. This isn't completely valid, since we are
-	// then using locations for items that don't actually appear anywhere in the
-	// source, but this at least helps to tie these back to the original code.
 	solve(s) {
 		s = bottom-up visit(s) {
-			case i:\if(cond,body,elseifs,els) : {
+			case Stmt i:\if(cond,body,elseifs,els) => ({
 				if (size(elseifs) > 0) {
 					workingElse = els;
 					for (e <- reverse(elseifs)) {
 						newIf = createIf(e, workingElse);
-						workingElse = someElse(\else([newIf])[@at=newIf@at])[@at=newIf@at];
+						workingElse = someElse(\else([newIf]));
 					}
-					insert(\if(cond,body,[],workingElse)[@at=i@at]);
-				}
-			}
+					\if(cond,body,[],workingElse);
+				} else i;
+			})
 		}
 	}
 	return s;
 }
 
+// Good as example
 public Script flattenBlocks(Script s) {
 	solve(s) {
 		s = bottom-up visit(s) {
-			case list[Stmt] stmtList: [*xs,block(list[Stmt] ys),*zs] => [*xs,*ys,*zs]
+			case list[Stmt] stmtList: [*xs,block(list[Stmt] ys),*zs] => xs + ys + zs
 		}
 	}
 	return s;
@@ -221,10 +220,7 @@ public Script flattenBlocks(Script s) {
 public Script discardEmpties(Script s) {
 	solve(s) {
 		s = bottom-up visit(s) {
-			case list[Stmt] stmtList: [*xs,emptyStmt(),*zs] : {
-				list[Stmt] r = [*xs,*zs];
-				insert(r);
-			}
+			case list[Stmt] stmtList: [*xs,emptyStmt(),*zs] => xs + zs
 		}
 	}
 	return s;
@@ -233,7 +229,16 @@ public Script discardEmpties(Script s) {
 public Script useBuiltins(Script s) {
 	solve(s) {
 		s = bottom-up visit(s) {
-			case call(name(name("isset")),params) => isSet([e | actualParameter(e,_,_) <- params])
+			case call(name(name("isset")),params) => ({
+			   list[Expr] es = [];
+			   for (ap <- params)
+			     switch(ap) {
+			       case actualParameter(e,_,_):
+			         es = es + e;
+			       case _:;
+			     };
+			   isSet(es);
+			})
 
 			case call(name(name("exit")),[]) => exit(noExpr(), true)
 
@@ -245,8 +250,17 @@ public Script useBuiltins(Script s) {
 
 			case call(name(name("print")),[actualParameter(e,_,_)]) => Expr::print(e)
 
-			case exprstmt(call(name(name("unset")),params)) => unset([e | actualParameter(e,_,_) <- params])
-
+			case exprstmt(call(name(name("unset")),params)) => ({
+			   list[Expr] es = [];
+			   for (ap <- params)
+			     switch(ap) {
+			       case actualParameter(e,_,_):
+			         es = es + e;
+			       case _:;
+			     };
+			   unset(es);
+			})
+			
 			case call(name(name("empty")),[actualParameter(e,_,_)]) => empty(e)
 
 			case call(name(name("eval")),[actualParameter(e,_,_)]) => eval(e)
@@ -264,12 +278,13 @@ public Script discardHTML(Script s) {
 	return s;
 }
 
+data Loc = mkloc(int i);
 
 data System
-	= system(map[loc fileloc, Script scr] files)
-	| namedVersionedSystem(str name, str version, loc baseLoc, map[loc fileloc, Script scr] files)
-	| namedSystem(str name, loc baseLoc, map[loc fileloc, Script scr] files)
-	| locatedSystem(loc baseLoc, map[loc fileloc, Script scr] files)
+	= system(map[Loc fileloc, Script scr] files)
+	| namedVersionedSystem(str name, str version, Loc baseLoc, map[Loc fileloc, Script scr] files)
+	| namedSystem(str name, Loc baseLoc, map[Loc fileloc, Script scr] files)
+	| locatedSystem(Loc baseLoc, map[Loc fileloc, Script scr] files)
 	;
 
 public System normalizeSystem(System s) {
@@ -287,6 +302,11 @@ public System normalizeSystem(System s) {
 
 
 public System discardErrorScripts(System s) {
-	s.files = (l : s.files[l] | l <- s.files, script(_) := s.files[l]);
+    map[Loc,Script] newFiles = ();
+    for (l <- s.files)
+      switch (s.files[l]) {
+        case script(_):
+          newFiles = newFiles + (l: s.files[l]);
+      }
 	return s;
 }
