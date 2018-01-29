@@ -571,6 +571,9 @@ object RascalWrapper {
       translateExpression(cond).flatMap(c =>
         translateExpression(thenB).flatMap(th => translateExpression(elseB).map(IfExpr(c, th, _)))
       )
+    } else if (expr.isIsDefined) {
+      val arg = expr.getArgument
+      translateExpression(arg.getExpression).map(e => FunCallExpr("isDefined", List(e)))
     } else {
       s"Unsupported expression $expr".left
     }

@@ -33,7 +33,7 @@ data Class = simpleCharclass(list[Range] ranges)
            | \bracket(Class charClass);
 
 // Can't find Nonterminal and NonterminalLabel
-data Nonterminal = mknonterminal(); 
+data Nonterminal = mknonterminal(str label); 
 data NonterminalLabel = mknonterminallabel(str label);
 data IntegerLiteral = intlit(int i);
 
@@ -103,7 +103,7 @@ data AType
      | aalias(str aname, list[AType] parameters, AType aliased)
      | aanno(str aname, AType onType, AType annoType)
 
-     | aadt(str adtName, list[AType] parameters, bool hasSyntax = false)
+     | aadt(str adtName, list[AType] parameters, bool hasSyntax)
      | acons(AType adt, str consName, list[NamedField] fields, list[Keyword] kwFields)
 
      | amodule(str mname, str deprecationMessage="")
@@ -136,40 +136,52 @@ data ACondition
      | \end-of-line()
      | \except(str label);
 
+data UnexpectedSymbolException = unexpectedsymexc();
 public AType sym2AType(Sym sym) {
   switch (sym) {
-    case lang::rascal::\syntax::Rascal::nonterminal(Nonterminal n) :
-      return AType::aadt("<n>", [], hasSyntax=true);
+    case nonterminal(Nonterminal n) :
+      return aadt(n.label, [], true);
     case \start(Nonterminal n) :
-       return AType::aadt("<n>", [], hasSyntax=true);   // TODO leave start somewhere
-    case literal(StringConstant l):
-      return AType::lit(unescape(l));
-    case caseInsensitiveLiteral(CaseInsensitiveStringConstant l):
-      return AType::cilit(unescape(l));
-    case \parametrized(Nonterminal n, {Sym ","}+ syms) :
-        return AType::aadt("<n>",separgs2ATypes(syms), hasSyntax=true);
-    case labeled(Sym s, NonterminalLabel n) :
-      return sym2AType(s)[label="<n>"];
+       return aadt(n.label, [], true);   // TODO leave start somewhere
+    case literal(str l):
+      return lit(l); //Simplified
+    case caseInsensitiveLiteral(str l):
+      return cilit(l); //Simplified
+    case \parametrized(Nonterminal n, list[Sym] syms) :
+        return aadt(n.label,separgs2ATypes(syms), true);
+    case labeled(Sym s, NonterminalLabel n): {
+      AType at = sym2AType(s);
+      at.label = n.label;
+      return at;
+    }
     case optional(Sym s)  :
-      return AType::opt(sym2AType(s));
+      return opt(sym2AType(s));
     case characterClass(Class cc):
       return cc2ranges(cc);
     case parameter(Nonterminal n) :
-      return AType::\aparameter("<n>", aadt("Tree", []));
+      return \aparameter(n.label, aadt("Tree", [], false));
     case empty() :
-      return AType::\empty();
-    case alternative(Sym first, {Sym "|"}+ alts) :
-      return alt({sym2AType(first)} + {sym2AType(elem) | elem <- alts});
+      return \empty();
+    case alternative(Sym first, list[Sym] alts) : {
+      list[AType] elems = {};
+      for (elem <- alts)
+        elems = elems + sym2AType(elem);
+      return alt({sym2AType(first)} + elems);
+    }
     case iterStar(Sym s)  :
-      return AType::\iter-star(sym2AType(s));
+      return \iter-star(sym2AType(s));
     case iter(Sym s)  :
-      return AType::\iter(sym2AType(s));
+      return \iter(sym2AType(s));
     case iterStarSep(Sym s, Sym sep)  :
-      return AType::\iter-star-seps(sym2AType(s), [sym2AType(sep)]);
+      return \iter-star-seps(sym2AType(s), [sym2AType(sep)]);
     case iterSep(Sym s, Sym sep)  :
-      return AType::\iter-seps(sym2AType(s), [sym2AType(sep)]);
-    case sequence(Sym first, Sym+ sequence) :
-      return seq([sym2AType(first)] + [sym2AType(elem) | elem <- sequence]);
+      return \iter-seps(sym2AType(s), [sym2AType(sep)]);
+    case sequence(Sym first, list[Sym] sequence): {
+      list[AType] elems = [];
+      for (elem <- sequence)
+        elems = elems + sym2AType(elem);
+      return seq([sym2AType(first)] + elems);
+    }
     case startOfLine(Sym s) :
       return conditional(sym2AType(s), {\begin-of-line()});
     case endOfLine(Sym s) :
@@ -187,279 +199,421 @@ public AType sym2AType(Sym sym) {
     case unequal(Sym s, Sym r) :
       return conditional(sym2AType(s), {\delete(sym2AType(r))});
     case except(Sym s, NonterminalLabel n):
-      return conditional(sym2AType(s), {\except("<n>")});
+      return conditional(sym2AType(s), {\except(n.label)});
     default:
-      throw "sym2AType, missed a case <sym>";
+      throw unexpectedsymexc();
   }
 }
 
-public list[AType] args2ATypes(Sym* args) {
-  return [sym2AType(s) | Sym s <- args];
+public list[AType] args2ATypes(list[Sym] args) {
+  list[AType] types = [];
+  for (s <- args)
+    types = types + sym2AType(s);
 }
 
-public list[AType] separgs2ATypes({Sym ","}+ args) {
-  return [sym2AType(s) | Sym s <- args];
+public list[AType] separgs2ATypes(list[Sym] args) {
+  list[AType] types = [];
+  for (s <- args)
+    types = types + sym2AType(s);
 }
 
-
-
-public AType flatten(AType at) =
-  innermost visit(at) {
-  // flattening rules for regular expressions
-    case \seq([*AType a, \seq(list[AType] b), *AType c]) => \seq(a + b + c)
-    case \alt({*AType a, \alt(set[AType] b)}) => \alt(a + b)
-  // flattening for conditionals
-    case \conditional(\conditional(AType s, set[ACondition] cs1), set[ACondition] cs2) => \conditional(s, cs1 + cs2)
-  // if there is a nested conditional, lift the nested conditions toplevel and make the nested AType unconditional.
-    
-    case \conditional(AType s, set[ACondition] cs) =>
-      ({
-        if (c <- cs, c has symbol, c.atype is conditional) {
-           \conditional(s, {c[symbol=c.symbol.symbol], *c.symbol.conditions, *(cs - {c})}); //SPLICING
-        } else fail;
-      })
-  };
-
+public str intercalate(str sep, list[str] parts) {
+  switch (parts) {
+     case []: return "";
+     case [x, *xs]: {
+       str newstr = "";
+       for (x2 <- xs)
+         newstr = newstr + sep + x2;
+       return x + newstr;
+    }
+  }
+}
 
 @doc{Convert qualified names into an abstract representation.}
 public QName convertName(QualifiedName qn) {
-    list[Str] parts = qn.names;
-    if(size(parts) == 1){
-        part = parts[0];
-        return qualName("", part[0] == "\\" ? part[1..] : part);
-    }
-    list[Str] unescapedParts = [part[0] == "\\" ? part[1..] : part | part <- parts];
-    return qualName(intercalate("::", unescapedParts[..-1]), unescapedParts[-1]);
+    return qualName(intercalate("::", qn.names), qn.names); //Simplified
 }
 
 @doc{Convert names into an abstract representation.}
-public QName convertName(Name n) {
-    part = "<n>";
-    return qualName("", part[0] == "\\" ? part[1..] : part);
+public QName convertName(str n) {
+    return qualName("", n); //Simplified
 }
 
-/*
-public str prettyPrintName(QualifiedName qn){
-    if ((QualifiedName)`<{Name "::"}+ nl>` := qn) {
-        nameParts = [ (startsWith("<n>","\\") ? substring("<n>",1) : "<n>") | n <- nl ];
-        return intercalate("::", nameParts);
-    }
-    throw "Unexpected syntax for qualified name: <qn>";
-}
+str prettyPrintQName(QName qname) = isEmpty(qname.qualifier) ? qname.name : (qname.qualifier + "::" + qname.name);
 
-public str prettyPrintName(Name nm){
-    return startsWith("<nm>","\\") ? substring("<nm>",1) : "<nm>";
-}
-
-public bool isQualified(QName qn) = !isEmpty(qn.qualifier);
-
-str prettyPrintQName(QName qname) = isEmpty(qname.qualifier) ? qname.name : "<qname.qualifier>::<qname.name>";
+data BasicTypeException = btexc();
 
 @doc{Convert from the concrete to the abstract representations of Rascal basic types.}
-public AType convertBasicType(BasicType t, TBuilder tb) {
+public AType convertBasicType(BasicType t/*, TBuilder tb*/) {
     switch(t) {
-        case (BasicType)`bool` : return abool();
-        case (BasicType)`int` : return aint();
-        case (BasicType)`rat` : return arat();
-        case (BasicType)`real` : return areal();
-        case (BasicType)`num` : return anum();
-        case (BasicType)`str` : return astr();
-        case (BasicType)`value` : return avalue();
-        case (BasicType)`node` : return anode([]);
-        case (BasicType)`void` : return avoid();
-        case (BasicType)`loc` : return aloc();
-        case (BasicType)`datetime` : return adatetime();
+        case \bool(): return abool();
+        case \int(): return aint();
+        case rational(): return arat();
+        case \real(): return areal();
+        case \num(): return anum();
+        case string(): return astr();
+        case \value(): return avalue();
+        case \node(): return anode([]);
+        case \void(): return avoid();
+        case \loc(): return aloc();
+        case dateTime(): return adatetime();
 
-        case (BasicType)`list` : { tb.reportError(t, "Non-well-formed type, type should have one type argument"); return alist(avoid());  }
-        case (BasicType)`set` : { tb.reportError(t, "Non-well-formed type, type should have one type argument"); return aset(avoid()); }
-        case (BasicType)`bag` : { tb.reportError(t, "Non-well-formed type, type should have one type argument"); return abag(avoid()); }
-        case (BasicType)`map` : { tb.reportError(t, "Non-well-formed type, type should have two type arguments"); return amap(avoid(),avoid()); }
-        case (BasicType)`rel` : { tb.reportError(t, "Non-well-formed type, type should have one or more type arguments"); return arel(atypeList([])); }
-        case (BasicType)`lrel` : { tb.reportError(t, "Non-well-formed type, type should have one or more type arguments"); return alrel(atypeList([])); }
-        case (BasicType)`tuple` : { tb.reportError(t, "Non-well-formed type, type should have one or more type arguments"); return atuple(atypeList([])); }
-        case (BasicType)`type` : { tb.reportError(t, "Non-well-formed type, type should have one type argument"); return areified(avoid()); }
+        case \list(): { /*tb.reportError(t, "Non-well-formed type, type should have one type argument");*/ throw btexc(); return alist(avoid());  }
+        case \set(): { /*tb.reportError(t, "Non-well-formed type, type should have one type argument");*/ throw btexc(); return aset(avoid()); }
+        case \bag(): { /*tb.reportError(t, "Non-well-formed type, type should have one type argument");*/ throw btexc(); return abag(avoid()); }
+        case \map(): { /*tb.reportError(t, "Non-well-formed type, type should have two type arguments");*/ throw btexc(); return amap(avoid(),avoid()); }
+        case relation(): { /*tb.reportError(t, "Non-well-formed type, type should have one or more type arguments");*/ throw btexc(); return arel(atypeList([])); }
+        case listRelation(): { /*tb.reportError(t, "Non-well-formed type, type should have one or more type arguments");*/ throw btexc(); return alrel(atypeList([])); }
+        case \tuple(): { /*tb.reportError(t, "Non-well-formed type, type should have one or more type arguments");*/ throw btexc(); return atuple(atypeList([])); }
+        case \type(): { /*tb.reportError(t, "Non-well-formed type, type should have one type argument");*/ throw btexc(); return areified(avoid()); }
     }
 }
 
 @doc{Convert from the concrete to the abstract representations of Rascal type arguments.}
-public AType convertTypeArg(TypeArg ta, TBuilder tb) {
+public AType convertTypeArg(TypeArg ta/*, TBuilder tb*/) {
     switch(ta) {
-        case (TypeArg) `<Type t>` : return convertType(t, tb);
-        case (TypeArg) `<Type t> <Name n>` :  return convertType(t, tb)[label="<prettyPrintQName(convertName(n))>"];
+        case \default(t): return convertType(t/*, tb*/);
+        case named(t,n):  { 
+           AType at = convertType(t/*, tb*/);
+           at.label = prettyPrintQName(convertName(n));
+           return at;
+        }
     }
 }
 
 @doc{Convert lists of type arguments.}
-public list[AType] convertTypeArgList({TypeArg ","}* tas, TBuilder tb)
-    = [convertTypeArg(ta, tb) | ta <- tas];
+public list[AType] convertTypeArgList(list[TypeArg] tas/*, TBuilder tb*/) {
+  list[AType] types = [];
+  for (ta <- tas)
+    types = types + convertTypeArg(ta/*, tb*/);
+}
+
+data LabellingException = labelexc();
+data StructuredTypeException = stexc();
+
+
+// makeXType from here: https://github.com/usethesource/rascal-core/blob/3f7243ac017b3e08d3bc327bfb242334233bf241/src/io/org/rascalmpl/library/lang/rascalcore/check/ATypeUtils.rsc
+
+@doc{Unwraps parameters and conditionals from a type.}
+AType unwrapType(AType t) {
+  switch(t) {
+    case p: aparameter(_,tvb):
+      if (p.label?) {
+        AType nt = unwrapType(tvb);
+        nt.label = p.label;
+        return nt;
+      } else return unwrapType(tvb);
+    case \conditional(AType sym,  set[ACondition] _): return unwrapType(sym);
+    case _: return t;
+  }
+}
+
+
+@doc{Determine if the given type is a tuple.}
+bool isTupleType(AType tp) {
+  switch(tp) {
+    case aparameter(_,AType tvb): return isTupleType(tvb);
+    case atuple(_): return true;
+    case _: return false;
+  }
+}
+
+@doc{Create a new list type, given the element type of the list.}
+AType makeListType(AType elementType) {
+    return isTupleType(elementType) ? makeListRelTypeFromTuple(elementType) : alist(elementType); 
+    // TODO consider converting isTupleType to something that returns a refined shape for better verification
+} 
+
+AType makeSetType(AType elementType) {
+    return isTupleType(elementType) ? makeRelTypeFromTuple(elementType) : aset(elementType);
+}
+
+@doc{Create a new map type, given the types of the domain and range. Check to make sure field names are used consistently.}
+AType makeMapType(AType domain, AType range) {
+    if(!isEmpty(domain.label) && !isEmpty(range.label)){
+        if(domain.label != range.label) return amap(domain, range);
+        throw rascalCheckerInternalError("The field names of the map domain and range must be distinct; found <fmt(domain.label)>");
+    }
+    else if(!isEmpty(domain.label)) return amap(unset(domain,"label"),range);
+    else if(!isEmpty(range.label)) return amap(domain,unset(range, "label"));
+    return amap(domain, range);
+}
+
+@doc{Get the fields of a tuple as a list.}
+public list[AType] getTupleFields(AType t) {
+    switch(unwrapType(t)) {
+      case atuple(atypeList(tas)): return tas; // Potential real error here: Make tool catch it!
+      case _: throw rascalCheckerInternalError("Cannot get tuple fields from type <fmt(t)>"); 
+    }
+}
+
+@doc{Create a new rel type, given the element types of the fields. Check any given labels for consistency.}
+AType makeRelType(list[AType] elementTypes) {
+    set[str] labels = {};
+    for (tp <- elementTypes)
+      if (!isEmpty(tp.label))
+        labels = labels + tp.label;
+    if (size(labels) == 0 || size(labels) == size(elementTypes))
+        return arel(atypeList(elementTypes));
+    else
+        throw rascalCheckerInternalError("For rel types, either all fields much be given a distinct label or no fields should be labeled."); 
+}
+
+@doc{Create a new list rel type, given the element types of the fields. Check any given labels for consistency.}
+AType makeListRelType(list[AType] elementTypes) {
+    set[str] labels = {};
+    for (tp <- elementTypes)
+      if (!isEmpty(tp.label))
+        labels = labels + tp.label;
+    if (size(labels) == 0 || size(labels) == size(elementTypes)) 
+        return alrel(atypeList(elementTypes));
+    else
+        throw rascalCheckerInternalError("For lrel types, either all fields much be given a distinct label or no fields should be labeled."); 
+}
+
+@doc{Create a new tuple type, given the element types of the fields. Check any given labels for consistency.}
+AType makeTupleType(list[AType] elementTypes) {
+    set[str] labels = {};
+    for (tp <- elementTypes)
+      if (!isEmpty(tp.label))
+        labels = labels + tp.label;
+    if(size(labels) > 0 && size(labels) != size(elementTypes)) {
+        list[AType] nets = [];
+        for (e <- elementTypes)
+          nets = nets + unset(e, "label");
+        elementTypes = nets;
+    }
+    return atuple(atypeList(elementTypes));
+}
+
+@doc{Create a new lrel type based on a given tuple type.}
+AType makeListRelTypeFromTuple(AType t) = alrel(atypeList(getTupleFields(t)));
+
+@doc{Create a new rel type based on a given tuple type.}
+AType makeRelTypeFromTuple(AType t) = arel(atypeList(getTupleFields(t)));
+
 
 @doc{Convert structured types, such as list<<int>>. Check here for certain syntactical
 conditions, such as: all field names must be distinct in a given type; lists require
 exactly one type argument; etc.}
-public AType convertStructuredType(StructuredType st, TBuilder tb) {
+public AType convertStructuredType(StructuredType st/*, TBuilder tb*/) {
     switch(st) {
-        case (StructuredType) `list [ < {TypeArg ","}+ tas > ]` : {
-            l = convertTypeArgList(tas, tb);
-            if (size(l) == 1) {
-                return makeListType(l[0]);
-            } else {
-                tb.reportError(st, "Non-well-formed type, type should have one type argument");
-                return alist(avoid());
+        case \default(\list(), tas): {
+            l = convertTypeArgList(tas/*, tb*/);
+            switch (l) {
+            	case [ta]: return makeListType(ta);
+            	case _: {
+            	  /*tb.reportError(st, "Non-well-formed type, type should have one type argument");*/ throw stexc();
+                  return alist(avoid());
+            	}
             }
         }
 
-        case (StructuredType) `set [ < {TypeArg ","}+ tas > ]` : {
-            l = convertTypeArgList(tas, tb);
-            if (size(l) == 1) {
-                return makeSetType(l[0]);
-            } else {
-                tb.reportError(st, "Non-well-formed type, type should have one type argument");
-                return aset(avoid());
+        case \default(\set(), tas): {
+            l = convertTypeArgList(tas/*, tb*/);
+            switch (l) {
+            	case [ta]: return makeSetType(ta);
+            	case _: {
+            	  /*tb.reportError(st, "Non-well-formed type, type should have one type argument");*/ throw stexc();
+                  return aset(avoid());
+            	}
             }
         }
 
-        case (StructuredType) `bag [ < {TypeArg ","}+ tas > ]` : {
-            l = convertTypeArgList(tas, tb);
-            if (size(l) == 1) {
-                return abag(l[0]);
-            } else {
-                tb.reportError(st, "Non-well-formed type, type should have one type argument");
-                return abag(avoid());
+        case \default(\bag(), tas): {
+            l = convertTypeArgList(tas/*, tb*/);
+             switch (l) {
+            	case [ta]: return abag(ta);
+            	case _: {
+            	  /*tb.reportError(st, "Non-well-formed type, type should have one type argument");*/ throw stexc();
+                  return abag(avoid());
+            	}
             }
         }
 
-        case (StructuredType) `map [ < {TypeArg ","}+ tas > ]` : {
-            l = convertTypeArgList(tas, tb);
-            if (size(l) == 2) {
-                dt = l[0]; rt = l[1];
-                if (!isEmpty(dt.label) && !isEmpty(rt.label) && dt.label != rt.label) {
-                    return makeMapType(dt, rt);
-                } else if (!isEmpty(dt.label) && !isEmpty(rt.label) && dt.label == rt.label) {
-                    tb.reportError(st,"Non-well-formed type, labels must be distinct");
-                    return makeMapType(unset(dt, "label"),unset(rt,"label"));
-                } else if (!isEmpty(dt.label) && isEmpty(rt.label)) {
-                    tb.reportWarning(st, "Field name <fmt(dt.label)> ignored, field names must be provided for both fields or for none");
-                    return makeMapType(unset(dt, "label"),rt);
-                } else if (isEmpty(dt.label) && !isEmpty(rt.label)) {
-                   tb.reportWarning(st, "Field name <fmt(rt.label)> ignored, field names must be provided for both fields or for none");
-                    return makeMapType(dt, unset(rt, "label"));
-                } else {
-                    return makeMapType(dt,rt);
-                }
-            } else {
-                tb.reportError(st, "Non-well-formed map type, type should have two type argument");
-                return makeMapType(avoid(),avoid());
+        case \default(\map(), tas): {
+            l = convertTypeArgList(tas/*, tb*/);
+               switch (l) {
+            	case [dt,rt]:
+            		if (!isEmpty(dt.label) && !isEmpty(rt.label) && dt.label != rt.label) {
+                    	return makeMapType(dt, rt);
+	                } else if (!isEmpty(dt.label) && !isEmpty(rt.label) && dt.label == rt.label) {
+	                    /*tb.reportError(st,"Non-well-formed type, labels must be distinct");*/ throw labelexc();
+	                    return makeMapType(unset(dt, "label"),unset(rt,"label"));
+	                } else if (!isEmpty(dt.label) && isEmpty(rt.label)) {
+	                    /*tb.reportWarning(st, "Field name <fmt(dt.label)> ignored, field names must be provided for both fields or for none");*/ throw labelexc();
+	                    return makeMapType(unset(dt, "label"),rt);
+	                } else if (isEmpty(dt.label) && !isEmpty(rt.label)) {
+	                    /*tb.reportWarning(st, "Field name <fmt(rt.label)> ignored, field names must be provided for both fields or for none");*/ throw labelexc();
+	                    return makeMapType(dt, unset(rt, "label"));
+	                } else {
+	                    return makeMapType(dt,rt);
+	                }
+            	case _: {
+            	  /*tb.reportError(st, "Non-well-formed map type, type should have two type argument");*/ throw stexc();
+                  return return makeMapType(avoid(),avoid());
+            	}
             }
         }
 
-        case (StructuredType) `rel [ < {TypeArg ","}+ tas > ]` : {
-            l = convertTypeArgList(tas, tb);
-            labelsList = [tp.label | tp <- l];
-            nonEmptyLabels = [ lbl | lbl <- labelsList, !isEmpty(lbl) ];
-            distinctLabels = toSet(nonEmptyLabels);
+        case \default(relation(), tas) : {
+            l = convertTypeArgList(tas/*, tb*/);
+            list[str] labelsList = [];
+            for (tp <- l)
+              labelsList = labelsList + tp.label;
+            list[str] nonEmptyLabels = [];
+            for (lbl <- labelsList)
+              if (!isEmpty(lbl))
+                nonEmptyLabels = nonEmptyLabels + lbl;
+            set[str] distinctLabels = toSet(nonEmptyLabels);
             if (size(l) == size(distinctLabels)){
                 return makeRelType(l);
             } else if(size(distinctLabels) == 0) {
                 return makeRelType(l);
             } else if (size(distinctLabels) != size(nonEmptyLabels)) {
-                tb.reportError(st, "Non-well-formed relation type, labels must be distinct");
-                return makeRelType([unset(tp, "label") | tp <- l]);
+                /*tb.reportError(st, "Non-well-formed relation type, labels must be distinct");*/ throw labelexc();
+                list[AType] types = [];
+                for (tp <- l)
+                  types = types + unset(tp, "label");
+                return makeRelType(types);
             } else if (size(distinctLabels) > 0) {
-                tb.reportWarning(st, "Field name ignored, field names must be provided for all fields or for none");
-                return makeRelType([unset(tp, "label") | tp <- l]);
+                /*tb.reportWarning(st, "Field name ignored, field names must be provided for all fields or for none");*/ throw labelexc();
+                list[AType] types = [];
+                for (tp <- l)
+                  types = types + unset(tp, "label");
+                return makeRelType(types);
             }
         }
 
-        case (StructuredType) `lrel [ < {TypeArg ","}+ tas > ]` : {
-            l = convertTypeArgList(tas, tb);
-            labelsList = [tp.label | tp <- l];
-            nonEmptyLabels = [ lbl | lbl <- labelsList, !isEmpty(lbl) ];
-            distinctLabels = toSet(nonEmptyLabels);
+        case \default(listRelation(), tas): {
+            l = convertTypeArgList(tas/*, tb*/);
+            list[str] labelsList = [];
+            for (tp <- l)
+              labelsList = labelsList + tp.label;
+            list[str] nonEmptyLabels = [];
+            for (lbl <- labelsList)
+              if (!isEmpty(lbl))
+                nonEmptyLabels = nonEmptyLabels + lbl;
+            set[str] distinctLabels = toSet(nonEmptyLabels);
             if (size(l) == size(distinctLabels)){
                 return makeListRelType(l);
             } else if(size(distinctLabels) == 0) {
                 return makeListRelType(l);
             } else if (size(distinctLabels) != size(nonEmptyLabels)) {
-                tb.reportError(st, "Non-well-formed list relation type, labels must be distinct");
-                return makeListRelType([unset(tp, "label") | tp <- l]);
+                /*tb.reportError(st, "Non-well-formed list relation type, labels must be distinct");*/ throw labelexc();
+                list[AType] types = [];
+                for (tp <- l)
+                  types = types + unset(tp, "label");
+                return makeListRelType(types);
             } else if (size(distinctLabels) > 0) {
-                tb.reportWarning(st, "Field name ignored, field names must be provided for all fields or for none");
-                return makeListRelType([unset(tp, "label") | tp <- l]);
+                /*tb.reportWarning(st, "Field name ignored, field names must be provided for all fields or for none");*/ throw labelexc();
+                list[AType] types = [];
+                for (tp <- l)
+                  types = types + unset(tp, "label");
+                return makeListRelType(types);
             }
         }
 
-         case (StructuredType) `tuple [ < {TypeArg ","}+ tas > ]` : {
-            l = convertTypeArgList(tas, tb);
-            labelsList = [tp.label | tp <- l];
-            nonEmptyLabels = [ lbl | lbl <- labelsList, !isEmpty(lbl) ];
-            distinctLabels = toSet(nonEmptyLabels);
+         case \default(\tuple(), tas): {
+            l = convertTypeArgList(tas/*, tb*/);
+            list[str] labelsList = [];
+            for (tp <- l)
+              labelsList = labelsList + tp.label;
+            list[str] nonEmptyLabels = [];
+            for (lbl <- labelsList)
+              if (!isEmpty(lbl))
+                nonEmptyLabels = nonEmptyLabels + lbl;
+            set[str] distinctLabels = toSet(nonEmptyLabels);
             if (size(l) == size(distinctLabels)){
                 return makeTupleType(l);
             } else if(size(distinctLabels) == 0) {
                 return makeTupleType(l);
             } else if (size(distinctLabels) != size(nonEmptyLabels)) {
-                tb.reportError(st, "Non-well-formed tuple type, labels must be distinct");
-                return makeTupleType([unset(tp, "label") | tp <- l]);
+                /*tb.reportError(st, "Non-well-formed tuple type, labels must be distinct");*/ throw labelexc();
+                list[AType] types = [];
+                for (tp <- l)
+                  types = types + unset(tp, "label");
+                return makeTupleType(types);
             } else if (size(distinctLabels) > 0) {
-                tb.reportWarning(st, "Field name ignored, field names must be provided for all fields or for none");
-                return makeTupleType([unset(tp, "label") | tp <- l]);
+                /*tb.reportWarning(st, "Field name ignored, field names must be provided for all fields or for none");*/ throw labelexc();
+                list[AType] types = [];
+                for (tp <- l)
+                  types = types + unset(tp, "label");
+                return makeTupleType(types);
             }
         }
 
-        case (StructuredType) `type [ < {TypeArg ","}+ tas > ]` : { // TODO
-            l = convertTypeArgList(tas, tb);
-            if (size(l) == 1) {
-                if (!isEmpty(l[0].label)) {
-                    tb.reportWarning(st, "Field name <fmt(l[0].label)> ignored");
-                    return areified(l[0]);
-                } else {
-                    return areified(l[0]);
-                }
-            } else {
-                tb.reportError(st, "Non-well-formed type, type should have one type argument");
-                return areified(avoid());
+        case \default(\type(), tas): { // TODO
+            l = convertTypeArgList(tas/*, tb*/);
+            switch (l) {
+            	case [ta]: 
+	            	if (!isEmpty(ta.label)) {
+	                    /*tb.reportWarning(st, "Field name <fmt(l[0].label)> ignored");*/
+	                    return areified(ta);
+	                } else {
+	                    return areified(ta);
+	                }
+            	case _: {
+            	  /*tb.reportError(st, "Non-well-formed type, type should have one type argument");*/ throw stexc();
+                  return areified(avoid());
+            	}
             }
         }
 
-        case (StructuredType) `<BasicType bt> [ < {TypeArg ","}+ tas > ]` : {
-                tb.reportError(st, "Type <bt> does not accept type parameters");
+        case \default(bt, tas): {
+                /*tb.reportError(st, "Type <bt> does not accept type parameters");*/ throw stexc();
                 return avoid();
         }
     }
 }
 
 @doc{Convert Rascal function types into their abstract representation.}
-public AType convertFunctionType(FunctionType ft, TBuilder tb) {
-    if ((FunctionType) `<Type t> ( <{TypeArg ","}* tas> )` := ft) {
-        l = convertTypeArgList(tas, tb);
-        tp = convertType(t, tb);
-        if (size(l) == 0) {
-            return afunc(tp, atypeList([]), []);
-        } else {
-            labelsList = [tp.label | tp <- l];;
-            nonEmptyLabels = [ lbl | lbl <- labelsList, !isEmpty(lbl) ];
-            distinctLabels = toSet(nonEmptyLabels);
-            if(size(distinctLabels) == 0)
-                return afunc(tp, atypeList(l), []);
-            if (size(l) == size(distinctLabels)) {
-                return afunc(tp, atypeList(l), []);
-            } else if (size(distinctLabels) > 0 && size(distinctLabels) != size(labelsList)) {
-                 tb.reportError(ft, "Non-well-formed type, labels must be distinct");
-                return afunc(tp, atypeList([unset(tp, "label") | tp <- l]), []);
-            } else if (size(labels) > 0) {
-                tb.reportWarning(ft, "Field name ignored, field names must be provided for all fields or for none");
-                return afunc(tp, atypeList([unset(tp, "label") | tp <- l]), []);
-            }
-        }
-    }
+public AType convertFunctionType(FunctionType ft/*, TBuilder tb*/) {
+	switch(ft) {
+	  case typeArguments(t, tas): {
+	    l = convertTypeArgList(tas/*, tb*/);
+	    tp = convertType(t/*, tb*/);
+	    if (size(l) == 0) {
+	        return afunc(tp, atypeList([]), []);
+	    } else {
+	        list[str] labelsList = [];
+            for (tp <- l)
+              labelsList = labelsList + tp.label;
+            list[str] nonEmptyLabels = [];
+            for (lbl <- labelsList)
+              if (!isEmpty(lbl))
+                nonEmptyLabels = nonEmptyLabels + lbl;
+            set[str] distinctLabels = toSet(nonEmptyLabels);
+	        if(size(distinctLabels) == 0)
+	            return afunc(tp, atypeList(l), []);
+	        if (size(l) == size(distinctLabels)) {
+	            return afunc(tp, atypeList(l), []);
+	        } else if (size(distinctLabels) > 0 && size(distinctLabels) != size(labelsList)) {
+	            /*tb.reportError(ft, "Non-well-formed type, labels must be distinct");*/ throw labelexc();
+	            list[AType] types = [];
+                for (tp <- l)
+                  types = types + unset(tp, "label");
+	            return afunc(tp, atypeList(types), []);
+	        } else if (size(labels) > 0) {
+	            /*tb.reportWarning(ft, "Field name ignored, field names must be provided for all fields or for none");*/ throw labelexc();
+	            list[AType] types = [];
+                for (tp <- l)
+                  types = types + unset(tp, "label");
+	            return afunc(tp, atypeList(types), []);
+	        }
+	    }
+	  }
+	}
 }
 
 @doc{Convert Rascal user types into their abstract representation.}
 public AType convertUserType(UserType ut, TBuilder tb) {
     switch(ut) {
-        case (UserType) `<QualifiedName n>` : return auser(convertName(n).name,[]);
-        case (UserType) `<QualifiedName n>[ <{Type ","}+ ts> ]` : {
-            paramTypes = [convertType(ti, tb) | ti <- ts ];
+        case name(n): return auser(convertName(n).name,[]);
+        case parameteric(n, ts): {
+            list[AType] paramTypes = [];
+            for (ti <- ts)
+              paramTypes = paramTypes + convertType(ti, tb);
             return auser(convertName(n).name, paramTypes);
         }
     }
@@ -470,32 +624,35 @@ public AType convertSymbol(Sym sym, TBuilder tb) = sym2AType(sym);
 @doc{Convert Rascal type variables into their abstract representation.}
 public AType convertTypeVar(TypeVar tv, TBuilder tb) {
     switch(tv) {
-        case (TypeVar) `& <Name n>` : return aparameter("<prettyPrintQName(convertName(n))>",avalue());
-        case (TypeVar) `& <Name n> \<: <Type tp>` : {
-            return aparameter("<n>",convertType(tp, tb));
+        case free(n): return aparameter(prettyPrintQName(convertName(n)), avalue());
+        case bounded(n, tp): {
+            return aparameter(n,convertType(tp, tb));
         }
     }
 }
 
+data NotImplementedException = notimplexc();
 @doc{Convert Rascal data type selectors into an abstract representation.}
 @todo{Implement once this is in use.}
 public AType convertDataTypeSelector(DataTypeSelector dts, TBuilder tb) {
     switch(dts) {
-        case (DataTypeSelector) `<QualifiedName n1> . <Name n2>` : throw "Not implemented";
+        case selector(n1, n2): throw notimplexc();
     }
 }
 
+data UnexpectedTypeException = unexpectedtypeexc();
+
 @doc{Main driver routine for converting Rascal types into abstract type representations.}
-public AType convertType(Type t, TBuilder tb) {
+public AType convertType(Type t/*, TBuilder tb*/) {
     switch(t) {
-        case (Type) `<BasicType bt>` : return convertBasicType(bt, tb);
-        case (Type) `<StructuredType st>` : return convertStructuredType(st, tb);
-        case (Type) `<FunctionType ft>` : return convertFunctionType(ft, tb);
-        case (Type) `<TypeVar tv>` : return convertTypeVar(tv, tb);
-        case (Type) `<UserType ut>` : return convertUserType(ut, tb);
-        case (Type) `<DataTypeSelector dts>` : return convertDataTypeSelector(dts, tb);
-        case (Type) `<Sym sym>` : return convertSymbol(sym, tb);
-        case (Type) `( <Type tp> )` : return convertType(tp, tb);
-        default : { throw "Error in convertType, unexpected type syntax: <t>"; }
+        case basic(bt): return convertBasicType(bt/*, tb*/);
+        case structured(st): return convertStructuredType(st/*, tb*/);
+        case function(ft): return convertFunctionType(ft/*, tb*/);
+        case variable(tv): return convertTypeVar(tv/*, tb*/);
+        case user(ut): return convertUserType(ut/*, tb*/);
+        case selector(dts): return convertDataTypeSelector(dts/*, tb*/);
+        case symbol(sym): return convertSymbol(sym/*, tb*/);
+        case \bracket(tp): return convertType(tp/*, tb*/);
+        case _ : throw unexpectedtypeexc();
     }
-}*/
+}
