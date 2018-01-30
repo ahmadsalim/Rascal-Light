@@ -48,7 +48,7 @@ data PostcondExc = postcondExc();
 
 Expression modernize(Statement stmt) {
   Statement stmtsup = ensureSupported(stmt);
-  Statement stmtpure = ensurePure(stmtsup);
+  Statement stmtpure = ensureAllPure(stmtsup);
   Statement stmtnoswitch = switchToIf(stmtpure);
   Statement stmtifsconverted = ifsToIfElses(removeEmptyIfs(convertIfs(stmtnoswitch)));
   Statement stmtblocksconverted = singletonBlocksToStatements(stmtifsconverted);

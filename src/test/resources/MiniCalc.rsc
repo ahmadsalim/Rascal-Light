@@ -249,7 +249,7 @@ list[CInstr] compile(CExpr e, list[CRVal] cenv) {
       {
         str l1 = mklabel();
         str l2 = mklabel();
-        compile(cex, cenv) + [ifzero(l1)] + compile(tex, cenv) + [goto(l2), label(l1)] + compile(eex, cenv) + [label(l2)];
+        compile(cex, cenv) + [iifzero(l1)] + compile(tex, cenv) + [igoto(l2), label(l1)] + compile(eex, cenv) + [label(l2)];
       } 
     case let(x, rex, bex): 
       compile(rex, cenv) + compile(bex, [bound(x)] + cenv) + [iswap(), ipop()];
