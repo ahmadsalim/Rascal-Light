@@ -1,6 +1,6 @@
 import semantics.{AbstractRefinementTypeExecutor, ModuleTranslator}
 import semantics.domains.abstracting._
-import syntax.DataType
+import syntax.{DataType, ListType}
 import util.rascalwrapper.RascalWrapper
 
 import scalaz.\/-
@@ -118,6 +118,50 @@ class Evaluation extends AbstractExecutorTests("evaluation") {
     modMCExecRes shouldBe a [\/-[_]]
     modMCExecRes.foreach { case (module, refinements, tmems) =>
       memsOK(module, refinements, tmems, DataType("CExpr"))
+    }
+  }
+
+  "The type inference procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
+    val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("MiniCalc.rsc").getFile)
+    val modMCExecRes = modMC.flatMap { moddef =>
+      AbstractRefinementTypeExecutor.execute(moddef, "inferType")
+    }
+    modMCExecRes shouldBe a [\/-[_]]
+    modMCExecRes.foreach { case (module, refinements, tmems) =>
+      memsOK(module, refinements, tmems, DataType("CType"))
+    }
+  }
+
+  "The evaluation procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
+    val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("MiniCalc.rsc").getFile)
+    val modMCExecRes = modMC.flatMap { moddef =>
+      AbstractRefinementTypeExecutor.execute(moddef, "eval")
+    }
+    modMCExecRes shouldBe a [\/-[_]]
+    modMCExecRes.foreach { case (module, refinements, tmems) =>
+      memsOK(module, refinements, tmems, DataType("CVal"))
+    }
+  }
+
+  "The compilation procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
+    val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("MiniCalc.rsc").getFile)
+    val modMCExecRes = modMC.flatMap { moddef =>
+      AbstractRefinementTypeExecutor.execute(moddef, "compile")
+    }
+    modMCExecRes shouldBe a [\/-[_]]
+    modMCExecRes.foreach { case (module, refinements, tmems) =>
+      memsOK(module, refinements, tmems, ListType(DataType("CInstr")))
+    }
+  }
+
+  "The modernization transformation in MiniConfigMod.rsc" should "run correctly with the abstract type executor" in {
+    val modMCM = RascalWrapper.loadModuleFromFile(getClass.getResource("MiniConfigMod.rsc").getFile)
+    val modMCMExecRes = modMCM.flatMap { moddef =>
+      AbstractRefinementTypeExecutor.execute(moddef, "modernize")
+    }
+    modMCMExecRes shouldBe a [\/-[_]]
+    modMCMExecRes.foreach { case (module, refinements, tmems) =>
+      memsOK(module, refinements, tmems, DataType("Expression"))
     }
   }
 }

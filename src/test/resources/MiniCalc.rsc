@@ -200,7 +200,7 @@ CVal eval(CExpr e, map[str, CVal] env) {
       }
     case let(x, rex, bex): 
       {
-        CVal rv = eval(rex, tenv);
+        CVal rv = eval(rex, env);
         eval(bex, env + (x: rv));
       }
   }
@@ -255,3 +255,5 @@ list[CInstr] compile(CExpr e, list[CRVal] cenv) {
       compile(rex, cenv) + compile(bex, [bound(x)] + cenv) + [iswap(), ipop()];
   }
 }
+
+list[CInstr] compileC(CExpr e) = compile(e, []);

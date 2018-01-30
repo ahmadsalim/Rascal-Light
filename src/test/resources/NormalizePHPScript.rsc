@@ -260,7 +260,7 @@ public Script useBuiltins(Script s) {
 			     };
 			   unset(es);
 			})
-			
+
 			case call(name(name("empty")),[actualParameter(e,_,_)]) => empty(e)
 
 			case call(name(name("eval")),[actualParameter(e,_,_)]) => eval(e)
