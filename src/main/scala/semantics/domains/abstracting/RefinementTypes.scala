@@ -121,7 +121,7 @@ object RefinementChildren {
       a1 match {
         case FixedSeqChildren(cs1) =>
           a2 match {
-            case FixedSeqChildren(cs2) if cs1.length == cs2.length =>
+            case FixedSeqChildren(cs2) if cs1.lengthCompare(cs2.length) == 0 =>
               cs1.zip(cs2).forall { case (c1, c2) => Lattice[RT].<=(c1, c2) }
             case _ => throw new UnsupportedOperationException
           }
@@ -138,7 +138,7 @@ object RefinementChildren {
       a1 match {
         case FixedSeqChildren(cs1) =>
           a2 match {
-            case FixedSeqChildren(cs2) if cs1.length == cs2.length =>
+            case FixedSeqChildren(cs2) if cs1.lengthCompare(cs2.length) == 0 =>
               FixedSeqChildren(cs1.zip(cs2).map { case (c1, c2) => Lattice[RT].widen(c1, c2, bound) })
             case _ => throw new UnsupportedOperationException
           }
@@ -161,7 +161,7 @@ object RefinementChildren {
       a1 match {
         case FixedSeqChildren(cs1) =>
           a2 match {
-            case FixedSeqChildren(cs2) if cs1.length == cs2.length =>
+            case FixedSeqChildren(cs2) if cs1.lengthCompare(cs2.length) == 0 =>
               FixedSeqChildren(cs1.zip(cs2).map { case (c1, c2) => Lattice[RT].lub(c1, c2) })
             case _ => throw new UnsupportedOperationException
           }
@@ -178,7 +178,7 @@ object RefinementChildren {
       a1 match {
         case FixedSeqChildren(cs1) =>
           a2 match {
-            case FixedSeqChildren(cs2) if cs1.length == cs2.length =>
+            case FixedSeqChildren(cs2) if cs1.lengthCompare(cs2.length) == 0 =>
               FixedSeqChildren(cs1.zip(cs2).map { case (c1, c2) => Lattice[RT].glb(c1, c2) })
             case _ => throw new UnsupportedOperationException
           }
@@ -642,7 +642,12 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
           (rty1, rty2) match {
             case (NoRefinementType, _) => true
             case (_, ValueRefinementType) => true
-            case (BaseRefinementType(bty1), BaseRefinementType(bty2)) => bty1 == bty2
+            case (BaseRefinementType(bty1), BaseRefinementType(bty2)) =>
+              (bty1, bty2) match {
+                case (IntRefinementType(ival1), IntRefinementType(ival2)) => Intervals.Unbounded.Lattice.<=(ival1, ival2)
+                case (StringRefinementType, StringRefinementType) => true
+                case _ => false
+              }
             case (ListRefinementType(irty1, length1), ListRefinementType(irty2, length2)) =>
               sub(assumptions, irty1, irty2) && Intervals.Positive.Lattice.<=(length1, length2)
             case (SetRefinementType(irty1, cardinality1), SetRefinementType(irty2, cardinality2)) =>

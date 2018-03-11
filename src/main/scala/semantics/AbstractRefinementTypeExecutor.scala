@@ -1,5 +1,6 @@
 package semantics
 
+import org.slf4j.LoggerFactory
 import semantics.domains.abstracting.IntegerW._
 import semantics.domains.abstracting.Intervals.Positive.{Lattice => PosLattice}
 import semantics.domains.abstracting.Intervals.Unbounded.{Lattice => UnboundedLattice}
@@ -1042,7 +1043,8 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                 case _ => TypeMemories[VoideableRefinementType, Unit](Set(TypeMemory(ExceptionalResult(Error(Set(OtherError))), callstore)))
               }
           }
-          if (Lattice[TypeMemories[VoideableRefinementType, Unit]].<=(newRes, prevRes)) newRes
+          if (Lattice[TypeMemories[VoideableRefinementType, Unit]].<=(newRes, prevRes))
+            newRes
           else {
             val widened = Lattice[TypeMemories[VoideableRefinementType, Unit]].widen(prevRes, newRes)
             go(argtys, callstore, widened, reccount = reccount + 1)
@@ -1061,11 +1063,16 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
               argpartyps.forall { case (avrty, party) => atyping.checkType(avrty.refinementType, party).contains(true) }) {
             val callstore = TypeStoreV(module.globalVars.map { case (x, _) => x -> getVar(store, x).get } ++
                               funpars.map(_.name).zip(argtys).toMap)
-            funMemo.get(functionName -> argtys.map(at => atyping.inferType(at.refinementType))).fold(go(argtys, callstore, Lattice[TypeMemories[VoideableRefinementType, Unit]].bot, reccount = 0)) { case ((prevargtys, prevstore), prevres) =>
+            funMemo.get(functionName -> argtys.map(at => atyping.inferType(at.refinementType)))
+              .fold {
+                go(argtys, callstore, Lattice[TypeMemories[VoideableRefinementType, Unit]].bot, reccount = 0)
+              } { case ((prevargtys, prevstore), prevres) =>
               val paapairs = prevargtys.zip(argtys)
               val allLess = paapairs.forall { case (praty, aty) => Lattice[VoideableRefinementType].<=(aty, praty) }
               val memores =
-                if (allLess && Lattice[TypeStore].<=(callstore, prevstore)) prevres
+                if (allLess && Lattice[TypeStore].<=(callstore, prevstore)) {
+                 prevres
+                }
                 else {
                   // Widen current input with previous input (strategy S2)
                   val newargtys = paapairs.foldLeft(List[VoideableRefinementType]()) { (prevargtys, paap) =>

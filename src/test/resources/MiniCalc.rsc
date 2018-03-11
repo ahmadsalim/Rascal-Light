@@ -231,7 +231,7 @@ str mklabel() {
 list[CInstr] compile(CExpr e, list[CRVal] cenv) {
   switch(e) {
     case csti(i): [ipushi(i)];
-    case cstb(b): [ipushi(b ? 1 : 0)];
+    case cstb(b): [ipushi(b ? suc(zero()) : zero())];
     case var(x):  [iload(lookupCVar(cenv, bound(x)))];
     case add(lop, rop): 
       compile(lop, cenv) + compile(rop, [intermediate()] + cenv) + [iadd()];
@@ -244,7 +244,7 @@ list[CInstr] compile(CExpr e, list[CRVal] cenv) {
     case and(lop, rop): 
       compile(lop, cenv) + compile(rop, [intermediate()] + cenv) + [iand()];
     case not(lop): 
-      compile(lop, cenv) + [not()];
+      compile(lop, cenv) + [inot()];
     case ifte(cex, tex, eex): 
       {
         str l1 = mklabel();
