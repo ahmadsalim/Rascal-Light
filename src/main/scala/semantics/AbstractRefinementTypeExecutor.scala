@@ -2045,44 +2045,46 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     }
   }
 
-  def evalLocal(localVars: Map[VarName, Type], store: TypeStore, expr: Expr, funMemo: FunMemo): TypeMemories[VoideableRefinementType, Unit] = {
-    expr match {
-      case BasicExpr(b) =>
-        b match {
-          case IntLit(i) =>
-            TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false,
-              BaseRefinementType(IntRefinementType(Intervals.Unbounded.singleton(i))))), store)))
-          case StringLit(_) =>
-            TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType))), store)))
-        }
-      case VarExpr(x) => evalVar(store, x)
-      case FieldAccExpr(target, fieldName) => evalFieldAccess(localVars, store, target, fieldName, funMemo)
-      case UnaryExpr(op, operand) => evalUnary(localVars, store, op, operand, funMemo)
-      case BinaryExpr(left, op, right) => evalBinary(localVars, store, left, op, right, funMemo)
-      case ConstructorExpr(name, args) => evalConstructor(localVars, store, name, args, funMemo)
-      case ListExpr(elements) => evalList(localVars, store, elements, funMemo)
-      case SetExpr(elements) => evalSet(localVars, store, elements, funMemo)
-      case MapExpr(keyvalues) => evalMap(localVars, store, keyvalues, funMemo)
-      case MapLookupExpr(emap, ekey) => evalMapLookup(localVars, store, emap, ekey, funMemo)
-      case MapUpdExpr(emap, ekey, evl) => evalMapUpdate(localVars, store, emap, ekey, evl, funMemo)
-      case FunCallExpr(functionName, args) => evalFunCall(localVars, store, functionName, args, funMemo)
-      case ReturnExpr(evl) => evalReturn(localVars, store, evl, funMemo)
-      case AssignExpr(assgn, targetexpr) => evalAssign(localVars, store, assgn, targetexpr, funMemo)
-      case IfExpr(cond, thenB, elseB) => evalIf(localVars, store, cond, thenB, elseB, funMemo)
-      case SwitchExpr(scrutinee, cases) => evalSwitch(localVars, store, scrutinee, cases, funMemo)
-      case VisitExpr(strategy, scrutinee, cases) => evalVisit(localVars, store, strategy, scrutinee, cases, funMemo)
-      case BreakExpr => TypeMemories(Set(TypeMemory(ExceptionalResult(Break), store)))
-      case ContinueExpr => TypeMemories(Set(TypeMemory(ExceptionalResult(Continue), store)))
-      case FailExpr => TypeMemories(Set(TypeMemory(ExceptionalResult(Fail(())), store)))
-      case LocalBlockExpr(vardefs, exprs) => evalBlock(localVars, store, vardefs, exprs, funMemo)
-      case ForExpr(enum, body) => evalFor(localVars, store, enum, body, funMemo)
-      case WhileExpr(cond, body) => evalWhile(localVars, store, cond, body, funMemo)
-      case SolveExpr(vars, body) => evalSolve(localVars, store, vars, body, funMemo)
-      case ThrowExpr(evl) => evalThrow(localVars, store, evl, funMemo)
-      case TryCatchExpr(tryB, catchVar, catchB) => evalTryCatch(localVars, store, tryB, catchVar, catchB, funMemo)
-      case TryFinallyExpr(tryB, finallyB) => evalTryFinally(localVars, store, tryB, finallyB, funMemo)
-      case AssertExpr(cond) => evalAssert(localVars, store, cond)
-    }
+  lazy val evalLocal: (Map[VarName, Type], TypeStore, Expr, FunMemo) => TypeMemories[VoideableRefinementType, Unit] =
+    memoized[Map[VarName, Type], TypeStore, Expr, FunMemo, TypeMemories[VoideableRefinementType, Unit]](memocacheSize) {
+      (localVars: Map[VarName, Type], store: TypeStore, expr: Expr, funMemo: FunMemo) =>
+      expr match {
+        case BasicExpr(b) =>
+          b match {
+            case IntLit(i) =>
+              TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false,
+                BaseRefinementType(IntRefinementType(Intervals.Unbounded.singleton(i))))), store)))
+            case StringLit(_) =>
+              TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType))), store)))
+          }
+        case VarExpr(x) => evalVar(store, x)
+        case FieldAccExpr(target, fieldName) => evalFieldAccess(localVars, store, target, fieldName, funMemo)
+        case UnaryExpr(op, operand) => evalUnary(localVars, store, op, operand, funMemo)
+        case BinaryExpr(left, op, right) => evalBinary(localVars, store, left, op, right, funMemo)
+        case ConstructorExpr(name, args) => evalConstructor(localVars, store, name, args, funMemo)
+        case ListExpr(elements) => evalList(localVars, store, elements, funMemo)
+        case SetExpr(elements) => evalSet(localVars, store, elements, funMemo)
+        case MapExpr(keyvalues) => evalMap(localVars, store, keyvalues, funMemo)
+        case MapLookupExpr(emap, ekey) => evalMapLookup(localVars, store, emap, ekey, funMemo)
+        case MapUpdExpr(emap, ekey, evl) => evalMapUpdate(localVars, store, emap, ekey, evl, funMemo)
+        case FunCallExpr(functionName, args) => evalFunCall(localVars, store, functionName, args, funMemo)
+        case ReturnExpr(evl) => evalReturn(localVars, store, evl, funMemo)
+        case AssignExpr(assgn, targetexpr) => evalAssign(localVars, store, assgn, targetexpr, funMemo)
+        case IfExpr(cond, thenB, elseB) => evalIf(localVars, store, cond, thenB, elseB, funMemo)
+        case SwitchExpr(scrutinee, cases) => evalSwitch(localVars, store, scrutinee, cases, funMemo)
+        case VisitExpr(strategy, scrutinee, cases) => evalVisit(localVars, store, strategy, scrutinee, cases, funMemo)
+        case BreakExpr => TypeMemories(Set(TypeMemory(ExceptionalResult(Break), store)))
+        case ContinueExpr => TypeMemories(Set(TypeMemory(ExceptionalResult(Continue), store)))
+        case FailExpr => TypeMemories(Set(TypeMemory(ExceptionalResult(Fail(())), store)))
+        case LocalBlockExpr(vardefs, exprs) => evalBlock(localVars, store, vardefs, exprs, funMemo)
+        case ForExpr(enum, body) => evalFor(localVars, store, enum, body, funMemo)
+        case WhileExpr(cond, body) => evalWhile(localVars, store, cond, body, funMemo)
+        case SolveExpr(vars, body) => evalSolve(localVars, store, vars, body, funMemo)
+        case ThrowExpr(evl) => evalThrow(localVars, store, evl, funMemo)
+        case TryCatchExpr(tryB, catchVar, catchB) => evalTryCatch(localVars, store, tryB, catchVar, catchB, funMemo)
+        case TryFinallyExpr(tryB, finallyB) => evalTryFinally(localVars, store, tryB, finallyB, funMemo)
+        case AssertExpr(cond) => evalAssert(localVars, store, cond)
+      }
   }
 
   def eval(store: TypeStore, expr: Expr): TypeMemories[VoideableRefinementType, Unit] = evalLocal(Map.empty, store, expr, Map.empty)

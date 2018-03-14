@@ -17,17 +17,17 @@ data Statement = block(StatementSeq inner)
                | \continue()
                | \break()
                | \return()
-               | \returnE(Expression e) ;
+               | returnE(Expression e) ;
 
-data Case = \case(Const cst, Statement s); 
+data Case = \case(Const cst, Statement s);
 
 data Expression = const(Const const)
-                | access(Access acc)                
+                | access(Access acc)
                 | call(Expression fun, list[Expression] se)
                 | sizeof(Expression e)
-                | preop(Preop op, Expression e)
-                | postop(Expression e, Postop op)
-                | binop(Expression e1, Binop op, Expression e2)
+                | preop(Preop preop, Expression e)
+                | postop(Expression e, Postop postop)
+                | binop(Expression e1, Binop binop, Expression e2)
                 | assign(Access acc, Expression e)
                 | ternary(Expression cond, Expression then, Expression \else)
                 ;
@@ -41,7 +41,7 @@ data Preop = neg() | not() | deref() | ref();
 data Postop = incr() | decr();
 data Binop = and() | or() | times() | plus() | minus() | div() | eq() | leq() ;
 
-data Const = intv(int val) | strv(str val) | boolv(bool val);
+data Const = intv(int ival) | strv(str sval) | boolv(bool bval);
 
 data PrecondExc = precondExc();
 data PostcondExc = postcondExc();
@@ -81,7 +81,7 @@ Statement ensureSupported(Statement s) = top-down-break visit (s) {
 
 Statement switchToIf(Statement stmt) = bottom-up visit(stmt) {
   case \switch(scrutinee, cases, def) => {
-        list[Expression] resIf = def;
+        Statement resIf = def;
         for (c <- cases) {
            switch(c) {
              case \case(cst, s): resIf = ifelse(binop(const(cst), eq(), scrutinee), s, resIf);
@@ -97,18 +97,18 @@ Statement convertIfs(Statement stmt) = bottom-up visit(stmt) {
    case sseq(\if(e1, st), sseq(\if(e2,st), ss)) => sseq(\if(binop(e1, or(), e2), st), ss)
    case sseq(ifelse(e1, st, sf), sseq(ifelse(e2,st,sf), ss)) => sseq(ifelse(binop(e1, or(), e2), st, sf), ss)
    case sseq(\if(e1, s), sseq(sel: \if(_,_), sseq(\if(e2, s), ss))) => sseq(\if(binop(e1, or(), e2), s), sseq(sel, ss))
-   case \if(e1, \return(const(boolv(true))), \return(const(boolv(false)))) => \return(e1)
-   case \if(e1, \return(const(boolv(false))), \return(const(boolv(true)))) => \return(preop(not(),e1))
+   case ifelse(e1, returnE(const(boolv(true))), returnE(const(boolv(false)))) => returnE(e1)
+   case ifelse(e1, returnE(const(boolv(false))), returnE(const(boolv(true)))) => returnE(preop(not(),e1))
 };
 
 Statement removeEmptyIfs(Statement stmt) = bottom-up visit(stmt) {
    case sseq(\if(e1, block(sskip())), ss) => ss
-   case sseq(ifelse(e1, block(sskip()), block(sskip())), ss) => ss  
+   case sseq(ifelse(e1, block(sskip()), block(sskip())), ss) => ss
 };
 
 Statement ifsToIfElses(Statement stmt) = bottom-up visit(stmt) {
-   case sseq(\if(e, s), ss) => ifelse(e, s, block(ss))
-   case sseq(ifelse(e, st, sf), ss) => ifelse(e, sseq(st, sf), sseq(sf, ss)) 
+   case sseq(\if(e, s), ss) => sseq(ifelse(e, s, block(ss)), sskip())
+   case sseq(ifelse(e, st, sf), ss) => sseq(ifelse(e, block(sseq(st, ss)), block(sseq(sf, ss))), sskip())
 };
 
 Statement singletonBlocksToStatements(Statement stmt) = bottom-up visit(stmt) {

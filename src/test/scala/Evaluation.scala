@@ -156,6 +156,7 @@ class Evaluation extends AbstractExecutorTests("evaluation") {
   }
 
   /*
+  TODO Currently running too slowly
   "The modernization transformation in MiniConfigMod.rsc" should "run correctly with the abstract type executor" in {
     val modMCM = RascalWrapper.loadModuleFromFile(getClass.getResource("MiniConfigMod.rsc").getFile)
     val modMCMExecRes = modMCM.flatMap { moddef =>
@@ -165,5 +166,5 @@ class Evaluation extends AbstractExecutorTests("evaluation") {
     modMCMExecRes.foreach { case (module, refinements, tmems) =>
       memsOK(module, refinements, tmems, DataType("Expression"))
     }
-  }*/
+  } */
 }
