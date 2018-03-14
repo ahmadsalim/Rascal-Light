@@ -7,7 +7,7 @@ module MiniCalc
 data Nat = zero() | suc(Nat p);
 
 data CExpr = csti(Nat i) | cstb(bool b) | var(str x)
-           | add(CExpr lop, CExpr rop)  | sub(CExpr lop, CExpr rop) 
+           | add(CExpr lop, CExpr rop)  | sub(CExpr lop, CExpr rop)
            | mult(CExpr lop, CExpr rop) | leq(CExpr lop, CExpr rop)
            | and(CExpr lop, CExpr rop)  | not(CExpr lop)
            | ifte(CExpr cex, CExpr tex, CExpr eex)
@@ -100,29 +100,68 @@ CType inferType(CExpr e, map[str, CType] tenv) {
     case csti(i): intt();
     case cstb(b): boolt();
     case var(x): tenv[x];
-    case add(lop, rop): 
-      if (inferType(lop, tenv) == intt() && inferType(rop, tenv) == intt()) { intt(); }
-      else { throw typeError(); }
-    case sub(lop, rop):
-      if (inferType(lop, tenv) == intt() && inferType(rop, tenv) == intt()) { intt(); }
-      else { throw typeError(); }
-    case mult(lop, rop):
-      if (inferType(lop, tenv) == intt() && inferType(rop, tenv) == intt()) { intt(); }
-      else { throw typeError(); }
-    case leq(lop, rop):
-      if (inferType(lop, tenv) == intt() && inferType(rop, tenv) == intt()) { boolt(); }
-      else { throw typeError(); }
-    case and(lop, rop): 
-      if (inferType(lop, tenv) == boolt() && inferType(rop, tenv) == boolt()) { boolt(); }
-      else { throw typeError(); }
-    case not(lop): 
-      if (inferType(lop, tenv) == boolt()) { boolt(); }
-      else { throw typeError(); }
-    case ifte(cex, tex, eex): 
-      {
-        CType tt = inferType(tex, tenv);
-        if (inferType(cex, tenv) == boolt() && inferType(eex, tenv) == tt) { tt; }
-        else { throw typeError(); }
+    case add(lop, rop): {
+        switch(inferType(lop,tenv)) {
+          case intt():
+            switch (inferType(rop, tenv)) {
+               case intt(): return intt();
+            }
+        };
+        throw typeError();
+      }
+    case sub(lop, rop): {
+        switch(inferType(lop,tenv)) {
+          case intt():
+            switch (inferType(rop, tenv)) {
+               case intt(): return intt();
+            }
+        };
+        throw typeError();
+      }
+    case mult(lop, rop): {
+        switch(inferType(lop,tenv)) {
+          case intt():
+            switch (inferType(rop, tenv)) {
+               case intt(): return intt();
+            }
+        };
+        throw typeError();
+      }
+    case leq(lop, rop): {
+        switch(inferType(lop,tenv)) {
+          case intt():
+            switch (inferType(rop, tenv)) {
+               case intt(): return boolt();
+            }
+        };
+        throw typeError();
+      }
+    case and(lop, rop):  {
+        switch(inferType(lop,tenv)) {
+          case boolt():
+            switch (inferType(rop, tenv)) {
+               case boolt(): return boolt();
+            }
+        };
+        throw typeError();
+      }
+    case not(lop): {
+        switch(inferType(lop,tenv)) {
+          case boolt(): return boolt();
+        };
+        throw typeError();
+      }
+    case ifte(cex, tex, eex): {
+        switch(inferType(cex, tenv)) {
+          case boolt():
+            switch(inferType(tex, tenv)) {
+              case tt:
+                switch(inferType(eex, tenv)) {
+                  case tt: return tt;
+                } 
+            }
+        };
+        throw typeError();
       } 
     case let(x, rex, bex): 
       {

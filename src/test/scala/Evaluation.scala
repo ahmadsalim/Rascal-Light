@@ -1,11 +1,14 @@
+import org.scalatest.concurrent._
+import org.scalatest.time.Span
 import semantics.{AbstractRefinementTypeExecutor, ModuleTranslator}
 import semantics.domains.abstracting._
 import syntax.{DataType, ListType}
 import util.rascalwrapper.RascalWrapper
 
 import scalaz.\/-
+import org.scalatest.time.SpanSugar._
 
-class Evaluation extends AbstractExecutorTests("evaluation") {
+class Evaluation extends AbstractExecutorTests("evaluation") with TimeLimitedTests {
 
   "The negation normal form transformation in NNF.rsc" should "run correctly with the abstract type executor" in {
     val modNnfO = RascalWrapper.loadModuleFromFile(getClass.getResource("NNF.rsc").getFile)
@@ -125,7 +128,21 @@ class Evaluation extends AbstractExecutorTests("evaluation") {
   "The type inference procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
     val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("MiniCalc.rsc").getFile)
     val modMCExecRes = modMC.flatMap { moddef =>
-      AbstractRefinementTypeExecutor.execute(moddef, "inferType")
+      val transmodule = ModuleTranslator.translateModule(moddef)
+      transmodule shouldBe a[\/-[_]]
+      val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
+        mtr => {
+          mtr.semmod.datatypes.transform((_, conss) =>
+            mtr.semmod.constructors.filterKeys(conss.contains).mapValues(_._2.map(_.typ)))
+        })
+      val initialRefinements: Refinements = new Refinements
+      val rtops = RefinementTypeOps(datatypes, initialRefinements)
+      val onlyIntExprs = rtops.excluding("CExpr", Set("cstb", "let", "var", "leq", "and", "not", "ifte"))
+      val initialStore: TypeStore =
+        TypeStoreV(Map(
+          "e" -> VoideableRefinementType(possiblyVoid = false, onlyIntExprs)
+        ))
+      AbstractRefinementTypeExecutor.execute(moddef, "inferTypeC", initialRefinements = initialRefinements, initialStore = Some(initialStore))
     }
     modMCExecRes shouldBe a [\/-[_]]
     modMCExecRes.foreach { case (module, refinements, tmems) =>
@@ -136,7 +153,21 @@ class Evaluation extends AbstractExecutorTests("evaluation") {
   "The evaluation procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
     val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("MiniCalc.rsc").getFile)
     val modMCExecRes = modMC.flatMap { moddef =>
-      AbstractRefinementTypeExecutor.execute(moddef, "eval")
+      val transmodule = ModuleTranslator.translateModule(moddef)
+      transmodule shouldBe a[\/-[_]]
+      val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
+        mtr => {
+          mtr.semmod.datatypes.transform((_, conss) =>
+            mtr.semmod.constructors.filterKeys(conss.contains).mapValues(_._2.map(_.typ)))
+        })
+      val initialRefinements: Refinements = new Refinements
+      val rtops = RefinementTypeOps(datatypes, initialRefinements)
+      val noCstiLets = rtops.excluding("CExpr", Set("csti", "let"))
+      val initialStore: TypeStore =
+        TypeStoreV(Map(
+          "e" -> VoideableRefinementType(possiblyVoid = false, noCstiLets)
+        ))
+      AbstractRefinementTypeExecutor.execute(moddef, "evalC", initialRefinements = initialRefinements, initialStore = Some(initialStore))
     }
     modMCExecRes shouldBe a [\/-[_]]
     modMCExecRes.foreach { case (module, refinements, tmems) =>
@@ -147,9 +178,24 @@ class Evaluation extends AbstractExecutorTests("evaluation") {
   "The compilation procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
     val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("MiniCalc.rsc").getFile)
     val modMCExecRes = modMC.flatMap { moddef =>
-      AbstractRefinementTypeExecutor.execute(moddef, "compile")
+      val transmodule = ModuleTranslator.translateModule(moddef)
+      transmodule shouldBe a[\/-[_]]
+      val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
+        mtr => {
+          mtr.semmod.datatypes.transform((_, conss) =>
+            mtr.semmod.constructors.filterKeys(conss.contains).mapValues(_._2.map(_.typ)))
+        })
+      val initialRefinements: Refinements = new Refinements
+      val rtops = RefinementTypeOps(datatypes, initialRefinements)
+      val noIfCExpr = rtops.excluding("CExpr", Set("ifte"))
+      val initialStore: TypeStore =
+        TypeStoreV(Map(
+          "e" -> VoideableRefinementType(possiblyVoid = false, noIfCExpr),
+          "cenv" -> VoideableRefinementType(possiblyVoid = false, ListRefinementType(DataRefinementType("CRVal", None), Intervals.Positive.singleton(0)))
+        ))
+      AbstractRefinementTypeExecutor.execute(moddef, "compile", initialRefinements = initialRefinements, initialStore = Some(initialStore))
     }
-    modMCExecRes shouldBe a [\/-[_]]
+    modMCExecRes shouldBe a[\/-[_]]
     modMCExecRes.foreach { case (module, refinements, tmems) =>
       memsOK(module, refinements, tmems, ListType(DataType("CInstr")))
     }
@@ -167,4 +213,8 @@ class Evaluation extends AbstractExecutorTests("evaluation") {
       memsOK(module, refinements, tmems, DataType("Expression"))
     }
   } */
+
+  override def timeLimit: Span = 100.seconds
+
+  override val defaultTestSignaler: Signaler = (testThread: Thread) => testThread.stop
 }

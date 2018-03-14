@@ -453,17 +453,12 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     case _ => refinementType
   }
 
-  val memocacheSize = 10000
-
   implicit def RefinementTypeLattice: Lattice[RefinementType] = new Lattice[RefinementType] {
     override def bot: RefinementType = NoRefinementType
 
     override def top: RefinementType = ValueRefinementType
 
-    override def isBot(rty: RefinementType): Boolean = isBotH(rty)
-
-    private
-    lazy val isBotH: (RefinementType) => Boolean = memoized[RefinementType, Boolean](memocacheSize){ (rty: RefinementType) =>
+    override def isBot(rty: RefinementType): Boolean = {
       def checkNonEmpty(memo: Map[Refinement, Boolean], rty: RefinementType): Boolean = {
         rty match {
           case BaseRefinementType(_) => true
@@ -492,11 +487,7 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
       !checkNonEmpty(Map.empty, rty)
     }
 
-    override def lub(rty1: RefinementType, rty2: RefinementType): RefinementType = lubH(rty1, rty2)
-
-    private
-    lazy val lubH: (RefinementType, RefinementType) => RefinementType =
-      memoized[RefinementType,RefinementType,RefinementType](memocacheSize) { (rty1: RefinementType, rty2: RefinementType) =>
+    override def lub(rty1: RefinementType, rty2: RefinementType): RefinementType = {
       def merge(memo: Map[(Refinement, Refinement), Refinement], rty1: RefinementType, rty2: RefinementType): RefinementType = {
         (rty1, rty2) match {
           case (_, ValueRefinementType) | (ValueRefinementType, _) => ValueRefinementType
@@ -561,11 +552,7 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
       merge(Map.empty, rty1, rty2)
     }
 
-    override def glb(rty1: RefinementType, rty2: RefinementType): RefinementType = glbH(rty1, rty2)
-
-    private
-    lazy val glbH: (RefinementType, RefinementType) => RefinementType = memoized[RefinementType, RefinementType, RefinementType](memocacheSize) {
-      (rty1 : RefinementType, rty2: RefinementType) =>
+    override def glb(rty1: RefinementType, rty2: RefinementType): RefinementType = {
       def merge(memo: Map[(Refinement, Refinement), Refinement], rty1: RefinementType, rty2: RefinementType): RefinementType = {
         (rty1, rty2) match {
           case (NoRefinementType, _) | (_, NoRefinementType) => NoRefinementType
@@ -652,11 +639,7 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
       merge(Map.empty, rty1, rty2)
     }
 
-    override def <=(rty1: RefinementType, rty2: RefinementType): Boolean = leqH(rty1, rty2)
-
-    private lazy val
-    leqH: (RefinementType, RefinementType) => Boolean = memoized[RefinementType, RefinementType, Boolean](memocacheSize) {
-      (rty1: RefinementType, rty2: RefinementType) =>
+    override def <=(rty1: RefinementType, rty2: RefinementType): Boolean = {
       def sub(assumptions: Map[Refinement, Set[Refinement]], rty1: RefinementType, rty2: RefinementType): Boolean = {
         if (rty1 == rty2) true
         else {
@@ -858,11 +841,7 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
       ensureUniqueAll(newrefinements.map { case (rn, rndef) => (rndef.baseDataType, rn) })
     }
 
-    override def widen(rty1: RefinementType, rty2: RefinementType, bound: Int): RefinementType = widenH(rty1, rty2, bound)
-
-    private
-    lazy val widenH: (RefinementType, RefinementType, Int) => RefinementType = memoized[RefinementType, RefinementType, Int, RefinementType](memocacheSize) {
-      (rty1: RefinementType, rty2: RefinementType, bound: Int) =>
+    override def widen(rty1: RefinementType, rty2: RefinementType, bound: Int): RefinementType = {
       def fixIC(resrt : RefinementType, icrefs: List[Refinement], wrefinements: Map[Refinement, URefinementDef]): (RefinementType, Map[Refinement, URefinementDef]) = {
         val res =
           if (icrefs.isEmpty) (resrt, wrefinements)

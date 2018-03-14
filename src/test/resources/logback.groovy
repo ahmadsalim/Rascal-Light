@@ -16,7 +16,7 @@ appender("EVALUATION-FILE", FileAppender) {
 
 appender("FILE", FileAppender) {
     file = "./log/absint-rascal.log"
-    append = true
+    append = false
     encoder(PatternLayoutEncoder) {
         pattern = "%level %logger - %msg%n"
     }
