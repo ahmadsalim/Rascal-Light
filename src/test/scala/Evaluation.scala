@@ -1,10 +1,9 @@
 import org.scalatest.concurrent._
 import org.scalatest.time.Span
-import semantics.{AbstractRefinementTypeExecutor, ModuleTranslator}
+import semantics.{AbstractRefinementTypeExecutor, ModuleTranslator, TypeWidening}
 import semantics.domains.abstracting._
 import syntax.{DataType, ListType}
 import util.rascalwrapper.RascalWrapper
-
 import scalaz.\/-
 import org.scalatest.time.SpanSugar._
 
@@ -81,7 +80,7 @@ class Evaluation extends AbstractExecutorTests("evaluation") with TimeLimitedTes
       val simpleExpr = rtops.excluding("Expression",
         Set("invoke", "invoke2", "new", "get", "fieldAccess", "fieldAccess2", "list", "map", "arrayAccess", "this"))
       val initialStore = TypeStoreV(Map("expr" -> VoideableRefinementType(possiblyVoid = false, simpleExpr)))
-      AbstractRefinementTypeExecutor.execute(moddef, "toPhpExpr", precise = false,
+      AbstractRefinementTypeExecutor.execute(moddef, "toPhpExpr", memoWidening = TypeWidening,
         initialStore = Some(initialStore), initialRefinements = initialRefinements)
     }
     modG2PExecRes shouldBe a [\/-[_]]
@@ -105,7 +104,7 @@ class Evaluation extends AbstractExecutorTests("evaluation") with TimeLimitedTes
       val simpleExpr = rtops.excluding("Expression",
         Set("negative", "positive"))
       val initialStore = TypeStoreV(Map("expr" -> VoideableRefinementType(possiblyVoid = false, simpleExpr)))
-      AbstractRefinementTypeExecutor.execute(moddef, "toPhpExpr", precise = false,
+      AbstractRefinementTypeExecutor.execute(moddef, "toPhpExpr", memoWidening = TypeWidening,
         initialStore = Some(initialStore), initialRefinements = initialRefinements)
     }
     modG2PExecRes shouldBe a [\/-[_]]
@@ -216,5 +215,5 @@ class Evaluation extends AbstractExecutorTests("evaluation") with TimeLimitedTes
 
   override def timeLimit: Span = 100.seconds
 
-  override val defaultTestSignaler: Signaler = (testThread: Thread) => testThread.stop
+  override val defaultTestSignaler: Signaler = (testThread: Thread) => testThread.interrupt()
 }

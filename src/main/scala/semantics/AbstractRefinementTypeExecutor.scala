@@ -24,7 +24,7 @@ import scalaz.syntax.either._
 import scalaz.syntax.traverse._
 
 // TODO: Convert lub(...flatMap) to map(...lub)
-case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Refinements, precise: Boolean = false) extends StrictLogging {
+case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Refinements, memoWidening: MemoWidening) extends StrictLogging {
   private
   val memocacheSize = 10000
 
@@ -45,7 +45,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   type FunMemo = Map[(VarName, List[Type]), ((List[VoideableRefinementType], TypeStore), TypeMemories[VoideableRefinementType, Unit])]
 
   private
-  type VMemo = Map[(Type, Set[ConsName]), ((VoideableRefinementType, TypeStore), TypeMemories[VoideableRefinementType, VoideableRefinementType])]
+  type VMemo = Map[Any, ((VoideableRefinementType, TypeStore), TypeMemories[VoideableRefinementType, VoideableRefinementType])]
 
   private
   type VMemoAll = Map[RefinementChildren[RefinementType], (TypeStore, TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]])]
@@ -1430,10 +1430,12 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     })
   }
 
-  def memoVisitKey(rtyp: VoideableRefinementType): (Type, Set[ConsName]) = {
-    (atyping.inferType(rtyp.refinementType),
-      if (precise) possibleConstructors(rtyp.refinementType)
-      else Set())
+  def memoVisitKey(rtyp: VoideableRefinementType): Any = {
+    memoWidening match {
+      case SimpleWidening => ()
+      case TypeWidening => atyping.inferType(rtyp.refinementType)
+      case ConstructorWidening(depth) => cutAt(rtyp.refinementType, depth)
+    }
   }
 
   def combineVals(ctyres: TypeResult[VoideableRefinementType, VoideableRefinementType],
@@ -2138,9 +2140,9 @@ object AbstractRefinementTypeExecutor {
   def execute(module: ModuleDef, function: VarName,
               initialRefinements: Refinements = new Refinements,
               initialStore: Option[TypeStore] = None,
-              precise: Boolean = true): String \/ (Module, Refinements, TypeMemories[VoideableRefinementType, Unit]) = {
+              memoWidening: MemoWidening = ConstructorWidening(1)): String \/ (Module, Refinements, TypeMemories[VoideableRefinementType, Unit]) = {
     for (transr <- ModuleTranslator.translateModule(module);
-         executor = AbstractRefinementTypeExecutor(transr.semmod, initialRefinements = initialRefinements, precise = precise);
+         executor = AbstractRefinementTypeExecutor(transr.semmod, initialRefinements = initialRefinements, memoWidening = memoWidening);
          store <- executeGlobalVariables(executor, transr.globalVarDefs);
          funcDef <- transr.semmod.funs.get(function).fold(s"Unknown function $function".left[(Type, List[Parameter], FunBody)])(_.right);
          (_, pars, funcBody) = funcDef;

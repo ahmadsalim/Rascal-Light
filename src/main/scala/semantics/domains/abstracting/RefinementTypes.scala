@@ -31,6 +31,15 @@ case class MapRefinementType(keyType: RefinementType, valueType: RefinementType,
 case object NoRefinementType extends RefinementType
 case object ValueRefinementType extends RefinementType
 
+sealed trait MemoRType
+case class BaseMemoRType(basicType: BasicRefinementType) extends MemoRType
+case class DataMemoRType(dataname: TypeName, conss: Map[String, List[MemoRType]]) extends MemoRType
+case class ListMemoRType(elementType: MemoRType) extends MemoRType
+case class SetMemoRType(elementType: MemoRType) extends MemoRType
+case class MapMemoRType(keyType: MemoRType, valueType: MemoRType) extends MemoRType
+case object NoMemoRType extends MemoRType
+case object ValueMemoRType extends MemoRType
+
 sealed trait RefinementChildren[RT] {
   def isFixed: Boolean
   def map[RT2](f: RT => RT2): RefinementChildren[RT2]
@@ -272,17 +281,23 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     MapRefinementType(krtylub, vrtylub, Intervals.Positive.makeInterval(minSize, maxSize))
   }
 
-  def possibleConstructors(refinementType: RefinementType): Set[ConsName] = refinementType match {
-    case BaseRefinementType(_) => Set()
-    case DataRefinementType(dataname, refinename) =>
-      refinename.fold(datatypes(dataname).keySet)(r => refinements.definitions(r).conss.keySet)
-    case ListRefinementType(elementType, _) => possibleConstructors(elementType)
-    case SetRefinementType(elementType, _) => possibleConstructors(elementType)
-    case MapRefinementType(keyType, valueType, _) =>
-      possibleConstructors(keyType) ++
-        possibleConstructors(valueType)
-    case NoRefinementType => Set()
-    case ValueRefinementType => Set()
+  def cutAt(refinementType: RefinementType, depth: Int): MemoRType = {
+    if (depth == 0) {
+      return ValueMemoRType
+    }
+    refinementType match {
+      case BaseRefinementType(bt) => BaseMemoRType(bt)
+      case DataRefinementType(dataname, refinename) =>
+        val rdef = refinename.fold(dataTypeDefToRefinementDef(dataname, datatypes(dataname)))(refinements.definitions)
+        DataMemoRType(dataname, rdef.conss.mapValues(_.map(cutAt(_, depth - 1))))
+      case ListRefinementType(elementType, _) => ListMemoRType(cutAt(elementType, depth))
+      case SetRefinementType(elementType, _) =>
+        SetMemoRType(cutAt(elementType, depth))
+      case MapRefinementType(keyType, valueType, _) =>
+        MapMemoRType(cutAt(keyType, depth), cutAt(valueType, depth))
+      case NoRefinementType => NoMemoRType
+      case ValueRefinementType => ValueMemoRType
+    }
   }
 
   def allRefinements(rty: RefinementType): Set[Refinement] = {
