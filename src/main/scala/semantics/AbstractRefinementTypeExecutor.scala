@@ -24,7 +24,8 @@ import scalaz.syntax.either._
 import scalaz.syntax.traverse._
 
 // TODO: Convert lub(...flatMap) to map(...lub)
-case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Refinements, memoWidening: MemoWidening) extends StrictLogging {
+case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Refinements,
+                                          memoWidening: MemoWidening, refinedMatching: Boolean) extends StrictLogging {
   private
   val memocacheSize = 10000
 
@@ -1390,10 +1391,12 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
       case Case(cspatt, csaction) :: css =>
         val envss = matchPatt(store, scrtyp, cspatt)
         val resmems = envss.map { case (refinestore, refinescrtyp, envs) =>
-          val casemems: TypeMemories[VoideableRefinementType, Unit] = evalCase(refinestore, csaction, envs)
+          val newstore = if (refinedMatching) refinestore else store
+          val newscrtyp = if (refinedMatching) refinescrtyp else scrtyp
+          val casemems: TypeMemories[VoideableRefinementType, Unit] = evalCase(newstore, csaction, envs)
           val resmems = casemems.memories.map { case TypeMemory(cres, store_) =>
             cres match {
-              case ExceptionalResult(Fail(())) => evalCases(localVars, refinestore, refinescrtyp, css, funMemo)
+              case ExceptionalResult(Fail(())) => evalCases(localVars, newstore, newscrtyp, css, funMemo)
               case _ => TypeMemories[VoideableRefinementType, VoideableRefinementType](
                 Set(TypeMemory(cres.asInstanceOf[TypeResult[VoideableRefinementType, Nothing]], store_)))// Cast should be safe
             }
@@ -2140,9 +2143,11 @@ object AbstractRefinementTypeExecutor {
   def execute(module: ModuleDef, function: VarName,
               initialRefinements: Refinements = new Refinements,
               initialStore: Option[TypeStore] = None,
-              memoWidening: MemoWidening = ConstructorWidening(1)): String \/ (Module, Refinements, TypeMemories[VoideableRefinementType, Unit]) = {
+              memoWidening: MemoWidening = ConstructorWidening(1),
+              refinedMatches: Boolean = true): String \/ (Module, Refinements, TypeMemories[VoideableRefinementType, Unit]) = {
     for (transr <- ModuleTranslator.translateModule(module);
-         executor = AbstractRefinementTypeExecutor(transr.semmod, initialRefinements = initialRefinements, memoWidening = memoWidening);
+         executor = AbstractRefinementTypeExecutor(transr.semmod, initialRefinements = initialRefinements,
+           memoWidening = memoWidening, refinedMatching = refinedMatches);
          store <- executeGlobalVariables(executor, transr.globalVarDefs);
          funcDef <- transr.semmod.funs.get(function).fold(s"Unknown function $function".left[(Type, List[Parameter], FunBody)])(_.right);
          (_, pars, funcBody) = funcDef;
