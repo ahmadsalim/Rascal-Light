@@ -1,6 +1,8 @@
 package semantics
 
-import com.typesafe.scalalogging.{StrictLogging}
+import java.lang.ThreadLocal
+
+import com.typesafe.scalalogging.StrictLogging
 import org.slf4j.LoggerFactory
 import semantics.domains.abstracting.IntegerW._
 import semantics.domains.abstracting.Intervals.Positive.{Lattice => PosLattice}
@@ -37,6 +39,27 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
   private
   val typememoriesops = TypeMemoriesOps(module, refinements)
+
+  private
+  val _memoMissesCount = ThreadLocal.withInitial[Int](() => 0)
+
+  private
+  val _memoHitsCount = ThreadLocal.withInitial[Int](() => 0)
+
+  private
+  val _memoWideningCount = ThreadLocal.withInitial[Int](() => 0)
+
+  def memoMissesCount: Int = _memoMissesCount.get
+
+  def memoHitsCount: Int = _memoHitsCount.get
+
+  def memoWideningCount: Int = _memoWideningCount.get
+
+  def resetMemoCounters(): Unit = {
+    _memoMissesCount.set(0)
+    _memoHitsCount.set(0)
+    _memoWideningCount.set(0)
+  }
 
   import typememoriesops._
   import refinementtypeops._
@@ -1073,6 +1096,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                               funpars.map(_.name).zip(argtys).toMap)
             funMemo.get(functionName -> argtys.map(at => atyping.inferType(at.refinementType)))
               .fold {
+                _memoMissesCount.set(_memoMissesCount.get + 1)
                 if (functionName == "compile")
                   logger.debug(
                     s"""
@@ -1085,6 +1109,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
               val storeLess = Lattice[TypeStore].<=(callstore, prevstore)
               val memores =
                 if (allLess && storeLess) {
+                  _memoHitsCount.set(_memoHitsCount.get + 1)
                   if (functionName == "compile")
                     logger.debug(
                       s"""
@@ -1096,6 +1121,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                 }
                 else {
                   // Widen current input with previous input (strategy S2)
+                  _memoWideningCount.set(_memoWideningCount.get + 1)
                   val newargtys = paapairs.foldLeft(List[VoideableRefinementType]()) { (prevargtys, paap) =>
                     val (praty, aty) = paap
                     val paapwid = Lattice[VoideableRefinementType].widen(praty, aty)
@@ -1576,12 +1602,18 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   private
   lazy val evalTDMemoFix: (Map[VarName, Type], Boolean, List[Case], FunMemo, VoideableRefinementType, TypeStore, VMemo) => TypeMemories[VoideableRefinementType, VoideableRefinementType] =
     memoized[Map[VarName, Type], Boolean, List[Case], FunMemo, VoideableRefinementType, TypeStore, VMemo, TypeMemories[VoideableRefinementType, VoideableRefinementType]](memocacheSize) { (localVars, break, cases, funMemo, scrtyp, store, memo) =>
-      memo.get(memoVisitKey(scrtyp)).fold(
-        evalTDMemoFixGo(localVars, break, cases, funMemo, scrtyp, store, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot, memo)) { case ((prevscrtyp, prevstore), prevres) =>
-        if (Lattice[VoideableRefinementType].<=(scrtyp, prevscrtyp)) prevres
+      memo.get(memoVisitKey(scrtyp)).fold {
+        _memoMissesCount.set(_memoMissesCount.get + 1)
+        evalTDMemoFixGo(localVars, break, cases, funMemo, scrtyp, store, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot, memo)
+      } { case ((prevscrtyp, prevstore), prevres) =>
+        if (Lattice[VoideableRefinementType].<=(scrtyp, prevscrtyp)) {
+          _memoHitsCount.set(_memoHitsCount.get + 1)
+          prevres
+        }
         else {
           val scrtypwid = Lattice[VoideableRefinementType].widen(prevscrtyp, scrtyp)
           val storewid = Lattice[TypeStore].widen(prevstore, store)
+          _memoWideningCount.set(_memoWideningCount.get + 1)
           evalTDMemoFixGo(localVars, break, cases, funMemo, scrtypwid, storewid, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot, memo)
       }
     }
@@ -1710,11 +1742,18 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   private
   lazy val evalBUMemoFix: (Map[VarName, Type], Boolean, List[Case], FunMemo, TypeStore, VoideableRefinementType, VMemo) => TypeMemories[VoideableRefinementType, VoideableRefinementType] =
     memoized[Map[VarName, Type], Boolean, List[Case], FunMemo, TypeStore, VoideableRefinementType, VMemo, TypeMemories[VoideableRefinementType, VoideableRefinementType]] (memocacheSize) { (localVars, break, cases, funMemo, store, scrtyp, memo) =>
-      memo.get(memoVisitKey(scrtyp)).fold(evalBUMemoFixGo(localVars, break, cases, funMemo, scrtyp, store, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot, memo)) { case ((prevscrtyp, prevstore), prevres) =>
-        if (Lattice[VoideableRefinementType].<=(scrtyp, prevscrtyp)) prevres
+      memo.get(memoVisitKey(scrtyp)).fold{
+        _memoMissesCount.set(_memoMissesCount.get + 1)
+        evalBUMemoFixGo(localVars, break, cases, funMemo, scrtyp, store, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot, memo)
+      } { case ((prevscrtyp, prevstore), prevres) =>
+        if (Lattice[VoideableRefinementType].<=(scrtyp, prevscrtyp)) {
+          _memoHitsCount.set(_memoHitsCount.get + 1)
+          prevres
+        }
         else {
           val scrtypwid = Lattice[VoideableRefinementType].widen(prevscrtyp, scrtyp)
           val storewid = Lattice[TypeStore].widen(prevstore, store)
+          _memoWideningCount.set(_memoWideningCount.get + 1)
           evalBUMemoFixGo(localVars, break, cases, funMemo, scrtypwid, storewid, Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].bot, memo)
         }
       }
