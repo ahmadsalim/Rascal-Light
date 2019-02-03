@@ -93,6 +93,45 @@ class Refinements(initialDefinitions: Map[Refinement, RefinementDef] = Map()) {
       s"refine ${nt.refinementName} = ${prettyDefn(defn)}"
     }
   }
+
+  def complexity(rty: RefinementType): Int = {
+    def goref(refinement: Refinement, visited: Set[Refinement]): (Int, Set[Refinement]) = {
+      if (visited.contains(refinement)) {
+        return (0, visited)
+      }
+      val defn = definitions(refinement)
+      val ncons = defn.conss.size
+      defn.conss.values.foldLeft((ncons, visited.union(Set(refinement)))) { (st, rs) =>
+        rs.foldLeft(st) { (st, r) =>
+          st match {
+            case (pcount, pvisited) =>
+              val (rcount, nvisited) = go(r, pvisited)
+              (pcount + rcount, nvisited)
+          }
+        }
+      }
+    }
+    def go(rty: RefinementType, visited: Set[Refinement]): (Int, Set[Refinement]) = rty match {
+      case BaseRefinementType(basicType) => (1, visited)
+      case DataRefinementType(dataname, refinename) =>
+        refinename.fold((1, visited)) { r =>
+          goref(r, visited)
+        }
+      case ListRefinementType(ety, len) =>
+        val (count, nvisited) = go(ety, visited)
+        (1 + count, nvisited)
+      case SetRefinementType(ety, card) =>
+        val (count, nvisited) = go(ety, visited)
+        (1 + count, nvisited)
+      case MapRefinementType(kty, vty, size) =>
+        val (kcount, nvisited) = go(kty, visited)
+        val (vcount, nvisited2) = go(vty, nvisited)
+        (1 + kcount + vcount, nvisited2)
+      case NoRefinementType => (0, visited)
+      case ValueRefinementType => (1, visited)
+    }
+    go(rty, Set[Refinement]())._1
+  }
 }
 
 object RefinementTypes {

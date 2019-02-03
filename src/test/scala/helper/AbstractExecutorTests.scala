@@ -44,6 +44,7 @@ abstract class AbstractExecutorTests(loggername: String) extends FlatSpec with M
         case SuccessResult(restype) =>
           atyping.inferType(restype.refinementType) shouldBe targetType
         case ExceptionalResult(exres) =>
+
       }
     }
   }
