@@ -1,6 +1,7 @@
 package semantics
 
 import java.lang.ThreadLocal
+import java.time.{Duration, Instant}
 
 import com.typesafe.scalalogging.StrictLogging
 import org.slf4j.LoggerFactory
@@ -86,7 +87,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                       cvtys: RefinementChildren[VoideableRefinementType]): VoideableRefinementType = {
     reconstruct(scrtyp, cvtys).head match {
       case SuccessResult(t) => t
-      case ExceptionalResult(_) => assert(false); throw new Exception("safeReconstruct")
+      case ExceptionalResult(_) => throw new Exception("safeReconstruct")
     }
   }
 
@@ -99,7 +100,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
           case FixedSeqChildren(cvtys) =>
             if (cvtys.isEmpty) Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(b))))
             else Set(ExceptionalResult(Error(Set(ReconstructError(scrtyp, cvtys)))))
-          case _ => assert(false); throw new UnsupportedOperationException()
+          case _ => throw new UnsupportedOperationException()
         }
       case DataRefinementType(dataname, refinenameo) =>
         cvtchildren match {
@@ -134,7 +135,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                 SuccessResult(VoideableRefinementType(possiblyVoid = false, DataRefinementType(dataname, newrnopt)))
               case ExceptionalResult(exres) => ExceptionalResult(exres)
             }
-          case _ => assert(false); throw new UnsupportedOperationException()
+          case _ => throw new UnsupportedOperationException()
         }
       case ListRefinementType(_,_) =>
         cvtchildren match {
@@ -146,7 +147,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
             val succRes =
               Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, ListRefinementType(childty.refinementType, size))))
             exRes ++ succRes
-          case _ => assert(false); throw new UnsupportedOperationException()
+          case _ => throw new UnsupportedOperationException()
         }
       case SetRefinementType(_,_) =>
         cvtchildren match {
@@ -158,7 +159,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
             val newSize = Lattice[Intervals.Positive.Interval].lub(Intervals.Positive.singleton(0), size)
             val succRes = Set(SuccessResult(VoideableRefinementType(possiblyVoid = false, SetRefinementType(childty.refinementType, newSize))))
             exRes ++ succRes
-          case _ => assert(false); throw new UnsupportedOperationException()
+          case _ => throw new UnsupportedOperationException()
         }
       case MapRefinementType(_, _, size) =>
         cvtchildren match {
@@ -186,14 +187,14 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                                    MapRefinementType(childty.refinementType, childty.refinementType, newSize))))
               exRes ++ succRes
             */
-            assert(false); throw new UnsupportedOperationException()
+            throw new UnsupportedOperationException()
         }
       case NoRefinementType =>
         cvtchildren match {
           case FixedSeqChildren(cvtys) =>
             if (scrtyp.possiblyVoid && cvtys.isEmpty) Set(SuccessResult(VoideableRefinementType(scrtyp.possiblyVoid, NoRefinementType)))
             else Set()
-          case _ => assert(false); throw new UnsupportedOperationException()
+          case _ => throw new UnsupportedOperationException()
         }
       case ValueRefinementType =>
         Set(ExceptionalResult(Error(Set(ReconstructError(scrtyp, List())))), SuccessResult(VoideableRefinementType(scrtyp.possiblyVoid, ValueRefinementType)))
@@ -490,7 +491,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                           (nrefinestore, vrtyp, selfenvs.flatMap { senv =>  cenvss.map { cenv => senv ++ cenv } })
                         }
                       }
-                    case ArbitrarySeqChildren(_, _) => assert(false); throw new UnsupportedOperationException()
+                    case ArbitrarySeqChildren(_, _) => throw new UnsupportedOperationException()
                   }
                 }
               }
@@ -1474,15 +1475,15 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
         ctysres match {
           case ExceptionalResult(Fail(ctys)) => ExceptionalResult(Fail(RefinementChildren.makeCons(cty, ctys)))
           case SuccessResult(ctys2) => SuccessResult(RefinementChildren.makeCons(cty, ctys2))
-          case _ => assert(false); throw new UnsupportedOperationException
+          case _ => throw new UnsupportedOperationException
         }
       case SuccessResult(cty2) =>
         ctysres match {
           case ExceptionalResult(Fail(ctys)) => SuccessResult(RefinementChildren.makeCons(cty2, ctys))
           case SuccessResult(ctys2) => SuccessResult(RefinementChildren.makeCons(cty2, ctys2))
-          case _ => assert(false); throw new UnsupportedOperationException
+          case _ => throw new UnsupportedOperationException
         }
-      case _ => assert(false); throw new UnsupportedOperationException
+      case _ =>  throw new UnsupportedOperationException
     }
   }
 
@@ -2183,7 +2184,10 @@ object AbstractRefinementTypeExecutor {
               initialRefinements: Refinements = new Refinements,
               initialStore: Option[TypeStore] = None,
               memoWidening: MemoWidening = ConstructorWidening(1),
-              refinedMatches: Boolean = true): String \/ (Module, Refinements, TypeMemories[VoideableRefinementType, Unit]) = {
+              refinedMatches: Boolean = true): String \/ (Module, Refinements,
+                                                          TypeMemories[VoideableRefinementType, Unit],
+                                                          (Int, Int, Int), Duration) = {
+    val start = Instant.now()
     for (transr <- ModuleTranslator.translateModule(module);
          executor = AbstractRefinementTypeExecutor(transr.semmod, initialRefinements = initialRefinements,
            memoWidening = memoWidening, refinedMatching = refinedMatches);
@@ -2210,7 +2214,10 @@ object AbstractRefinementTypeExecutor {
         })
         val relevantrefinements = relevantRefinements(executor, reslub)
         val resrefinements = new Refinements(executor.refinements.definitions.toMap.filterKeys(relevantrefinements.contains))
-        (transr.semmod, resrefinements, reslub)
+        val end = Instant.now()
+        (transr.semmod, resrefinements, reslub,
+          (executor.memoMissesCount, executor.memoHitsCount, executor.memoWideningCount),
+          Duration.between(start, end))
       }
   }
 

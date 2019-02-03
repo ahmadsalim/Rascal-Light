@@ -15,7 +15,7 @@ scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
 
 organization := "com.github.itu-square"
 organizationName := "SQUARE @ IT University of Copenhagen"
-organizationHomepage := Some(url("https://github.com/models-team"))
+organizationHomepage := Some(url("https://github.com/itu-square"))
 
 scalaVersion := "2.12.1"
 
@@ -29,6 +29,7 @@ libraryDependencies += "org.bitbucket.inkytonik.kiama" %% "kiama" % "2.0.0"
 
 libraryDependencies += "org.scalactic" %% "scalactic" % "3.0.1"
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.1" % "test"
+libraryDependencies += "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
 
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
 libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2"

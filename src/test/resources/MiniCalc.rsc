@@ -174,7 +174,7 @@ CType inferType(CExpr e, map[str, CType] tenv) {
 CType inferTypeC(CExpr e) = inferType(e, ());
 
 /*
- Evaluation
+ evaluation.Evaluation
 */
 CVal eval(CExpr e, map[str, CVal] env) {
   switch(e) {

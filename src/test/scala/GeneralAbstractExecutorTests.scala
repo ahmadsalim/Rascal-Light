@@ -1,7 +1,7 @@
-import semantics.{AbstractRefinementTypeExecutor}
+import helper.AbstractExecutorTests
+import semantics.AbstractRefinementTypeExecutor
 import syntax._
 import util.rascalwrapper.RascalWrapper
-
 import scalaz.\/-
 
 class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
@@ -11,7 +11,7 @@ class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
         AbstractRefinementTypeExecutor.execute(moddef, "simplify")
       }
       modExprExecRes shouldBe a [\/-[_]]
-      modExprExecRes.foreach { case (module, refinements, tmems) =>
+      modExprExecRes.foreach { case (module, refinements, tmems, _, _) =>
         memsOK(module, refinements, tmems, DataType("Expr"))
       }
     }
@@ -22,7 +22,7 @@ class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
         AbstractRefinementTypeExecutor.execute(moddef, "extractSuperclass")
       }
       modESExecRes shouldBe a [\/-[_]]
-      modESExecRes.foreach { case (module, refinements, tmems) =>
+      modESExecRes.foreach { case (module, refinements, tmems, _, _) =>
         memsOK(module, refinements, tmems, DataType("Package"))
       }
     }
@@ -33,7 +33,7 @@ class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
         AbstractRefinementTypeExecutor.execute(moddef, "replaceDelegationWithInheritance")
       }
       modRDExecRes shouldBe a [\/-[_]]
-      modRDExecRes.foreach { case (module, refinements, tmems) =>
+      modRDExecRes.foreach { case (module, refinements, tmems, _, _) =>
         memsOK(module, refinements, tmems, DataType("Package"))
       }
     }
@@ -44,7 +44,7 @@ class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
         AbstractRefinementTypeExecutor.execute(moddef, "simplify")
       }
       modSTabExecRes shouldBe a [\/-[_]]
-      modSTabExecRes.foreach { case (module, refinements, tmems) =>
+      modSTabExecRes.foreach { case (module, refinements, tmems, _, _) =>
         memsOK(module, refinements, tmems, DataType("Tableau"))
       }
     }
@@ -55,7 +55,7 @@ class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
         AbstractRefinementTypeExecutor.execute(moddef, "evenedout")
       }
       modIntPExecRes shouldBe a [\/-[_]]
-      modIntPExecRes.foreach { case (module, refinements, tmems) =>
+      modIntPExecRes.foreach { case (module, refinements, tmems, _, _) =>
         memsOK(module, refinements, tmems, ListType(BaseType(IntType)))
       }
     }
