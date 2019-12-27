@@ -34,7 +34,7 @@ libraryDependencies += "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
 libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2"
 
-libraryDependencies += "org.codehaus.groovy" % "groovy-all" % "2.4.1"
+libraryDependencies += "org.codehaus.groovy" % "groovy-all" % "2.5.8"
 
 addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3")
 
