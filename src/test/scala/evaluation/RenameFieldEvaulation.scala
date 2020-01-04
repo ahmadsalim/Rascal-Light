@@ -7,8 +7,9 @@ import syntax.DataType
 import util.rascalwrapper.RascalWrapper
 
 class RenameFieldEvaulation extends Evaluation("rename-field-evaluation") {
-  "The rename field refactoring in RenameStructField.rsc" should "run correctly with the abstract type executor" in {
-    forAll(configs) { (refinement, memowidening) =>
+  forAll(configs) { (refinement, memowidening) =>
+    "The rename field refactoring in RenameStructField.rsc" should
+    s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
       val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("/RenameStructField.rsc").getFile)
       val modRFExecRes = modRFO.flatMap { moddef =>
         val ofnrn = new Refinement("Nominal#ofn")

@@ -6,8 +6,9 @@ import syntax.DataType
 import util.rascalwrapper.RascalWrapper
 
 class DesugarOberonEvaluation extends Evaluation("desugar-oberon-evaluation") {
-  "The desugaring in DesugarOberonSimpl.rsc" should "run correctly with the abstract type executor" in {
-    forAll(configs) { (refinement, memowidening) =>
+  forAll(configs) { (refinement, memowidening) =>
+    "The desugaring in DesugarOberonSimpl.rsc" should
+      s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
       val modDSOb = RascalWrapper.loadModuleFromFile(getClass.getResource("/DesugarOberonSimpl.rsc").getFile)
       val modDSObExecRes = modDSOb.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "desugar",

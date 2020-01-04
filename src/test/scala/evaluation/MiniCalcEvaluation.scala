@@ -5,10 +5,12 @@ import semantics.{AbstractRefinementTypeExecutor, ModuleTranslator}
 import semantics.domains.abstracting._
 import syntax.{DataType, ListType}
 import util.rascalwrapper.RascalWrapper
+import org.scalatest.prop.TableDrivenPropertyChecks._
 
 class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
-  "The simplification procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
-    forAll(configs) { (refinement, memowidening) =>
+  forAll(configs) { (refinement, memowidening) =>
+    "The simplification procedure in MiniCalc.rsc" should
+      s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
       val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
       val modMCExecRes = modMC.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "simplify",
@@ -21,8 +23,9 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
     }
   }
 
-  "The type inference procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
-    forAll(configs) { (refinement, memowidening) =>
+  forAll(configs) { (refinement, memowidening) =>
+    "The type inference procedure in MiniCalc.rsc" should
+      s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
       val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
       val modMCExecRes = modMC.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
@@ -50,8 +53,9 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
     }
   }
 
-  "The evaluation procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
-    forAll(configs) { (refinement, memowidening) =>
+  forAll(configs) { (refinement, memowidening) =>
+    "The evaluation procedure in MiniCalc.rsc" should
+      s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
       val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
       val modMCExecRes = modMC.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
@@ -79,8 +83,9 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
     }
   }
 
-  "The compilation procedure in MiniCalc.rsc" should "run correctly with the abstract type executor" in {
-    forAll(configs) { (refinement, memowidening) =>
+  forAll(configs) { (refinement, memowidening) =>
+    "The compilation procedure in MiniCalc.rsc" should
+      s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
       val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
       val modMCExecRes = modMC.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)

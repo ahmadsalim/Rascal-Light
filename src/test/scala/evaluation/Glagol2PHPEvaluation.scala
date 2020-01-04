@@ -8,8 +8,9 @@ import util.rascalwrapper.RascalWrapper
 
 class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
 
-  "The expression translation in Glagol2PHP.rsc" should "only produce simple PHP expressions for simple Glagol expressions" in {
-    forAll(configs) { (refinement, memowidening) =>
+  forAll(configs) { (refinement, memowidening) =>
+    "The expression translation in Glagol2PHP.rsc" should
+      s"only produce simple PHP expressions for simple Glagol expressions using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
       val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("/Glagol2PHPExpr.rsc").getFile)
       val modG2PExecRes = modG2P.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
@@ -35,8 +36,9 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
     }
   }
 
-  "The expression translation in Glagol2PHP.rsc" should "should not produce unary expressions if there is no unary negation or positive markers" in {
-    forAll(configs) { (refinement, memowidening) =>
+  forAll(configs) { (refinement, memowidening) =>
+    "The expression translation in Glagol2PHP.rsc" should
+      s"should not produce unary expressions if there is no unary negation or positive markers using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
       val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("/Glagol2PHPExpr.rsc").getFile)
       val modG2PExecRes = modG2P.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)

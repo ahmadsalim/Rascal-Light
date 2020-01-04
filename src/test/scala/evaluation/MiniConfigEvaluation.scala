@@ -7,8 +7,9 @@ import util.rascalwrapper.RascalWrapper
 
 class MiniConfigEvaluation extends Evaluation("mini-config-evaluation") {
 
-  "The modernization transformation in MiniConfigMod.rsc" should "run correctly with the abstract type executor" in {
-    forAll(configs) { (refinement, memowidening) =>
+  forAll(configs) { (refinement, memowidening) =>
+    "The modernization transformation in MiniConfigMod.rsc" should
+      s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
       val modMCM = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniConfigMod.rsc").getFile)
       val modMCMExecRes = modMCM.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "modernize",
