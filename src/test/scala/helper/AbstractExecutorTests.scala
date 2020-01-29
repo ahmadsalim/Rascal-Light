@@ -21,8 +21,10 @@ abstract class AbstractExecutorTests(loggername: String) extends FlatSpec with M
   def memsOK(module: Module, refinements: Refinements,
              mems: TypeMemories[VoideableRefinementType, Unit], targetType: Type,
              memoInfo: Option[(Int, Int, Int)] = None,
-             duration: Option[Duration] = None): Unit = {
+             duration: Option[Duration] = None,
+             confname: String = ""): Unit = {
     logger.info("=" * 100)
+    logger.info(confname)
     refinements.prettyDefs.sorted.foreach(x => logger.info(x))
     logger.info(TypeMemories.pretty(mems))
     logger.info("\n")
@@ -43,8 +45,7 @@ abstract class AbstractExecutorTests(loggername: String) extends FlatSpec with M
     mems.memories.foreach { case TypeMemory(res, _) => res match {
         case SuccessResult(restype) =>
           atyping.inferType(restype.refinementType) shouldBe targetType
-        case ExceptionalResult(exres) =>
-
+        case ExceptionalResult(_) =>
       }
     }
   }

@@ -125,25 +125,25 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
                                                                ConstructorExpr("fieldaccessexpr",List(VarExpr("faty"), VarExpr("target"), VarExpr("newFieldName"))),
                                                                VarExpr("fae")))))))),
                                                                LocalBlockExpr(List(),List()))))))))
-    parseAndTranslateMatchingExpected("RenameField.rsc", expected)
+    parseAndTranslateMatchingExpected("original/RenameField.rsc", expected)
   }
 
   val testRscliFiles =
     Table( "test file"
-         , "ExtractSuperclass.rsc"
-         , "ReplaceDelegation.rsc"
-         , "SimplifyTableau.rsc"
-         , "DeriveTableau.rsc"
-         , "NormalizeOberon.rsc"
-         , "ConstantElimOberon.rsc"
-         , "DesugarOberon.rsc"
-         , "Glagol2PHP.rsc"
+         , "unported/ExtractSuperclass.rsc"
+         , "unported/ReplaceDelegation.rsc"
+         , "unported/SimplifyTableau.rsc"
+         , "unported/DeriveTableau.rsc"
+         , "unported/NormalizeOberon.rsc"
+         , "unported/ConstantElimOberon.rsc"
+         , "original/DesugarOberon.rsc"
+         , "original/Glagol2PHP.rsc"
          , "IntProgs.rsc"
          , "MiniCalc.rsc"
          , "MiniConfigMod.rsc"
-         , "MarvolCompile.rsc"
-         , "NormalizePHPScript.rsc"
-         , "ConvertRascalType.rsc")
+         , "unported/MarvolCompile.rsc"
+         , "unported/NormalizePHPScript.rsc"
+         , "unported/ConvertRascalType.rsc")
 
   TableDrivenPropertyChecks.forAll(testRscliFiles) { (testFile : String) =>
     it should s"parse and translate $testFile without any error" in {

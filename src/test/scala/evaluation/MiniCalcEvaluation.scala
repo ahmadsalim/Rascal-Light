@@ -9,8 +9,9 @@ import org.scalatest.prop.TableDrivenPropertyChecks._
 
 class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
   forAll(configs) { (refinement, memowidening) =>
+    val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The simplification procedure in MiniCalc.rsc" should
-      s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
+      s"run correctly with the abstract type executor using $confname" in {
       val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
       val modMCExecRes = modMC.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "simplify",
@@ -24,8 +25,9 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
   }
 
   forAll(configs) { (refinement, memowidening) =>
+    val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The type inference procedure in MiniCalc.rsc" should
-      s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
+      s"run correctly with the abstract type executor using $confname" in {
       val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
       val modMCExecRes = modMC.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
@@ -48,14 +50,15 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
       }
       modMCExecRes shouldBe a[\/-[_]]
       modMCExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("CType"), Some(memoinfo), Some(duration))
+        memsOK(module, refinements, tmems, DataType("CType"), Some(memoinfo), Some(duration), confname)
       }
     }
   }
 
   forAll(configs) { (refinement, memowidening) =>
+    val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The evaluation procedure in MiniCalc.rsc" should
-      s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
+      s"run correctly with the abstract type executor using $confname" in {
       val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
       val modMCExecRes = modMC.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
@@ -78,14 +81,15 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
       }
       modMCExecRes shouldBe a[\/-[_]]
       modMCExecRes.foreach { case (module, refinements, tmems, meminfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("CVal"), Some(meminfo), Some(duration))
+        memsOK(module, refinements, tmems, DataType("CVal"), Some(meminfo), Some(duration), confname)
       }
     }
   }
 
   forAll(configs) { (refinement, memowidening) =>
+    val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The compilation procedure in MiniCalc.rsc" should
-      s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
+      s"run correctly with the abstract type executor using $confname" in {
       val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
       val modMCExecRes = modMC.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
@@ -101,7 +105,8 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
         val initialStore: TypeStore =
           TypeStoreV(Map(
             "e" -> VoideableRefinementType(possiblyVoid = false, noIfCExpr),
-            "cenv" -> VoideableRefinementType(possiblyVoid = false, ListRefinementType(DataRefinementType("CRVal", None), Intervals.Positive.singleton(0)))
+            "cenv" -> VoideableRefinementType(possiblyVoid = false,
+              ListRefinementType(DataRefinementType("CRVal", None), Intervals.Positive.singleton(0)))
           ))
         AbstractRefinementTypeExecutor.execute(moddef, "compile",
           initialRefinements = initialRefinements, initialStore = Some(initialStore),
@@ -109,7 +114,7 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
       }
       modMCExecRes shouldBe a[\/-[_]]
       modMCExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, ListType(DataType("CInstr")), Some(memoinfo), Some(duration))
+        memsOK(module, refinements, tmems, ListType(DataType("CInstr")), Some(memoinfo), Some(duration), confname)
       }
     }
   }

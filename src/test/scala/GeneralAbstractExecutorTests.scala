@@ -17,7 +17,7 @@ class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
     }
 
     "The extract superclass refactoring in ExtractSuperclass.rsc" should "run correctly with the abstract type executor" in {
-      val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("ExtractSuperclass.rsc").getFile)
+      val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("unported/ExtractSuperclass.rsc").getFile)
       val modESExecRes = modESO.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "extractSuperclass")
       }
@@ -28,7 +28,7 @@ class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
     }
 
     "The replace delegation with inheritance refactoring in ReplaceDelegation.rsc" should "run correctly with the abstract type executor" in {
-      val modRDO = RascalWrapper.loadModuleFromFile(getClass.getResource("ReplaceDelegation.rsc").getFile)
+      val modRDO = RascalWrapper.loadModuleFromFile(getClass.getResource("unported/ReplaceDelegation.rsc").getFile)
       val modRDExecRes = modRDO.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "replaceDelegationWithInheritance")
       }
@@ -39,7 +39,7 @@ class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
     }
 
     "The simplification procedure in SimplifyTableau.rsc" should "run correctly with the abstract type executor" in {
-      val modSTab = RascalWrapper.loadModuleFromFile(getClass.getResource("SimplifyTableau.rsc").getFile)
+      val modSTab = RascalWrapper.loadModuleFromFile(getClass.getResource("unported/SimplifyTableau.rsc").getFile)
       val modSTabExecRes = modSTab.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "simplify")
       }

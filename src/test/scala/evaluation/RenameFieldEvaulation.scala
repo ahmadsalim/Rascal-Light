@@ -8,8 +8,9 @@ import util.rascalwrapper.RascalWrapper
 
 class RenameFieldEvaulation extends Evaluation("rename-field-evaluation") {
   forAll(configs) { (refinement, memowidening) =>
+    val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The rename field refactoring in RenameStructField.rsc" should
-    s"run correctly with the abstract type executor using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
+    s"run correctly with the abstract type executor using $confname" in {
       val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("/RenameStructField.rsc").getFile)
       val modRFExecRes = modRFO.flatMap { moddef =>
         val ofnrn = new Refinement("Nominal#ofn")
@@ -29,7 +30,7 @@ class RenameFieldEvaulation extends Evaluation("rename-field-evaluation") {
       }
       modRFExecRes shouldBe a[\/-[_]]
       modRFExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("Package"), Some(memoinfo), Some(duration))
+        memsOK(module, refinements, tmems, DataType("Package"), Some(memoinfo), Some(duration), confname)
       }
     }
   }

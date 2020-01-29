@@ -85,9 +85,13 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   private
   def safeReconstruct(scrtyp: VoideableRefinementType,
                       cvtys: RefinementChildren[VoideableRefinementType]): VoideableRefinementType = {
-    reconstruct(scrtyp, cvtys).head match {
-      case SuccessResult(t) => t
-      case ExceptionalResult(_) => throw new Exception("safeReconstruct")
+    val recons = reconstruct(scrtyp, cvtys).find {
+      case SuccessResult(_) => true
+      case ExceptionalResult(_) => false
+    }
+    recons match {
+      case Some(SuccessResult(t)) => t
+      case _ => throw new Exception("safeReconstruct")
     }
   }
 
@@ -197,7 +201,9 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
           case _ => throw new UnsupportedOperationException()
         }
       case ValueRefinementType =>
-        Set(ExceptionalResult(Error(Set(ReconstructError(scrtyp, List())))), SuccessResult(VoideableRefinementType(scrtyp.possiblyVoid, ValueRefinementType)))
+        val exres = ExceptionalResult(Error(Set(ReconstructError(scrtyp, List()))))
+        val sucres = SuccessResult(VoideableRefinementType(scrtyp.possiblyVoid, ValueRefinementType))
+        Set(exres, sucres)
     }
   }
 

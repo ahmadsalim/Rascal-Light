@@ -9,8 +9,9 @@ import util.rascalwrapper.RascalWrapper
 class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
 
   forAll(configs) { (refinement, memowidening) =>
+    val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The expression translation in Glagol2PHP.rsc" should
-      s"only produce simple PHP expressions for simple Glagol expressions using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
+      s"only produce simple PHP expressions for simple Glagol expressions using $confname" in {
       val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("/Glagol2PHPExpr.rsc").getFile)
       val modG2PExecRes = modG2P.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
@@ -31,14 +32,15 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
       }
       modG2PExecRes shouldBe a[\/-[_]]
       modG2PExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("PhpExpr"), Some(memoinfo), Some(duration))
+        memsOK(module, refinements, tmems, DataType("PhpExpr"), Some(memoinfo), Some(duration), confname)
       }
     }
   }
 
   forAll(configs) { (refinement, memowidening) =>
+    val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The expression translation in Glagol2PHP.rsc" should
-      s"should not produce unary expressions if there is no unary negation or positive markers using ${Evaluation.refinementWideningName(refinement, memowidening)}" in {
+      s"should not produce unary expressions if there is no unary negation or positive markers using $confname" in {
       val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("/Glagol2PHPExpr.rsc").getFile)
       val modG2PExecRes = modG2P.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
@@ -59,7 +61,7 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
       }
       modG2PExecRes shouldBe a[\/-[_]]
       modG2PExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("PhpExpr"), Some(memoinfo), Some(duration))
+        memsOK(module, refinements, tmems, DataType("PhpExpr"), Some(memoinfo), Some(duration), confname)
       }
     }
   }

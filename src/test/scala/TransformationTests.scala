@@ -28,7 +28,7 @@ class TransformationTests extends FlatSpec with Matchers {
   }
 
   "The rename field refactoring in RenameField.rsc" should "pass all its tests correctly" in {
-    val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("RenameField.rsc").getFile)
+    val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("original/RenameField.rsc").getFile)
     val modRFExecRes = modRFO.flatMap(ConcreteExecutor.execute)
     modRFExecRes shouldBe a [\/-[_]]
     modRFExecRes.foreach { execres =>
@@ -37,7 +37,7 @@ class TransformationTests extends FlatSpec with Matchers {
   }
 
   "The extract superclass refactoring in ExtractSuperclass.rsc" should "pass all its tests correctly" in {
-    val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("ExtractSuperclass.rsc").getFile)
+    val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("unported/ExtractSuperclass.rsc").getFile)
     val modESExecRes = modESO.flatMap(ConcreteExecutor.execute)
     modESExecRes shouldBe a [\/-[_]]
     modESExecRes.foreach { execres =>
@@ -46,7 +46,7 @@ class TransformationTests extends FlatSpec with Matchers {
   }
 
   "The replace delegation with inheritance refactoring in ReplaceDelegation.rsc" should "pass all its tests correctly" in {
-    val modRDO = RascalWrapper.loadModuleFromFile(getClass.getResource("ReplaceDelegation.rsc").getFile)
+    val modRDO = RascalWrapper.loadModuleFromFile(getClass.getResource("unported/ReplaceDelegation.rsc").getFile)
     val modRDExecRes = modRDO.flatMap(ConcreteExecutor.execute)
     modRDExecRes shouldBe a [\/-[_]]
     modRDExecRes.foreach { execres =>
