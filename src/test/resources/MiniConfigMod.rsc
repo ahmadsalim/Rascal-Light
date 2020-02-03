@@ -43,16 +43,15 @@ data Binop = and() | or() | times() | plus() | minus() | div() | eq() | leq() ;
 
 data Const = intv(int ival) | strv(str sval) | boolv(bool bval);
 
-data PrecondExc = precondExc();
-data PostcondExc = postcondExc();
+data Exc = precondExc() | postcondExc();
 
 Expression modernize(Statement stmt) {
   Statement stmtsup = ensureSupported(stmt);
   Statement stmtpure = ensureAllPure(stmtsup);
   Statement stmtnoswitch = switchToIf(stmtpure);
   Statement stmtifsconverted = ifsToIfElses(removeEmptyIfs(convertIfs(stmtnoswitch)));
-  Statement stmtblocksconverted = singletonBlocksToStatements(stmtifsconverted);
-  return statementToExpression(stmtblocksconverted);
+  Statement stmtexpr = statementToExpression(stmtifsconverted);
+  return extractExpression(stmtexpr);
 }
 
 Expression ensurePure(Expression e) = top-down-break visit (e) {
@@ -70,6 +69,7 @@ Statement ensureAllPure(Statement s) = top-down visit(s) {
 
 Statement ensureSupported(Statement s) = top-down-break visit (s) {
   case expr(_) => ({ throw precondExc(); })
+  case doWhile(_,_) => ({ throw precondExc(); })
   case \while(_,_) => ({ throw precondExc(); })
   case \for(_,_,_,_) => ({ throw precondExc(); })
   case \continue() => ({ throw precondExc(); })
@@ -106,19 +106,21 @@ Statement removeEmptyIfs(Statement stmt) = bottom-up visit(stmt) {
    case sseq(ifelse(e1, block(sskip()), block(sskip())), ss) => ss
 };
 
-Statement ifsToIfElses(Statement stmt) = bottom-up visit(stmt) {
+Statement ifsToIfElses(Statement stmt) = top-down visit(stmt) {
+   case \if(e, s) => ifelse(e, s, block(sskip()))
    case sseq(\if(e, s), ss) => sseq(ifelse(e, s, block(ss)), sskip())
    case sseq(ifelse(e, st, sf), ss) => sseq(ifelse(e, block(sseq(st, ss)), block(sseq(sf, ss))), sskip())
 };
 
-Statement singletonBlocksToStatements(Statement stmt) = bottom-up visit(stmt) {
-   case block(sseq(s, sskip())) => s
+Statement statementToExpression(Statement stmt) = bottom-up visit(stmt) {
+    case ifelse(e, expr(et), expr(ef)) => expr(ternary(e, et, ef))
+    case \returnE(e) => expr(e)
+    case block(sseq(expr(e), sskip())) => expr(e)
 };
- 
-Expression statementToExpression(Statement stmt) {
+
+Expression extractExpression(Statement stmt) {
   switch (stmt) {
-    case ifelse(e, st, sf): return ternary(e, statementToExpression(st), statementToExpression(sf));
-    case \returnE(e): return e;
-    case _: throw postcondExc(); 
+    case expr(e): return e;
+    case _: throw postcondExc();
   }
 }
