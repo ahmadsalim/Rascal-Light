@@ -23,9 +23,11 @@ abstract class Evaluation(loggername: String) extends AbstractExecutorTests(logg
     (true, ConstructorWidening(1))
   )
 
-  override def timeLimit: Span = 100.seconds
+  override def timeLimit: Span = 10.minutes
 
-  override val defaultTestSignaler: Signaler = (testThread: Thread) => testThread.interrupt()
+  override val defaultTestSignaler: Signaler = (testThread: Thread) => {
+    AbstractRefinementTypeExecutor.shouldStop = true
+    testThread.interrupt() }
 }
 
 object Evaluation {

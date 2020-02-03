@@ -118,13 +118,15 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                     val zipped = cvtys.zip(parameters.map(_.typ))
                     val posSuc: Set[TypeResult[Map[ConsName, List[RefinementType]], Nothing]] =
                       if (cvtys.length == parameters.length &&
-                        zipped.forall { case (vrty, ty) => atyping.checkType(vrty.refinementType, ty).contains(true) }) {
+                        zipped.forall { case (vrty, ty) =>
+                          atyping.checkType(vrty.refinementType, ty).contains(true) }) {
                         // TODO Update shapes to be at most as precise as the target type
                         Set(SuccessResult(consmap.updated(cons, cvtys.map(_.refinementType))))
                       } else Set()
                     val posEx: Set[TypeResult[Map[ConsName, List[RefinementType]], Nothing]] =
                       if (cvtys.length != parameters.length ||
-                          zipped.exists { case (vrty, ty) => atyping.checkType(vrty.refinementType, ty).contains(false) } ||
+                          zipped.exists { case (vrty, ty) =>
+                            atyping.checkType(vrty.refinementType, ty).contains(false) } ||
                           cvtys.exists(_.possiblyVoid))
                         Set(ExceptionalResult(Error(Set(ReconstructError(scrtyp, cvtys)))))
                       else Set()
@@ -333,6 +335,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
   // TODO Consider merging succesful and failing environments for optimization
   def matchPatt(store: TypeStore, scrvrtyp: VoideableRefinementType, cspatt: Patt): Set[MatchPattRes] = {
+    AbstractRefinementTypeExecutor.stopCheck()
     val matchress: Set[MatchPattRes] = cspatt match {
       case BasicPatt(b) =>
         b match {
@@ -632,6 +635,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
 
   def evalBinaryOp(lhvrtyp: VoideableRefinementType, op: OpName, rhvrtyp: VoideableRefinementType): Set[TypeResult[VoideableRefinementType, Unit]] = {
+    AbstractRefinementTypeExecutor.stopCheck()
     val invOp = ExceptionalResult(Error(Set(InvalidOperationError(op, List(lhvrtyp, rhvrtyp)))))
 
     def boolToRefinement(b: Boolean): VoideableRefinementType = {
@@ -1197,6 +1201,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   }
 
   def evalAssignable(localVars: Map[VarName, Type], store: TypeStore, assgn: Assignable, funMemo: FunMemo): TypeMemories[DataPath[VoideableRefinementType], Unit] = {
+    AbstractRefinementTypeExecutor.stopCheck()
     assgn match {
       case VarAssgn(name) => TypeMemories(Set(TypeMemory(SuccessResult(DataPath(name, List())),store)))
       case FieldAccAssgn(target, fieldName) =>
@@ -1406,7 +1411,9 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   }
 
   def evalCases(localVars: Map[VarName, Type], store: TypeStore, scrtyp: VoideableRefinementType, cases: List[Case], funMemo: FunMemo): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
+    AbstractRefinementTypeExecutor.stopCheck()
     def evalCase(store: TypeStore, action: Expr, envs: Set[Map[VarName, VoideableRefinementType]]): TypeMemories[VoideableRefinementType, Unit] = {
+      AbstractRefinementTypeExecutor.stopCheck()
       envs.headOption.fold(TypeMemories[VoideableRefinementType, Unit](Set(TypeMemory(ExceptionalResult(Fail(())), store)))) { env =>
         val joinedstore = joinStores(store, TypeStoreV(env))
         val actmems = evalLocal(localVars, joinedstore, action, funMemo)
@@ -1496,6 +1503,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   private
   def evalTDAll(localVars: Map[VarName, Type], break: Boolean, cases: List[Case], funMemo: FunMemo, cs: RefinementChildren[RefinementType], store: TypeStore, memo: VMemo): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
     def memoFixAll(cs: RefinementChildren[RefinementType], store: TypeStore, memoall: VMemoAll): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
+      AbstractRefinementTypeExecutor.stopCheck()
       @tailrec
       def go(cs: RefinementChildren[RefinementType], store: TypeStore, prevRes: TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
         val nilRes: Option[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]] = {
@@ -1633,6 +1641,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   private
   def evalBUAll(localVars: Map[VarName, Type], break: Boolean, cases: List[Case], funMemo: FunMemo, cs: RefinementChildren[RefinementType], store: TypeStore, memo: VMemo): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
     def memoFixAll(cs: RefinementChildren[RefinementType], store: TypeStore, memoall: VMemoAll): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
+      AbstractRefinementTypeExecutor.stopCheck()
       @tailrec
       def go(cs: RefinementChildren[RefinementType], store: TypeStore, prevRes: TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]): TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]] = {
         val nilRes: Option[TypeMemories[RefinementChildren[VoideableRefinementType], RefinementChildren[VoideableRefinementType]]] = {
@@ -1773,6 +1782,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   def evalVisitStrategy(strategy: Strategy, localVars: Map[VarName, Type], store: TypeStore, scrtyp: VoideableRefinementType, cases: List[Case], funMemo: FunMemo): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
     def loop(store: TypeStore, scrtyp: VoideableRefinementType, evalIn : (Map[VarName, Type], TypeStore, VoideableRefinementType, List[Case], Boolean, FunMemo) => TypeMemories[VoideableRefinementType, VoideableRefinementType]): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
       def memoFix(store: TypeStore, scryp: VoideableRefinementType, memo: Map[TypeStore, TypeMemories[VoideableRefinementType, VoideableRefinementType]]): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
+        AbstractRefinementTypeExecutor.stopCheck()
         def go(prevRes: TypeMemories[VoideableRefinementType, VoideableRefinementType]): TypeMemories[VoideableRefinementType, VoideableRefinementType] = {
           val resmems = evalIn(localVars, store, scrtyp, cases, /* break = */ false, funMemo)
           val newRes = Lattice[TypeMemories[VoideableRefinementType, VoideableRefinementType]].lubs(resmems.memories.map { case TypeMemory(res, store_) =>
@@ -1897,6 +1907,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     def evalOnEnv(envs: Set[Map[VarName, VoideableRefinementType]]): TypeMemories[VoideableRefinementType, Unit] = {
       // TODO Find a way to have the go fixedpoint calculation outside the inner memoization/regular tree calculation
       def memoFix(store: TypeStore, memo: Map[TypeStore, TypeMemories[VoideableRefinementType, Unit]]): TypeMemories[VoideableRefinementType, Unit] = {
+        AbstractRefinementTypeExecutor.stopCheck()
         def go(prevRes: TypeMemories[VoideableRefinementType, Unit]): TypeMemories[VoideableRefinementType, Unit] = {
           val itermems: TypeMemories[VoideableRefinementType, Unit] = {
             // We overapproximate order, cardinality and content, so we have to try all possible combinations in parallel
@@ -1958,6 +1969,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
   def evalWhile(localVars: Map[VarName, Type], store: TypeStore, cond: Expr, body: Expr, funMemo: FunMemo): TypeMemories[VoideableRefinementType, Unit] = {
     def memoFix(store: TypeStore, memo: Map[TypeStore, TypeMemories[VoideableRefinementType, Unit]]): TypeMemories[VoideableRefinementType, Unit] = {
+      AbstractRefinementTypeExecutor.stopCheck()
       def go(prevRes: TypeMemories[VoideableRefinementType, Unit]): TypeMemories[VoideableRefinementType, Unit] = {
         val condmems = evalLocal(localVars, store, cond, funMemo)
         val newRes = Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(condmems.memories.flatMap { case TypeMemory(condres, store__) =>
@@ -2011,6 +2023,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
   def evalSolve(localVars: Map[VarName, Type], store: TypeStore, vars: Seq[VarName], body: Expr, funMemo: FunMemo): TypeMemories[VoideableRefinementType, Unit] = {
     def memoFix(store: TypeStore, memo: Map[TypeStore, TypeMemories[VoideableRefinementType, Unit]]): TypeMemories[VoideableRefinementType, Unit] = {
+      AbstractRefinementTypeExecutor.stopCheck()
       def go(prevRes: TypeMemories[VoideableRefinementType, Unit]): TypeMemories[VoideableRefinementType, Unit] = {
         val bodymems = evalLocal(localVars, store, body, funMemo)
         val newRes = Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(bodymems.memories.flatMap { case TypeMemory(bodyres, store_) =>
@@ -2124,9 +2137,6 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   }
 
   lazy val evalLocal: (Map[VarName, Type], TypeStore, Expr, FunMemo) => TypeMemories[VoideableRefinementType, Unit] = {
-    if (Thread.interrupted()) {
-      throw new InterruptedException()
-    }
     memoized[Map[VarName, Type], TypeStore, Expr, FunMemo, TypeMemories[VoideableRefinementType, Unit]](memocacheSize) {
       (localVars: Map[VarName, Type], store: TypeStore, expr: Expr, funMemo: FunMemo) =>
         expr match {
@@ -2173,7 +2183,6 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 }
 
 object AbstractRefinementTypeExecutor {
-
   def executeGlobalVariables(executor: AbstractRefinementTypeExecutor, globVars: List[(VarName, Expr)]): String \/ TypeStore = {
     import executor.typememoriesops._
     import typestoreops._
@@ -2197,6 +2206,7 @@ object AbstractRefinementTypeExecutor {
               refinedMatches: Boolean = true): String \/ (Module, Refinements,
                                                           TypeMemories[VoideableRefinementType, Unit],
                                                           (Int, Int, Int), Duration) = {
+    AbstractRefinementTypeExecutor.shouldStop = false
     val start = Instant.now()
     for (transr <- ModuleTranslator.translateModule(module);
          executor = AbstractRefinementTypeExecutor(transr.semmod, initialRefinements = initialRefinements,
@@ -2229,7 +2239,13 @@ object AbstractRefinementTypeExecutor {
           (executor.memoMissesCount, executor.memoHitsCount, executor.memoWideningCount),
           Duration.between(start, end))
       }
+
   }
+
+  @volatile
+  var shouldStop = false
+
+  def stopCheck() = if (shouldStop) throw StopException
 
   private
   def relevantRefinements(executor: AbstractRefinementTypeExecutor, reslub: TypeMemories[VoideableRefinementType, Unit]): Set[Refinement] = {
