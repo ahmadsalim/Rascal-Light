@@ -27,7 +27,7 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
           Set("invoke", "invoke2", "new", "get", "fieldAccess", "fieldAccess2", "list", "map", "arrayAccess", "this"))
         val initialStore = TypeStoreV(Map("expr" -> VoideableRefinementType(possiblyVoid = false, simpleExpr)))
         AbstractRefinementTypeExecutor.execute(moddef, "toPhpExpr",
-          initialStore = Some(initialStore), initialRefinements = initialRefinements,
+          initialStore = Some(initialStore), initialRefinements = rtops.refinements,
           refinedMatches = refinement, memoWidening = memowidening)
       }
       modG2PExecRes shouldBe a[\/-[_]]

@@ -475,7 +475,7 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
   }
 
   // Excludes constructors in `excludedConss` recursively from a datatype
-  def excluding(dn: TypeName, excludedConss: Set[ConsName]): RefinementType = {
+  def excluding(dn: TypeName, excludedConss: Set[ConsName]): DataRefinementType = {
     def removeSelfRefinements(rty: RefinementType): RefinementType = rty match {
       case DataRefinementType(dataname, refinename) if refinename.exists(r => r.refinementName == dataname) =>
         DataRefinementType(dataname, None)
@@ -492,6 +492,25 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
     }
     val resRn = addRefinement(dn, newRn, newRnDefRep)
     DataRefinementType(dn, resRn)
+  }
+
+  def refineSub(reftype: DataRefinementType, dnsub: TypeName, newref: DataRefinementType): RefinementType = {
+    def replaceSubRefinement(rty: RefinementType): RefinementType = rty match {
+      case DataRefinementType(dataname, _) if dataname == dnsub => newref
+      case ListRefinementType(elementType, length) => ListRefinementType(replaceSubRefinement(elementType), length)
+      case SetRefinementType(elementType, cardinality) =>
+        SetRefinementType(replaceSubRefinement(elementType), cardinality)
+      case MapRefinementType(keyType, valueType, size) =>
+        MapRefinementType(replaceSubRefinement(keyType), replaceSubRefinement(valueType), size)
+      case _ => rty
+    }
+    val newRn = refinements.newRefinement(reftype.dataname)
+    val newRnDef = refinements.definitions(reftype.refinename.get).conss
+    val newRnDefRep = newRnDef.transform {
+      (_, tys) => tys.map(rty => replaceSubRefinement(substDataRefsInType(rty, reftype.refinename.get, Some(newRn))))
+    }
+    val resRn = addRefinement(reftype.dataname, newRn, newRnDefRep)
+    DataRefinementType(reftype.dataname, resRn)
   }
 
   private

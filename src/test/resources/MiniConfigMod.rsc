@@ -49,15 +49,16 @@ Expression modernize(Statement stmt) {
   Statement stmtsup = ensureSupported(stmt);
   Statement stmtpure = ensureAllPure(stmtsup);
   Statement stmtnoswitch = switchToIf(stmtpure);
-  Statement stmtifsconverted = ifsToIfElses(removeEmptyIfs(convertIfs(stmtnoswitch)));
-  Statement stmtexpr = statementToExpression(stmtifsconverted);
+  Statement stmtifsconverted = convertIfs(stmtnoswitch);
+  Statement stmtnoemptyifs = removeEmptyIfs(stmtifsconverted);
+  Statement stmtifelses = ifsToIfElses(stmtnoemptyifs);
+  Statement stmtexpr = statementToExpression(stmtifelses);
   return extractExpression(stmtexpr);
 }
 
-Expression ensurePure(Expression e) = top-down-break visit (e) {
+Expression ensurePure(Expression e) = top-down visit (e) {
    case assign(_,_) => ({ throw precondExc(); })
-   case postop(_, incr()) => ({ throw precondExc(); })
-   case postop(_, decr()) => ({ throw precondExc(); })
+   case postop(_,_) => ({ throw precondExc(); })
    // Assume function calls are pure
 };
 
@@ -67,7 +68,7 @@ Statement ensureAllPure(Statement s) = top-down visit(s) {
    case \switch(e,cs,ds) => \switch(ensurePure(e), cs, ds)
 };
 
-Statement ensureSupported(Statement s) = top-down-break visit (s) {
+Statement ensureSupported(Statement s) = top-down visit (s) {
   case expr(_) => ({ throw precondExc(); })
   case doWhile(_,_) => ({ throw precondExc(); })
   case \while(_,_) => ({ throw precondExc(); })
@@ -92,24 +93,24 @@ Statement switchToIf(Statement stmt) = bottom-up visit(stmt) {
 };
 
 Statement convertIfs(Statement stmt) = bottom-up visit(stmt) {
-   case ifelse(e, s, s) => s
+   case ifelse(e, s1, s2) => ((s1 == s2) ? s1 : ifelse(e, s1, s2))
    case \if(e1, \if(e2, s)) => \if(binop(e1, and(), e2), s)
-   case sseq(\if(e1, st), sseq(\if(e2,st), ss)) => sseq(\if(binop(e1, or(), e2), st), ss)
-   case sseq(ifelse(e1, st, sf), sseq(ifelse(e2,st,sf), ss)) => sseq(ifelse(binop(e1, or(), e2), st, sf), ss)
-   case sseq(\if(e1, s), sseq(sel: \if(_,_), sseq(\if(e2, s), ss))) => sseq(\if(binop(e1, or(), e2), s), sseq(sel, ss))
+   case block(sseq(\if(e1, st), sseq(\if(e2,st), ss))) => block(sseq(\if(binop(e1, or(), e2), st), ss))
+   case block(sseq(ifelse(e1, st, sf), sseq(ifelse(e2,st,sf), ss))) => block(sseq(ifelse(binop(e1, or(), e2), st, sf), ss))
+   case block(sseq(\if(e1, s), sseq(sel: \if(_,_), sseq(\if(e2, s), ss)))) => block(sseq(\if(binop(e1, or(), e2), s), sseq(sel, ss)))
    case ifelse(e1, returnE(const(boolv(true))), returnE(const(boolv(false)))) => returnE(e1)
    case ifelse(e1, returnE(const(boolv(false))), returnE(const(boolv(true)))) => returnE(preop(not(),e1))
 };
 
 Statement removeEmptyIfs(Statement stmt) = bottom-up visit(stmt) {
-   case sseq(\if(e1, block(sskip())), ss) => ss
-   case sseq(ifelse(e1, block(sskip()), block(sskip())), ss) => ss
+   case block(sseq(\if(e1, block(sskip())), ss)) => block(ss)
+   case block(sseq(ifelse(e1, block(sskip()), block(sskip())), ss)) => block(ss)
 };
 
 Statement ifsToIfElses(Statement stmt) = top-down visit(stmt) {
    case \if(e, s) => ifelse(e, s, block(sskip()))
-   case sseq(\if(e, s), ss) => sseq(ifelse(e, s, block(ss)), sskip())
-   case sseq(ifelse(e, st, sf), ss) => sseq(ifelse(e, block(sseq(st, ss)), block(sseq(sf, ss))), sskip())
+   case block(sseq(\if(e, s), ss)) => block(sseq(ifelse(e, s, block(ss)), sskip()))
+   case block(sseq(ifelse(e, st, sf), ss)) => block(sseq(ifelse(e, block(sseq(st, ss)), block(sseq(sf, ss))), sskip()))
 };
 
 Statement statementToExpression(Statement stmt) = bottom-up visit(stmt) {
