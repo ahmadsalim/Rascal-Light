@@ -17,7 +17,7 @@ class GeneralAbstractExecutorTests extends AbstractExecutorTests("test") {
     }
 
     "The extract superclass refactoring in ExtractSuperclass.rsc" should "run correctly with the abstract type executor" in {
-      val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("unported/ExtractSuperclass.rsc").getFile)
+      val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("ExtractSuperclass.rsc").getFile)
       val modESExecRes = modESO.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "extractSuperclass")
       }

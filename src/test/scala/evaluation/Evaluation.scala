@@ -15,11 +15,11 @@ import util.rascalwrapper.RascalWrapper
 abstract class Evaluation(loggername: String) extends AbstractExecutorTests(loggername) with PropertyChecks with TimeLimitedTests {
   val configs = Table(
     ("refinement", "widening"),
-    (false, SimpleWidening),
+    /*(false, SimpleWidening),
     (false, TypeWidening),
     (false, ConstructorWidening(1)),
     (true, SimpleWidening),
-    (true, TypeWidening),
+    (true, TypeWidening),*/
     (true, ConstructorWidening(1))
   )
 

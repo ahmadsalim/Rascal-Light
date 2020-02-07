@@ -130,7 +130,7 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
 
   val testRscliFiles =
     Table( "test file"
-         , "unported/ExtractSuperclass.rsc"
+         , "ExtractSuperclass.rsc"
          , "unported/ReplaceDelegation.rsc"
          , "unported/SimplifyTableau.rsc"
          , "unported/DeriveTableau.rsc"

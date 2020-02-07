@@ -37,7 +37,7 @@ class TransformationTests extends FlatSpec with Matchers {
   }
 
   "The extract superclass refactoring in ExtractSuperclass.rsc" should "pass all its tests correctly" in {
-    val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("unported/ExtractSuperclass.rsc").getFile)
+    val modESO = RascalWrapper.loadModuleFromFile(getClass.getResource("ExtractSuperclass.rsc").getFile)
     val modESExecRes = modESO.flatMap(ConcreteExecutor.execute)
     modESExecRes shouldBe a [\/-[_]]
     modESExecRes.foreach { execres =>

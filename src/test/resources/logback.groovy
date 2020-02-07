@@ -54,6 +54,14 @@ appender("RENAME-FIELD-EVALUATION-FILE", FileAppender) {
     }
 }
 
+appender("EXTRACT-SUPERCLASS-EVALUATION-FILE", FileAppender) {
+    file = "./log/absint-rascal-extract-superclass-field-evaluation.log"
+    append = false
+    encoder(PatternLayoutEncoder) {
+        pattern = "%msg%n"
+    }
+}
+
 appender("FILE", FileAppender) {
     file = "./log/absint-rascal.log"
     append = false
@@ -69,4 +77,5 @@ logger("glagol-2-php-evaluation", ALL, ["GLAGOL-2-PHP-EVALUATION-FILE"], false)
 logger("mini-calc-evaluation", ALL, ["MINI-CALC-EVALUATION-FILE"], false)
 logger("mini-config-evaluation", ALL, ["MINI-CONFIG-EVALUATION-FILE"], false)
 logger("rename-field-evaluation", ALL, ["RENAME-FIELD-EVALUATION-FILE"], false)
+logger("extract-superclass-evaluation", ALL, ["EXTRACT-SUPERCLASS-EVALUATION-FILE"], false)
 root(DEBUG, ["FILE"])

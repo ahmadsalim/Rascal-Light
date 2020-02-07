@@ -809,7 +809,54 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     }
   }
 
-  def evalBinary(localVars: Map[VarName, Type], store: TypeStore, left: Expr, op: OpName, right: Expr, funMemo: FunMemo): TypeMemories[VoideableRefinementType, Unit] = {
+  def refineStoreBinary(op: OpName, binval: VoideableRefinementType,
+                        left: Expr, lhval: VoideableRefinementType,
+                        right: Expr, rhval: VoideableRefinementType, store: TypeStore): Set[(VoideableRefinementType, TypeStore)] = {
+    op match {
+      case "==" =>
+        binval.refinementType match {
+          case DataRefinementType(dataname, refinenameopt) if dataname == "Bool" =>
+            val refinementDef = refinenameopt.fold(dataTypeDefToRefinementDef("Bool",typememoriesops.datatypes("Bool")))(refinements.definitions)
+            refinementDef.conss.keySet.flatMap {
+              case "true" =>
+                val trueref = refinements.newRefinement("Bool")
+                val trueconss = Map("true" -> List())
+                val nrno = addRefinement("Bool", trueref, trueconss)
+                refineEq(lhval, rhval).fold(Set[(VoideableRefinementType, TypeStore)]()) { refval =>
+                  val store_ = left match {
+                    case VarExpr(x) => setVar(store, x, refval)
+                    case _ => store
+                  }
+                  val store__ = right match {
+                    case VarExpr(y) => setVar(store_, y, refval)
+                    case _ => store_
+                  }
+                  Set((VoideableRefinementType(binval.possiblyVoid, DataRefinementType("Bool", nrno)), store__))
+                }
+              case "false" =>
+                val falseref = refinements.newRefinement("Bool")
+                val falseconss = Map("false" -> List())
+                val nrno = addRefinement("Bool", falseref, falseconss)
+                refineNeq(lhval, rhval).fold(Set[(VoideableRefinementType, TypeStore)]()) { case (lrefval, rrefval) =>
+                  val store_ = left match {
+                    case VarExpr(x) => setVar(store, x, lrefval)
+                    case _ => store
+                  }
+                  val store__ = right match {
+                    case VarExpr(y) => setVar(store_, y, rrefval)
+                    case _ => store_
+                  }
+                  Set((VoideableRefinementType(binval.possiblyVoid, DataRefinementType("Bool", nrno)), store__))
+                }
+              case _ => throw NonNormalFormMemories
+            }
+          case _ => Set((binval, store))
+        }
+      case _ => Set((binval, store))
+    }
+  }
+
+  def evalBinary(localVars: Map[VarName, Type], store: TypeStore, left: Expr, op: OpName, right: Expr, funMemo: FunMemo, condRefineStore: Boolean): TypeMemories[VoideableRefinementType, Unit] = {
     val leftmems = evalLocal(localVars, store, left, funMemo)
     Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(leftmems.memories.map { case TypeMemory(lhres, store__) =>
         lhres match {
@@ -818,8 +865,13 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
             Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(rightmems.memories.map { case TypeMemory(rhres, store_) =>
                 rhres match {
                   case SuccessResult(rhval) =>
-                    Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(evalBinaryOp(lhval, op, rhval).map { res =>
-                      TypeMemories[VoideableRefinementType, Unit](Set(TypeMemory(res, store_)))
+                    Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(evalBinaryOp(lhval, op, rhval).map {
+                      case SuccessResult(binval) =>
+                        val refstoreres = if (condRefineStore) refineStoreBinary(op, binval, left, lhval, right, rhval, store_) else Set((binval, store_))
+                        TypeMemories[VoideableRefinementType, Unit](refstoreres.map { case (refbinval, store__) =>
+                          TypeMemory[VoideableRefinementType, Unit](SuccessResult(refbinval), store__) })
+                      case ExceptionalResult(exres) =>
+                        TypeMemories[VoideableRefinementType, Unit](Set(TypeMemory(ExceptionalResult(exres), store_)))
                     })
                   case _ => TypeMemories[VoideableRefinementType, Unit](Set(TypeMemory(rhres, store_)))
                 }
@@ -1423,7 +1475,7 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
   }
 
   def evalIf(localVars: Map[VarName, Type], store: TypeStore, cond: Expr, thenB: Expr, elseB: Expr, funMemo: FunMemo): TypeMemories[VoideableRefinementType, Unit] = {
-    val condmems = evalLocal(localVars, store, cond, funMemo)
+    val condmems = evalLocalH(localVars, store, cond, funMemo, true)
     Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(condmems.memories.flatMap { case TypeMemory(condres, store__) =>
       condres match {
         case SuccessResult(condvrty) =>
@@ -2177,9 +2229,9 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     }
   }
 
-  lazy val evalLocal: (Map[VarName, Type], TypeStore, Expr, FunMemo) => TypeMemories[VoideableRefinementType, Unit] = {
-    memoized[Map[VarName, Type], TypeStore, Expr, FunMemo, TypeMemories[VoideableRefinementType, Unit]](memocacheSize) {
-      (localVars: Map[VarName, Type], store: TypeStore, expr: Expr, funMemo: FunMemo) =>
+  lazy val evalLocalH: (Map[VarName, Type], TypeStore, Expr, FunMemo, Boolean) => TypeMemories[VoideableRefinementType, Unit] = {
+    memoized[Map[VarName, Type], TypeStore, Expr, FunMemo, Boolean, TypeMemories[VoideableRefinementType, Unit]](memocacheSize) {
+      (localVars: Map[VarName, Type], store: TypeStore, expr: Expr, funMemo: FunMemo, condRefineStore: Boolean) =>
         expr match {
           case BasicExpr(b) =>
             b match {
@@ -2187,12 +2239,13 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                 TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false,
                   BaseRefinementType(IntRefinementType(Intervals.Unbounded.singleton(i))))), store)))
               case StringLit(_) =>
-                TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false, BaseRefinementType(StringRefinementType))), store)))
+                TypeMemories(Set(TypeMemory(SuccessResult(VoideableRefinementType(possiblyVoid = false,
+                  BaseRefinementType(StringRefinementType))), store)))
             }
           case VarExpr(x) => evalVar(store, x)
           case FieldAccExpr(target, fieldName) => evalFieldAccess(localVars, store, target, fieldName, funMemo)
           case UnaryExpr(op, operand) => evalUnary(localVars, store, op, operand, funMemo)
-          case BinaryExpr(left, op, right) => evalBinary(localVars, store, left, op, right, funMemo)
+          case BinaryExpr(left, op, right) => evalBinary(localVars, store, left, op, right, funMemo, condRefineStore)
           case ConstructorExpr(name, args) => evalConstructor(localVars, store, name, args, funMemo)
           case ListExpr(elements) => evalList(localVars, store, elements, funMemo)
           case SetExpr(elements) => evalSet(localVars, store, elements, funMemo)
@@ -2218,6 +2271,10 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
           case AssertExpr(cond) => evalAssert(localVars, store, cond)
         }
     }
+  }
+
+  def evalLocal(localVars: Map[VarName, Type], store: TypeStore, expr: Expr, funMemo: FunMemo): TypeMemories[VoideableRefinementType, Unit] = {
+    evalLocalH(localVars, store, expr, funMemo, false)
   }
 
   def eval(store: TypeStore, expr: Expr): TypeMemories[VoideableRefinementType, Unit] = evalLocal(Map.empty, store, expr, Map.empty)
