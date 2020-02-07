@@ -1021,26 +1021,64 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
     })
   }
 
+  def refineDeleteIfExact(rty: RefinementType, tvrty: VoideableRefinementType): Option[RefinementType] = {
+    if (tvrty.possiblyVoid) {
+      return Some(rty)
+    }
+    rty match {
+      case BaseRefinementType(basicType) =>
+        basicType match {
+          case IntRefinementType(ival) => tvrty.refinementType match {
+            case BaseRefinementType(IntRefinementType(tival)) =>
+              if (tival.lb == tival.ub) Some(BaseRefinementType(IntRefinementType(Intervals.Unbounded.exclude(ival, tival.lb))))
+              else Some(rty)
+            case _ => Some(rty)
+          }
+          case StringRefinementType => Some(rty)
+        }
+      case DataRefinementType(dn1, rn1o) =>
+        tvrty.refinementType match {
+          case DataRefinementType(dn2, rn2o) if dn1 == dn2 =>
+            val rn2def = rn2o.fold(dataTypeDefToRefinementDef(dn2, typememoriesops.datatypes(dn2)))(refinements.definitions)
+            val rn2conss = rn2def.conss
+            if (rn2conss.size == 1 && rn2conss.head._2.isEmpty) {
+              val rn1def =
+                rn1o.fold(dataTypeDefToRefinementDef(dn1, typememoriesops.datatypes(dn1)))(refinements.definitions)
+              val newconss = rn1def.conss - rn2conss.head._1
+              if (newconss.nonEmpty) {
+                val newRn = refinements.newRefinement(dn1)
+                val nrno = addRefinement(dn1, newRn, newconss)
+                Some(DataRefinementType(dn1, nrno))
+              } else {
+                None
+              }
+            } else Some(rty)
+          case _ => Some(rty)
+        }
+      case _ => Some(rty) // TODO: Probably could be improved
+    }
+  }
+
   /*
-  A memoization strategy must be chosen such that it satifies two conditions:
-  1: The result is sound
-  2: The procedure terminates
+    A memoization strategy must be chosen such that it satifies two conditions:
+    1: The result is sound
+    2: The procedure terminates
 
-  In order to satisfy (1) we must ensure that the resulting output on recursion is always larger than the result from the provided
-   input, and to satisfy (2) we must choose a way to conflate the traces based on input.
+    In order to satisfy (1) we must ensure that the resulting output on recursion is always larger than the result from the provided
+     input, and to satisfy (2) we must choose a way to conflate the traces based on input.
 
-   Conflating traces of input can happen according to the following strategies:
-   S1: Conflate all recursions to the same syntactic judgement
-   S2: Conflate recursions to the same syntactic judgement according to some partitioning
-   S3: Conflate recursions to the same or larger previous input (works if the input domain is finite)
+     Conflating traces of input can happen according to the following strategies:
+     S1: Conflate all recursions to the same syntactic judgement
+     S2: Conflate recursions to the same syntactic judgement according to some partitioning
+     S3: Conflate recursions to the same or larger previous input (works if the input domain is finite)
 
-   S1 is too unprecise in practice, so S2-S4 are preferable.
+     S1 is too unprecise in practice, so S2-S4 are preferable.
 
-   In both the cases S1 and S2, we need to widen the current input with the closest previous input to the same judgment in order to get a sound result (otherwise
-   the recursion is potentially not monotone).
+     In both the cases S1 and S2, we need to widen the current input with the closest previous input to the same judgment in order to get a sound result (otherwise
+     the recursion is potentially not monotone).
 
-   If the input domain is not finite, one could also do a further abstraction to the input to a new finite domain and use strategy S3, but this might also lose precision.
-   */
+     If the input domain is not finite, one could also do a further abstraction to the input to a new finite domain and use strategy S3, but this might also lose precision.
+     */
   lazy val evalFunCall:
     (Map[VarName, Type], TypeStore, VarName, Seq[Expr], FunMemo) => TypeMemories[VoideableRefinementType, Unit] =
    memoized[Map[VarName, Type], TypeStore, VarName, Seq[Expr], FunMemo,TypeMemories[VoideableRefinementType, Unit]](memocacheSize) {
@@ -1072,8 +1110,9 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                   val typRes = {
                     mapvrty.refinementType match {
                       case MapRefinementType(kty, vty, size) =>
-                        Set(TypeMemory[VoideableRefinementType, Unit](SuccessResult(VoideableRefinementType(possiblyVoid = false,
-                          MapRefinementType(kty, vty, Intervals.Positive.makeInterval(IntegerW.-(size.lb, 1), size.ub)))), callstore))
+                        val nktyo = refineDeleteIfExact(kty, keyvrty)
+                        val nrty = nktyo.fold(MapRefinementType(NoRefinementType, NoRefinementType, Intervals.Positive.singleton(0))) { nkty => MapRefinementType(nkty, vty, Intervals.Positive.makeInterval(IntegerW.-(size.lb, 1), size.ub)) }
+                        Set(TypeMemory[VoideableRefinementType, Unit](SuccessResult(VoideableRefinementType(possiblyVoid = false, nrty)), callstore))
                       case _ => Set(errRes)
                     }
                   }
@@ -1246,29 +1285,31 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
       path match {
         case MapAccessPath(vrktyp) =>
           def updateOnMap(keyType: RefinementType, valueType: RefinementType, size: Intervals.Positive.Interval): Set[TypeResult[VoideableRefinementType, Unit]] = {
+            val keyremo = refineDeleteIfExact(keyType, vrktyp)
+            val keytlub = keyremo.fold(vrktyp.refinementType) { keyrem =>
+              Lattice[RefinementType].lub(keyrem, vrktyp.refinementType)
+            }
             if (rpaths.isEmpty) {
-              val keytlub = Lattice[RefinementType].lub(keyType, vrktyp.refinementType)
-              val vtlub = Lattice[RefinementType].lub(valueType, vrttyp.refinementType)
+              val vtlub = keyremo.fold(vrttyp.refinementType) { _ =>
+                Lattice[RefinementType].lub(valueType, vrttyp.refinementType)
+              }
               Set[TypeResult[VoideableRefinementType, Unit]](
                 SuccessResult(VoideableRefinementType(possiblyVoid = false, MapRefinementType(keytlub, vtlub, size))))
             } else {
               val exRes: Set[TypeResult[VoideableRefinementType, Unit]] =
                 Set(ExceptionalResult(Throw(VoideableRefinementType(possiblyVoid = false, DataRefinementType("NoKey", None)))))
-              val keyeqres = refineEq(vrktyp, VoideableRefinementType(possiblyVoid = false, keyType))
-              keyeqres.fold(exRes) { _ =>
                 exRes ++ updatePath(valueType, rpaths, vrttyp).flatMap {
                   case SuccessResult(nvaltyp) =>
-                    // We only support weak updates on maps
-                    val valtylub =
-                      Lattice[VoideableRefinementType].lub(VoideableRefinementType(possiblyVoid = false, valueType), nvaltyp)
+                    val valtylub = keyremo.fold(nvaltyp.refinementType) { _ =>
+                      Lattice[RefinementType].lub(valueType, nvaltyp.refinementType)
+                    }
                     Set[TypeResult[VoideableRefinementType, Unit]](
-                      SuccessResult(VoideableRefinementType(possiblyVoid = false, MapRefinementType(keyType, valtylub.refinementType, size))))
+                      SuccessResult(VoideableRefinementType(possiblyVoid = false, MapRefinementType(keyType, valtylub, size))))
                   case ExceptionalResult(exres) =>
                     Set[TypeResult[VoideableRefinementType, Unit]](ExceptionalResult(exres))
                 }
               }
             }
-          }
           val exRes: TypeResult[VoideableRefinementType, Unit] =
             ExceptionalResult(Error(Set(TypeError(rotyp, MapType(atyping.inferType(vrktyp.refinementType), atyping.inferType(vrttyp.refinementType))))))
           val voidRes: Set[TypeResult[VoideableRefinementType, Unit]] =

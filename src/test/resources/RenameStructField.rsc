@@ -1,9 +1,10 @@
 module RenameStructField
 
-data Nominal = nfn() | ofn() | other();
-data Package = package(map[str, Struct] structures, map[str, Function] functions);
-data Struct = struct(str name, map[Nominal, Field] fields);
-data Field = field(Nominal name, str typ);
+data FieldNominal = nfn() | ofn() | fn_other();
+data StructNominal = target();
+data Package = package(map[StructNominal, Struct] structures, map[str, Function] functions);
+data Struct = struct(str name, map[FieldNominal, Field] fields);
+data Field = field(FieldNominal name, str typ);
 data Function = function(str name, str return_typ, list[Parameter] parameters, Stmt body);
 data Parameter = parameter(str typ, str name);
 data Stmt = ifstmt(Expr cond, Stmt thenb, Stmt elseb)
@@ -11,12 +12,12 @@ data Stmt = ifstmt(Expr cond, Stmt thenb, Stmt elseb)
           | assignstmt(Expr lhs, Expr rhs)
           | block(list[Stmt] stmts)
           ;
-data Expr = fieldaccessexpr(Expr target, Nominal fieldname)
+data Expr = fieldaccessexpr(Expr target, FieldNominal fieldname)
           | varexpr(str name)
           | functioncallexpr(Expr target, str methodname, list[Expr] args)
           ;
 
-Package renameField(Package pkg, str st, Nominal oldFieldName, Nominal newFieldName) {
+Package renameField(Package pkg, StructNominal st, FieldNominal oldFieldName, FieldNominal newFieldName) {
 	assert (st in pkg.structures) &&
 	       (oldFieldName in pkg.structures[st].fields) &&
 	       (newFieldName notin pkg.structures[st].fields);
