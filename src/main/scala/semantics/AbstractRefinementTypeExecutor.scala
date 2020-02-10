@@ -858,27 +858,33 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
   def evalBinary(localVars: Map[VarName, Type], store: TypeStore, left: Expr, op: OpName, right: Expr, funMemo: FunMemo, condRefineStore: Boolean): TypeMemories[VoideableRefinementType, Unit] = {
     val leftmems = evalLocal(localVars, store, left, funMemo)
-    Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(leftmems.memories.map { case TypeMemory(lhres, store__) =>
+    val leftres = leftmems.memories.map { case TypeMemory(lhres, store__) =>
         lhres match {
           case SuccessResult(lhval) =>
             val rightmems = evalLocal(localVars, store__, right, funMemo)
-            Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(rightmems.memories.map { case TypeMemory(rhres, store_) =>
+            val rightres = rightmems.memories.map { case TypeMemory(rhres, store_) =>
                 rhres match {
                   case SuccessResult(rhval) =>
-                    Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(evalBinaryOp(lhval, op, rhval).map {
+                    val binres = evalBinaryOp(lhval, op, rhval).map {
                       case SuccessResult(binval) =>
                         val refstoreres = if (condRefineStore) refineStoreBinary(op, binval, left, lhval, right, rhval, store_) else Set((binval, store_))
                         TypeMemories[VoideableRefinementType, Unit](refstoreres.map { case (refbinval, store__) =>
                           TypeMemory[VoideableRefinementType, Unit](SuccessResult(refbinval), store__) })
                       case ExceptionalResult(exres) =>
                         TypeMemories[VoideableRefinementType, Unit](Set(TypeMemory(ExceptionalResult(exres), store_)))
-                    })
+                    }
+                    if (condRefineStore) TypeMemories[VoideableRefinementType, Unit](binres.flatMap(_.memories))
+                    else Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(binres)
                   case _ => TypeMemories[VoideableRefinementType, Unit](Set(TypeMemory(rhres, store_)))
                 }
-            })
+            }
+            if (condRefineStore) TypeMemories[VoideableRefinementType, Unit](rightres.flatMap(_.memories))
+            else Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(rightres)
           case _ => TypeMemories[VoideableRefinementType, Unit](Set(TypeMemory(lhres, store__)))
         }
-    })
+    }
+    if (condRefineStore) TypeMemories[VoideableRefinementType, Unit](leftres.flatMap(_.memories))
+    else Lattice[TypeMemories[VoideableRefinementType, Unit]].lubs(leftres)
   }
 
   def evalConstructor(localVars: Map[VarName, Type], store: TypeStore, consname: ConsName, args: Seq[Expr], funMemo: FunMemo): TypeMemories[VoideableRefinementType, Unit] = {
