@@ -62,6 +62,14 @@ appender("EXTRACT-SUPERCLASS-EVALUATION-FILE", FileAppender) {
     }
 }
 
+appender("DERIVATIVE-EVALUATION-FILE", FileAppender) {
+    file = "./log/absint-rascal-derivative-evaluation.log"
+    append = false
+    encoder(PatternLayoutEncoder) {
+        pattern = "%msg%n"
+    }
+}
+
 appender("FILE", FileAppender) {
     file = "./log/absint-rascal.log"
     append = false
@@ -78,4 +86,5 @@ logger("mini-calc-evaluation", ALL, ["MINI-CALC-EVALUATION-FILE"], false)
 logger("mini-config-evaluation", ALL, ["MINI-CONFIG-EVALUATION-FILE"], false)
 logger("rename-field-evaluation", ALL, ["RENAME-FIELD-EVALUATION-FILE"], false)
 logger("extract-superclass-evaluation", ALL, ["EXTRACT-SUPERCLASS-EVALUATION-FILE"], false)
+logger("derivative-evaluation", ALL, ["DERIVATIVE-EVALUATION-FILE"], false)
 root(DEBUG, ["FILE"])

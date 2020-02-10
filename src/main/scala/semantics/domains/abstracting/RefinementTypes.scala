@@ -13,8 +13,9 @@ import scalaz.syntax.foldable._
 import Intervals.Positive.{Lattice => PosLattice}
 
 import scala.collection.immutable.ListMap
-
 import Memoization._
+
+import scala.annotation.tailrec
 
 case class VoideableRefinementType(possiblyVoid: Boolean, refinementType: RefinementType)
 
@@ -548,13 +549,15 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
         }
       }
       def checkNonEmptyP(memo: Map[Refinement, Boolean], refine: Refinement): Boolean = {
-        def go (prevRes: Boolean): Boolean = {
+        @tailrec
+        def go(prevRes: Boolean): Boolean = {
+          if (!refinements.definitions.contains(refine)) return true // Avoid problems with eager check
           val newRes = refinements.definitions(refine).conss.exists { case (_, pvals) =>
-            pvals.forall(pval => checkNonEmpty(memo.updated(refine, prevRes), pval))
+              pvals.forall(pval => checkNonEmpty(memo.updated(refine, prevRes), pval))
+            }
+            if (prevRes == newRes) newRes
+            else go(prevRes || newRes)
           }
-          if (prevRes == newRes) newRes
-          else go(prevRes || newRes)
-        }
         memo.getOrElse(refine, go(false))
       }
       !checkNonEmpty(Map.empty, rty)
@@ -690,21 +693,18 @@ case class RefinementTypeOps(datatypes: DataTypeDefs, refinements: Refinements) 
             val newConss = rrn1.keySet intersect rrn2.keySet
             if (newConss.isEmpty) None
             else {
-              val newres = newConss.toList.foldLeftM[Option, Map[ConsName, List[RefinementType]]](Map.empty[ConsName, List[RefinementType]]) { (prevconss, cons) =>
+              val newRnRhs = newConss.toList.foldLeft(Map.empty[ConsName, List[RefinementType]]) { (prevconss, cons) =>
                 val rn1tys = rrn1(cons)
                 val rn2tys = rrn2(cons)
-                val newres = rn1tys.zip(rn2tys).foldLeftM[Option, List[RefinementType]](List.empty[RefinementType]) { (prevrtys, rntypair) =>
+                val newRtys = rn1tys.zip(rn2tys).foldLeft(List.empty[RefinementType]) { (prevrtys, rntypair) =>
                   val (rnty1, rnty2) = rntypair
                   val newRty = merge(memo.updated((rn1, rn2), newRn), rnty1, rnty2)
-                  if (isBot(newRty)) None
-                  else Some(prevrtys :+ newRty)
+                  prevrtys :+ newRty
                 }
-                newres.map { newRtys => prevconss.updated(cons, newRtys) }
+                prevconss.updated(cons, newRtys)
               }
-              newres.map { newRnRhs =>
-                refinements.definitions.update(newRn, RefinementDef(dn, newRnRhs))
-                newRn
-              }
+              refinements.definitions.update(newRn, RefinementDef(dn, newRnRhs))
+              Some(newRn)
             }
           }
         }
