@@ -70,6 +70,14 @@ appender("DERIVATIVE-EVALUATION-FILE", FileAppender) {
     }
 }
 
+appender("NORMALIZE-PHP-SCRIPT-EVALUATION-FILE", FileAppender) {
+    file = "./log/absint-rascal-normalize-php-script-evaluation.log"
+    append = false
+    encoder(PatternLayoutEncoder) {
+        pattern = "%msg%n"
+    }
+}
+
 appender("FILE", FileAppender) {
     file = "./log/absint-rascal.log"
     append = false
@@ -87,4 +95,5 @@ logger("mini-config-evaluation", ALL, ["MINI-CONFIG-EVALUATION-FILE"], false)
 logger("rename-field-evaluation", ALL, ["RENAME-FIELD-EVALUATION-FILE"], false)
 logger("extract-superclass-evaluation", ALL, ["EXTRACT-SUPERCLASS-EVALUATION-FILE"], false)
 logger("derivative-evaluation", ALL, ["DERIVATIVE-EVALUATION-FILE"], false)
+logger("normalize-php-script-evaluation", ALL, ["NORMALIZE-PHP-SCRIPT-EVALUATION-FILE"], false)
 root(DEBUG, ["FILE"])

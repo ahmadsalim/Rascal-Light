@@ -12,8 +12,8 @@ class NNFEvaluation extends Evaluation("nnf-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The negation normal form transformation in NNF.rsc" should
     s"run correctly with the abstract type executor using $confname" in {
-      val modNnfO = RascalWrapper.loadModuleFromFile(getClass.getResource("/NNF.rsc").getFile)
-      val modNnfExecRes = modNnfO.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/NNF.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
         transmodule shouldBe a[\/-[_]]
         val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
@@ -29,8 +29,8 @@ class NNFEvaluation extends Evaluation("nnf-evaluation") {
           initialStore = Some(initialStore), initialRefinements = initialRefinements, memoWidening = memowidening,
           refinedMatches = refinement)
       }
-      modNnfExecRes shouldBe a[\/-[_]]
-      modNnfExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("Formula"), Some(memoinfo), Some(duration), confname)
       }
     }

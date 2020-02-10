@@ -11,8 +11,8 @@ class RenameFieldEvaluation extends Evaluation("rename-field-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The rename field refactoring in RenameStructField.rsc" should
     s"run correctly with the abstract type executor using $confname" in {
-      val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("/RenameStructField.rsc").getFile)
-      val modRFExecRes = modRFO.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/RenameStructField.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val ofnrn = new Refinement("FieldNominal#ofn")
         val nfnrn = new Refinement("FieldNominal#nfn")
         val initialRefinements: Refinements =
@@ -28,8 +28,8 @@ class RenameFieldEvaluation extends Evaluation("rename-field-evaluation") {
         AbstractRefinementTypeExecutor.execute(moddef, "renameField", initialStore = Some(initialStore),
           initialRefinements = initialRefinements, refinedMatches = refinement, memoWidening = memowidening)
       }
-      modRFExecRes shouldBe a[\/-[_]]
-      modRFExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("Package"), Some(memoinfo), Some(duration), confname)
       }
     }

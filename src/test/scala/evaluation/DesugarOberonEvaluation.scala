@@ -10,13 +10,13 @@ class DesugarOberonEvaluation extends Evaluation("desugar-oberon-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The desugaring in DesugarOberonSimpl.rsc" should
       s"run correctly with the abstract type executor using $confname" in {
-      val modDSOb = RascalWrapper.loadModuleFromFile(getClass.getResource("/DesugarOberonSimpl.rsc").getFile)
-      val modDSObExecRes = modDSOb.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/DesugarOberonSimpl.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "desugar",
           refinedMatches = refinement, memoWidening = memowidening)
       }
-      modDSObExecRes shouldBe a[\/-[_]]
-      modDSObExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("Module"), Some(memoinfo), Some(duration), confname)
       }
     }

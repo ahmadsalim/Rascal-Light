@@ -12,8 +12,8 @@ class MiniConfigEvaluation extends Evaluation("mini-config-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The modernization transformation with only ifelse in MiniConfigMod.rsc" should
       s"run correctly producing no postcondExc with the abstract type executor using $confname" in {
-      val modMCM = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniConfigMod.rsc").getFile)
-      val modMCMExecRes = modMCM.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniConfigMod.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
         transmodule shouldBe a[\/-[_]]
         val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
@@ -30,8 +30,8 @@ class MiniConfigEvaluation extends Evaluation("mini-config-evaluation") {
           refinedMatches = refinement, memoWidening = memowidening,
           initialStore = Some(initialStore), initialRefinements = initialRefinements)
       }
-      modMCMExecRes shouldBe a[\/-[_]]
-      modMCMExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("Expression"), Some(memoinfo), Some(duration), confname)
       }
     }
@@ -41,8 +41,8 @@ class MiniConfigEvaluation extends Evaluation("mini-config-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The modernization transformation with only relevant expressions in MiniConfigMod.rsc" should
       s"run correctly producing only relevant and ternary expressions with the abstract type executor using $confname" in {
-      val modMCM = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniConfigMod.rsc").getFile)
-      val modMCMExecRes = modMCM.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniConfigMod.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
         transmodule shouldBe a[\/-[_]]
         val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
@@ -61,8 +61,8 @@ class MiniConfigEvaluation extends Evaluation("mini-config-evaluation") {
           refinedMatches = refinement, memoWidening = memowidening,
           initialStore = Some(initialStore), initialRefinements = rtops.refinements)
       }
-      modMCMExecRes shouldBe a[\/-[_]]
-      modMCMExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("Expression"), Some(memoinfo), Some(duration), confname)
       }
     }

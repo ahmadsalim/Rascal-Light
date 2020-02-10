@@ -22,11 +22,11 @@ public data Name = name(NameNominal n);
 
 public data NameOrExpr = nameE(Name name) | expr(Expr expr);
 
-public data CastType = \int() | \bool() | float() | string() | array() | object() | unset();
+public data CastType = intTy() | boolTy() | floatTy() | stringTy() | arrayTy() | objectTy() | unsetTy();
 
 public data ClosureUse = closureUse(Expr varName, bool byRef);
 
-public data IncludeType = include() | includeOnce() | require() | requireOnce();
+public data IncludeType = includeTy() | includeOnceTy() | requireTy() | requireOnceTy();
 
 // NOTE: In PHP, yield is a statement, but it can also be used as an expression.
 // To handle this, we just treat it as an expression. The parser does this as well.
@@ -102,7 +102,7 @@ public data HTMLNominal = no_html_text() | html_text();
 public data Stmt
 	= \break(OptionExpr breakExpr)
 	| classDef(ClassDef classDef)
-	| const(list[Const] consts)
+	| constE(list[Const] consts)
 	| \continue(OptionExpr continueExpr)
 	| declare(list[Declaration] decls, list[Stmt] body)
 	| do(Expr cond, list[Stmt] body)
@@ -128,7 +128,7 @@ public data Stmt
 	| tryCatch(list[Stmt] body, list[Catch] catches)
 	| tryCatchFinally(list[Stmt] body, list[Catch] catches, list[Stmt] finallyBody)
 	| unset(list[Expr] unsetVars)
-	| use(list[Use] uses)
+	| useE(list[Use] uses)
 	| \while(Expr cond, list[Stmt] body)
 	| emptyStmt()
 	| block(list[Stmt] body)
@@ -147,7 +147,7 @@ public data Else = \else(list[Stmt] body);
 public data Use = use(Name importName, OptionName asName);
 
 public data ClassItem
-	= property(set[Modifier] modifiers, list[Property] prop)
+	= propertyCI(set[Modifier] modifiers, list[Property] prop)
 	| constCI(list[Const] consts)
 	| method(str name, set[Modifier] modifiers, bool byRef, list[Param] params, list[Stmt] body)
 	| traitUse(list[Name] traits, list[Adaptation] adaptations)
@@ -160,7 +160,7 @@ public data Adaptation
 
 public data Property = property(str propertyName, OptionExpr defaultValue);
 
-public data Modifier = \public() | \private() | protected() | static() | abstract() | final();
+public data Modifier = publicM() | privateM() | protectedM() | staticM() | abstractM() | finalM();
 
 public data ClassDef = class(str className,
 							 set[Modifier] modifiers,

@@ -12,8 +12,8 @@ class DerivativeEvaluation extends Evaluation("derivative-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The derivative computation in Derivative.rsc" should
     s"produce constant zero when run with a derivative not containing target variable or multiplication with the abstract type executor using $confname" in {
-      val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("/Derivative.rsc").getFile)
-      val modRFExecRes = modRFO.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/Derivative.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val xref = new Refinement("VarNominal#x")
         val yref = new Refinement("VarNominal#y")
         val expref = new Refinement("Exp#nox")
@@ -35,8 +35,8 @@ class DerivativeEvaluation extends Evaluation("derivative-evaluation") {
         AbstractRefinementTypeExecutor.execute(moddef, "derivative", initialRefinements = initialRefinements,
           initialStore = Some(initialStore), refinedMatches = refinement, memoWidening = memowidening)
       }
-      modRFExecRes shouldBe a[\/-[_]]
-      modRFExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("Exp"), Some(memoinfo), Some(duration), confname)
       }
     }
@@ -46,8 +46,8 @@ class DerivativeEvaluation extends Evaluation("derivative-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The derivative computation in Derivative.rsc" should
       s"produce an expression with only constant leafs when run with a derivative not containing non-linear multiplication with the abstract type executor using $confname" in {
-      val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("/Derivative.rsc").getFile)
-      val modRFExecRes = modRFO.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/Derivative.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val xref = new Refinement("VarNominal#x")
         val conref = new Refinement("Exp#con")
         val linref = new Refinement("Exp#lin")
@@ -76,8 +76,8 @@ class DerivativeEvaluation extends Evaluation("derivative-evaluation") {
         AbstractRefinementTypeExecutor.execute(moddef, "derivative", initialRefinements = initialRefinements,
           initialStore = Some(initialStore), refinedMatches = refinement, memoWidening = memowidening)
       }
-      modRFExecRes shouldBe a[\/-[_]]
-      modRFExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("Exp"), Some(memoinfo), Some(duration), confname)
       }
     }

@@ -12,8 +12,8 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The expression translation in Glagol2PHP.rsc" should
       s"only produce simple PHP expressions for simple Glagol expressions using $confname" in {
-      val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("/Glagol2PHPExpr.rsc").getFile)
-      val modG2PExecRes = modG2P.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/Glagol2PHPExpr.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
         transmodule shouldBe a[\/-[_]]
         val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
@@ -30,8 +30,8 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
           initialStore = Some(initialStore), initialRefinements = rtops.refinements,
           refinedMatches = refinement, memoWidening = memowidening)
       }
-      modG2PExecRes shouldBe a[\/-[_]]
-      modG2PExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("PhpExpr"), Some(memoinfo), Some(duration), confname)
       }
     }
@@ -41,8 +41,8 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The expression translation in Glagol2PHP.rsc" should
       s"should not produce unary expressions if there is no unary negation or positive markers using $confname" in {
-      val modG2P = RascalWrapper.loadModuleFromFile(getClass.getResource("/Glagol2PHPExpr.rsc").getFile)
-      val modG2PExecRes = modG2P.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/Glagol2PHPExpr.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
         transmodule shouldBe a[\/-[_]]
         val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
@@ -59,8 +59,8 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
           initialStore = Some(initialStore), initialRefinements = initialRefinements,
           refinedMatches = refinement, memoWidening = memowidening)
       }
-      modG2PExecRes shouldBe a[\/-[_]]
-      modG2PExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("PhpExpr"), Some(memoinfo), Some(duration), confname)
       }
     }

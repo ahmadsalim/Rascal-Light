@@ -11,8 +11,8 @@ class ExtractSuperclassEvaluation extends Evaluation("extract-superclass-evaluat
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The extract superclass refactoring in ExtractSuperclass.rsc" should
     s"run correctly with the abstract type executor using $confname" in {
-      val modRFO = RascalWrapper.loadModuleFromFile(getClass.getResource("/ExtractSuperclass.rsc").getFile)
-      val modRFExecRes = modRFO.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/ExtractSuperclass.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val cnosupername = new Refinement("Maybeclassnominal#cnosuper")
         val cl1name = new Refinement("ClassNominal#cl1name")
         val cl2name = new Refinement("ClassNominal#cl2name")
@@ -54,8 +54,8 @@ class ExtractSuperclassEvaluation extends Evaluation("extract-superclass-evaluat
         AbstractRefinementTypeExecutor.execute(moddef, "extractSuperclass", initialStore = Some(initialStore),
           initialRefinements = initialRefinements, refinedMatches = refinement, memoWidening = memowidening)
       }
-      modRFExecRes shouldBe a[\/-[_]]
-      modRFExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("Package"), Some(memoinfo), Some(duration), confname)
       }
     }

@@ -12,13 +12,13 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The simplification procedure in MiniCalc.rsc" should
       s"run correctly with the abstract type executor using $confname" in {
-      val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
-      val modMCExecRes = modMC.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         AbstractRefinementTypeExecutor.execute(moddef, "simplify",
           refinedMatches = refinement, memoWidening = memowidening)
       }
-      modMCExecRes shouldBe a[\/-[_]]
-      modMCExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("CExpr"), Some(memoinfo), Some(duration))
       }
     }
@@ -28,8 +28,8 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The type inference procedure in MiniCalc.rsc" should
       s"run correctly with the abstract type executor using $confname" in {
-      val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
-      val modMCExecRes = modMC.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
         transmodule shouldBe a[\/-[_]]
         val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
@@ -48,8 +48,8 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
           initialRefinements = initialRefinements, initialStore = Some(initialStore),
           refinedMatches = refinement, memoWidening = memowidening)
       }
-      modMCExecRes shouldBe a[\/-[_]]
-      modMCExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, DataType("CType"), Some(memoinfo), Some(duration), confname)
       }
     }
@@ -59,8 +59,8 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The evaluation procedure in MiniCalc.rsc" should
       s"run correctly with the abstract type executor using $confname" in {
-      val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
-      val modMCExecRes = modMC.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
         transmodule shouldBe a[\/-[_]]
         val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
@@ -79,8 +79,8 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
           initialRefinements = initialRefinements, initialStore = Some(initialStore),
           refinedMatches = refinement, memoWidening = memowidening)
       }
-      modMCExecRes shouldBe a[\/-[_]]
-      modMCExecRes.foreach { case (module, refinements, tmems, meminfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, meminfo, duration) =>
         memsOK(module, refinements, tmems, DataType("CVal"), Some(meminfo), Some(duration), confname)
       }
     }
@@ -90,8 +90,8 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
     val confname = Evaluation.refinementWideningName(refinement, memowidening)
     "The compilation procedure in MiniCalc.rsc" should
       s"run correctly with the abstract type executor using $confname" in {
-      val modMC = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
-      val modMCExecRes = modMC.flatMap { moddef =>
+      val mod = RascalWrapper.loadModuleFromFile(getClass.getResource("/MiniCalc.rsc").getFile)
+      val modExecRes = mod.flatMap { moddef =>
         val transmodule = ModuleTranslator.translateModule(moddef)
         transmodule shouldBe a[\/-[_]]
         val datatypes = transmodule.fold({ _ => throw new Exception("-\\/") },
@@ -112,8 +112,8 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
           initialRefinements = initialRefinements, initialStore = Some(initialStore),
           refinedMatches = refinement, memoWidening = memowidening)
       }
-      modMCExecRes shouldBe a[\/-[_]]
-      modMCExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
+      modExecRes shouldBe a[\/-[_]]
+      modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
         memsOK(module, refinements, tmems, ListType(DataType("CInstr")), Some(memoinfo), Some(duration), confname)
       }
     }
