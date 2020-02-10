@@ -134,7 +134,7 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
          , "unported/ReplaceDelegation.rsc"
          , "unported/SimplifyTableau.rsc"
          , "unported/DeriveTableau.rsc"
-         , "unported/NormalizeOberon.rsc"
+         , "NormalizeOberon.rsc"
          , "unported/ConstantElimOberon.rsc"
          , "original/DesugarOberon.rsc"
          , "original/Glagol2PHP.rsc"

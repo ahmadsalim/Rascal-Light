@@ -278,12 +278,35 @@ public Script discardHTML(Script s) {
 	return s;
 }
 
-public Script normalizeScript(Script sc) {
-		sc = oldNamespaces(sc);
-		sc = normalizeIf(sc);
-		sc = flattenBlocks(sc);
-		sc = discardEmpties(sc);
-		sc = useBuiltins(sc);
-		sc = discardHTML(sc);
-		return sc;
+data Loc = mkloc(int i);
+
+data System
+	= system(map[Loc fileloc, Script scr] files)
+	| namedVersionedSystem(str name, str version, Loc baseLoc, map[Loc fileloc, Script scr] files)
+	| namedSystem(str name, Loc baseLoc, map[Loc fileloc, Script scr] files)
+	| locatedSystem(Loc baseLoc, map[Loc fileloc, Script scr] files)
+	;
+
+public System normalizeSystem(System s) {
+	s = discardErrorScripts(s);
+	for (l <- s.files) {
+		s.files[l] = oldNamespaces(s.files[l]);
+		s.files[l] = normalizeIf(s.files[l]);
+		s.files[l] = flattenBlocks(s.files[l]);
+		s.files[l] = discardEmpties(s.files[l]);
+		s.files[l] = useBuiltins(s.files[l]);
+		s.files[l] = discardHTML(s.files[l]);
+	}
+	return s;
+}
+
+
+public System discardErrorScripts(System s) {
+    map[Loc,Script] newFiles = ();
+    for (l <- s.files)
+      switch (s.files[l]) {
+        case script(_):
+          newFiles = newFiles + (l: s.files[l]);
+      }
+	return s;
 }
