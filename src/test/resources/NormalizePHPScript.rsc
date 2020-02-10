@@ -16,9 +16,11 @@ public data Const = const(str name, Expr constValue);
 
 public data ArrayElement = arrayElement(OptionExpr key, Expr val, bool byRef);
 
-public data Name = name(str name);
+public data NameNominal = n_isset() | n_exit() | n_die() | n_print() | n_unset() | n_empty() | n_eval() | n_other();
 
-public data NameOrExpr = name(Name name) | expr(Expr expr);
+public data Name = name(NameNominal n);
+
+public data NameOrExpr = nameE(Name name) | expr(Expr expr);
 
 public data CastType = \int() | \bool() | float() | string() | array() | object() | unset();
 
@@ -55,7 +57,7 @@ public data Expr
 	| include(Expr expr, IncludeType includeType)
 	| instanceOf(Expr expr, NameOrExpr toCompare)
 	| isSet(list[Expr] exprs)
-	| print(Expr expr)
+	| printE(Expr expr)
 	| propertyFetch(Expr target, NameOrExpr propertyName)
 	| shellExec(list[Expr] parts)
 	| ternary(Expr cond, OptionExpr ifBranch, Expr elseBranch)
@@ -95,6 +97,8 @@ public data Scalar
 	| encapsed(list[Expr] parts)
 	;
 
+public data HTMLNominal = no_html_text() | html_text();
+
 public data Stmt
 	= \break(OptionExpr breakExpr)
 	| classDef(ClassDef classDef)
@@ -111,7 +115,7 @@ public data Stmt
 	| goto(str label)
 	| haltCompiler(str remainingText)
 	| \if(Expr cond, list[Stmt] body, list[ElseIf] elseIfs, OptionElse elseClause)
-	| inlineHTML(str htmlText)
+	| inlineHTML(HTMLNominal htmlText)
 	| interfaceDef(InterfaceDef interfaceDef)
 	| traitDef(TraitDef traitDef)
 	| label(str labelName)
@@ -229,7 +233,7 @@ public Script discardEmpties(Script s) {
 public Script useBuiltins(Script s) {
 	solve(s) {
 		s = bottom-up visit(s) {
-			case call(name(name("isset")),params) => ({
+			case call(nameE(name(n_isset())),params) => ({
 			   list[Expr] es = [];
 			   for (ap <- params)
 			     switch(ap) {
@@ -240,17 +244,17 @@ public Script useBuiltins(Script s) {
 			   isSet(es);
 			})
 
-			case call(name(name("exit")),[]) => exit(noExpr(), true)
+			case call(nameE(name(n_exit())),[]) => exit(noExpr(), true)
 
-			case call(name(name("exit")),[actualParameter(e,_,_)]) => exit(someExpr(e), true)
+			case call(nameE(name(n_exit())),[actualParameter(e,_,_)]) => exit(someExpr(e), true)
 
-			case call(name(name("die")),[]) => exit(noExpr(), false)
+			case call(nameE(name(n_die())),[]) => exit(noExpr(), false)
 
-			case call(name(name("die")),[actualParameter(e,_,_)]) => exit(someExpr(e), false)
+			case call(nameE(name(n_die())),[actualParameter(e,_,_)]) => exit(someExpr(e), false)
 
-			case call(name(name("print")),[actualParameter(e,_,_)]) => Expr::print(e)
+			case call(nameE(name(n_print())),[actualParameter(e,_,_)]) => printE(e)
 
-			case exprstmt(call(name(name("unset")),params)) => ({
+			case exprstmt(call(nameE(name(n_unset())),params)) => ({
 			   list[Expr] es = [];
 			   for (ap <- params)
 			     switch(ap) {
@@ -261,9 +265,9 @@ public Script useBuiltins(Script s) {
 			   unset(es);
 			})
 
-			case call(name(name("empty")),[actualParameter(e,_,_)]) => empty(e)
+			case call(nameE(name(n_empty())),[actualParameter(e,_,_)]) => empty(e)
 
-			case call(name(name("eval")),[actualParameter(e,_,_)]) => eval(e)
+			case call(nameE(name(n_eval())),[actualParameter(e,_,_)]) => eval(e)
 		}
 	}
 	return s;
@@ -272,7 +276,7 @@ public Script useBuiltins(Script s) {
 public Script discardHTML(Script s) {
 	solve(s) {
 		s = bottom-up visit(s) {
-			case inlineHTML(_) => inlineHTML("")
+			case inlineHTML(_) => inlineHTML(no_html_text())
 		}
 	}
 	return s;

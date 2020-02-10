@@ -1,9 +1,8 @@
-import org.scalatest.prop.TableDrivenPropertyChecks
+import org.scalatest.prop.{TableDrivenPropertyChecks, TableFor1}
 import org.scalatest.prop.Tables.Table
-import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.{Assertion, FlatSpec, Matchers}
 import syntax._
 import util.rascalwrapper.RascalWrapper
-
 import scalaz.\/-
 
 /**
@@ -11,7 +10,7 @@ import scalaz.\/-
   */
 class RascalWrapperParsingTests extends FlatSpec with Matchers {
 
-  private def parseAndTranslateWithoutAnyError(fileName : String) = {
+  private def parseAndTranslateWithoutAnyError(fileName : String): Assertion = {
     val resource = getClass.getResource(fileName)
     val parsed = RascalWrapper.parseRascal(resource.getFile)
     parsed shouldBe a[\/-[_]]
@@ -19,7 +18,7 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
     translated should matchPattern { case \/-(_) => }
   }
 
-  private def parseAndTranslateMatchingExpected(fileName : String, expected : Any) = {
+  private def parseAndTranslateMatchingExpected(fileName : String, expected : Any): Unit = {
     val resource = getClass.getResource(fileName)
     val parsed = RascalWrapper.parseRascal(resource.getFile)
     parsed shouldBe a [\/-[_]]
@@ -128,7 +127,7 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
     parseAndTranslateMatchingExpected("original/RenameField.rsc", expected)
   }
 
-  val testRscliFiles =
+  val testRscliFiles: TableFor1[FieldName] =
     Table( "test file"
          , "ExtractSuperclass.rsc"
          , "unported/ReplaceDelegation.rsc"
@@ -142,10 +141,10 @@ class RascalWrapperParsingTests extends FlatSpec with Matchers {
          , "MiniCalc.rsc"
          , "MiniConfigMod.rsc"
          , "unported/MarvolCompile.rsc"
-         , "unported/NormalizePHPScript.rsc"
+         , "NormalizePHPScript.rsc"
          , "unported/ConvertRascalType.rsc")
 
-  TableDrivenPropertyChecks.forAll(testRscliFiles) { (testFile : String) =>
+  TableDrivenPropertyChecks.forAll(testRscliFiles) { testFile : String =>
     it should s"parse and translate $testFile without any error" in {
       parseAndTranslateWithoutAnyError(testFile)
     }
