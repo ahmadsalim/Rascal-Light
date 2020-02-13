@@ -133,7 +133,6 @@ Expression evaluate(map[Ident,int] constants, Expression exp){
 		case gt(nat(lhs),nat(rhs)) => lhs > rhs ? \true() : \false()
 		case leq(nat(lhs),nat(rhs)) => lhs <= rhs ? \true() : \false()
 		case geq(nat(lhs),nat(rhs)) => lhs >= rhs ? \true() : \false()
-		case geq(nat(lhs),nat(rhs)) => nat((lhs >= rhs) ? 1 : 0)
 
 		// some rewrite rules for cases with unkown variables, like (x + 2) + 3
 		case add(add(lhs,nat(v1)),nat(v2)) => add(lhs,nat(v1+v2))

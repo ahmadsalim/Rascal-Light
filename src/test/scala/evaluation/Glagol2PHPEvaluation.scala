@@ -52,8 +52,7 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
           })
         val initialRefinements = new Refinements(Map())
         val rtops = RefinementTypeOps(datatypes, initialRefinements)
-        val simpleExpr = rtops.excluding("Expression",
-          Set("negative", "positive"))
+        val simpleExpr = rtops.excluding("Expression", Set("negative", "positive"))
         val initialStore = TypeStoreV(Map("expr" -> VoideableRefinementType(possiblyVoid = false, simpleExpr)))
         AbstractRefinementTypeExecutor.execute(moddef, "toPhpExpr",
           initialStore = Some(initialStore), initialRefinements = initialRefinements,

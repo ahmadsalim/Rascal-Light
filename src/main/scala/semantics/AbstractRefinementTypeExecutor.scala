@@ -257,17 +257,18 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
 
   def matchPattAll[RT <: RefinementType : ClassTag](store: TypeStore, scrtyp: RefinementType, size: Intervals.Positive.Interval, spatts: List[StarPatt],
                    construct: (RefinementType, Intervals.Positive.Interval) => RT,
-                   destruct: RT => (RefinementType, Intervals.Positive.Interval)): Set[(TypeStore, RT, Set[Map[syntax.VarName, VoideableRefinementType]])] = {
+                   destruct: RT => (RefinementType, Intervals.Positive.Interval),
+                   catchAll: Boolean = false): Set[(TypeStore, RT, Set[Map[syntax.VarName, VoideableRefinementType]])] = {
     if (Lattice[Intervals.Positive.Interval].isBot(size)) Set()
     else spatts match {
       // No refinements on store and scrutinee possible on empty list pattern on failure, and if succesful we can be more specific about the element type
       case Nil =>
         val errMatch: Set[(TypeStore, RT, Set[Map[syntax.VarName, VoideableRefinementType]])]  =
-          if (IntegerW.<(0, size.ub))
+          if (IntegerW.<(0, size.ub) && !catchAll)
             Set((store, construct(scrtyp, Intervals.Positive.makeInterval(IntegerW.max(1, size.lb), size.ub)), Set()))
           else Set()
         val succMatch: Set[(TypeStore, RT, Set[Map[syntax.VarName, VoideableRefinementType]])] =
-          if (Intervals.Positive.contains(size, 0))
+          if (Intervals.Positive.contains(size, 0) && !catchAll)
             Set((store, construct(NoRefinementType, Intervals.Positive.singleton(0)), Set(Map())))
           else Set()
         errMatch ++ succMatch
@@ -297,12 +298,12 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
           case ArbitraryPatt(sx) =>
             def bindVar: Set[(TypeStore, RT, Set[Map[syntax.VarName, VoideableRefinementType]])] = {
               val bindRes: Set[(TypeStore, RT, Set[Map[syntax.VarName, VoideableRefinementType]])] =
-                matchPattAll(dropVars(store, Set(sx)), scrtyp, Intervals.Positive.makeInterval(0, size.ub), sps, construct, destruct).flatMap { case (refinestore, _, envps) =>
+                matchPattAll(dropVars(store, Set(sx)), scrtyp, Intervals.Positive.makeInterval(0, size.ub), sps, construct, destruct, catchAll = sps.isEmpty).flatMap { case (refinestore, _, envps) =>
                   merge(List(Set(Map(sx -> VoideableRefinementType(possiblyVoid = false, construct(scrtyp, Intervals.Positive.makeInterval(0, size.ub))))),envps)).flatMap { mergeenv =>
                    Set((refinestore, construct(scrtyp, size), mergeenv))
                   }
                 }
-              val exhRes: Set[(TypeStore, RT, Set[Map[syntax.VarName, VoideableRefinementType]])] = Set((dropVars(store, Set(sx)), construct(scrtyp, size), Set()))
+              val exhRes: Set[(TypeStore, RT, Set[Map[syntax.VarName, VoideableRefinementType]])] = if (sps.isEmpty) Set() else Set((dropVars(store, Set(sx)), construct(scrtyp, size), Set()))
               bindRes ++ exhRes
             }
             getVar(store, sx).fold(bindVar) { vsxtyp =>
@@ -444,7 +445,8 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
           else Set()
         val listRes: Set[MatchPattRes] = scrvrtyp.refinementType match {
           case ListRefinementType(elementType, length) =>
-            matchPattAll[ListRefinementType](store, elementType, length, spatts.toList, ListRefinementType, lrt => (lrt.elementType, lrt.length)).map {
+            val chpatts = matchPattAll[ListRefinementType](store, elementType, length, spatts.toList, ListRefinementType, lrt => (lrt.elementType, lrt.length))
+            chpatts.map {
               case (refinestore, rty, envs) =>
                 (refinestore, VoideableRefinementType(possiblyVoid = false, rty), envs)
             }

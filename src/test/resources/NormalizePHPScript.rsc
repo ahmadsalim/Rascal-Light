@@ -24,8 +24,6 @@ public data NameOrExpr = nameE(Name name) | expr(Expr expr);
 
 public data CastType = intTy() | boolTy() | floatTy() | stringTy() | arrayTy() | objectTy() | unsetTy();
 
-public data ClosureUse = closureUse(Expr varName, bool byRef);
-
 public data IncludeType = includeTy() | includeOnceTy() | requireTy() | requireOnceTy();
 
 // NOTE: In PHP, yield is a statement, but it can also be used as an expression.
@@ -45,12 +43,11 @@ public data Expr
 	| new(NameOrExpr className, list[ActualParameter] parameters)
 	| cast(CastType castType, Expr expr)
 	| clone(Expr expr)
-	| closure(list[Stmt] statements, list[Param] params, list[ClosureUse] closureUses, bool byRef, bool static)
 	| fetchConst(Name name)
 	| empty(Expr expr)
 	| suppress(Expr expr)
 	| eval(Expr expr)
-	| exit(OptionExpr exitExpr)
+	| exit(OptionExpr exitExpr, Bool b)
 	| call(NameOrExpr funName, list[ActualParameter] parameters)
 	| methodCall(Expr target, NameOrExpr methodName, list[ActualParameter] parameters)
 	| staticCall(NameOrExpr staticTarget, NameOrExpr methodName, list[ActualParameter] parameters)
@@ -101,7 +98,6 @@ public data HTMLNominal = no_html_text() | html_text();
 
 public data Stmt
 	= \break(OptionExpr breakExpr)
-	| classDef(ClassDef classDef)
 	| constE(list[Const] consts)
 	| \continue(OptionExpr continueExpr)
 	| declare(list[Declaration] decls, list[Stmt] body)
@@ -116,8 +112,6 @@ public data Stmt
 	| haltCompiler(str remainingText)
 	| \if(Expr cond, list[Stmt] body, list[ElseIf] elseIfs, OptionElse elseClause)
 	| inlineHTML(HTMLNominal htmlText)
-	| interfaceDef(InterfaceDef interfaceDef)
-	| traitDef(TraitDef traitDef)
 	| label(str labelName)
 	| namespace(OptionName nsName, list[Stmt] body)
 	| namespaceHeader(Name namespaceName)
@@ -146,148 +140,80 @@ public data Else = \else(list[Stmt] body);
 
 public data Use = use(Name importName, OptionName asName);
 
-public data ClassItem
-	= propertyCI(set[Modifier] modifiers, list[Property] prop)
-	| constCI(list[Const] consts)
-	| method(str name, set[Modifier] modifiers, bool byRef, list[Param] params, list[Stmt] body)
-	| traitUse(list[Name] traits, list[Adaptation] adaptations)
-	;
-
-public data Adaptation
-	= traitAlias(OptionName traitName, str methName, set[Modifier] newModifiers, OptionName newName)
-	| traitPrecedence(OptionName traitName, str methName, set[Name] insteadOf)
-	;
-
-public data Property = property(str propertyName, OptionExpr defaultValue);
-
-public data Modifier = publicM() | privateM() | protectedM() | staticM() | abstractM() | finalM();
-
-public data ClassDef = class(str className,
-							 set[Modifier] modifiers,
-							 OptionName extends,
-							 list[Name] implements,
-							 list[ClassItem] members);
-
-public data InterfaceDef = interface(str interfaceName,
-									list[Name] extends,
-									list[ClassItem] members);
-
-public data TraitDef = trait(str traitName, list[ClassItem] members);
-
 public data StaticVar = staticVar(str name, OptionExpr defaultValue);
 
 public data Script = script(list[Stmt] body) | errscript(str err);
 
-public Script oldNamespaces(Script s) {
-	solve(s) {
-		s = visit(s) {
-			case namespaceHeader(Name nn) => namespace(someName(nn), [])
-		}
-	}
-	return s;
-}
-
-public Stmt createIf(ElseIf e, OptionElse oe) {
-    switch (e) {
-      case elseIf(Expr cond, list[Stmt] body): return \if(cond, body, [], oe);
-    }
-}
-
-public Script normalizeIf(Script s) {
-	solve(s) {
-		s = bottom-up visit(s) {
-			case Stmt i:\if(cond,body,elseifs,els) => ({
-				if (size(elseifs) > 0) {
-					workingElse = els;
-					for (e <- reverse(elseifs)) {
-						newIf = createIf(e, workingElse);
-						workingElse = someElse(\else([newIf]));
-					}
-					\if(cond,body,[],workingElse);
-				} else i;
-			})
-		}
-	}
-	return s;
-}
-
-// Good as example
-public Script flattenBlocks(Script s) {
-	solve(s) {
-		s = bottom-up visit(s) {
-			case list[Stmt] stmtList: [*xs,block(list[Stmt] ys),*zs] => xs + ys + zs
-		}
-	}
-	return s;
-}
-
-public Script discardEmpties(Script s) {
-	solve(s) {
-		s = bottom-up visit(s) {
-			case list[Stmt] stmtList: [*xs,emptyStmt(),*zs] => xs + zs
-		}
-	}
-	return s;
-}
-
 public Script useBuiltins(Script s) {
-	solve(s) {
-		s = bottom-up visit(s) {
+		return bottom-up visit(s) {
 			case call(nameE(name(n_isset())),params) => ({
 			   list[Expr] es = [];
 			   for (ap <- params)
 			     switch(ap) {
 			       case actualParameter(e,_,_):
-			         es = es + e;
+			         es = es + [e];
 			       case _:;
 			     };
 			   isSet(es);
 			})
 
-			case call(nameE(name(n_exit())),[]) => exit(noExpr(), true)
+			case call(nameE(name(n_exit())), params) => ({
+			  OptionExpr ine;
+			  switch (params) {
+			    case []: ine = noExpr();
+			    case [actualParameter(e, _, _), *ps]: ine = someExpr(e);
+			  };
+			  exit(ine, true);
+			})
 
-			case call(nameE(name(n_exit())),[actualParameter(e,_,_)]) => exit(someExpr(e), true)
+			case call(nameE(name(n_die())), params) => ({
+			  OptionExpr ine;
+			  switch (params) {
+			    case []: ine = noExpr();
+			    case [actualParameter(e, _, _)]: ine = someExpr(e);
+			  };
+			  exit(ine, false);
+			})
 
-			case call(nameE(name(n_die())),[]) => exit(noExpr(), false)
-
-			case call(nameE(name(n_die())),[actualParameter(e,_,_)]) => exit(someExpr(e), false)
-
-			case call(nameE(name(n_print())),[actualParameter(e,_,_)]) => printE(e)
+			case call(nameE(name(n_print())), params) => ({
+			     Expr ine;
+			     switch (params) {
+			        case [actualParameter(e,_,_)]: ine = e;
+			     }
+			     printE(ine);
+			 })
 
 			case exprstmt(call(nameE(name(n_unset())),params)) => ({
 			   list[Expr] es = [];
 			   for (ap <- params)
 			     switch(ap) {
 			       case actualParameter(e,_,_):
-			         es = es + e;
+			         es = es + [e];
 			       case _:;
 			     };
 			   unset(es);
 			})
 
-			case call(nameE(name(n_empty())),[actualParameter(e,_,_)]) => empty(e)
+			case call(nameE(name(n_empty())), params) => ({
+			    Expr ine;
+                switch (params) {
+                    case [actualParameter(e,_,_)]: ine = e;
+                };
+                empty(ine);
+			})
 
-			case call(nameE(name(n_eval())),[actualParameter(e,_,_)]) => eval(e)
-		}
-	}
-	return s;
+			case call(nameE(name(n_eval())), params) => ({
+			    Expr ine;
+			    switch (params) {
+			        case [actualParameter(e,_,_)]: ine = e;
+			    };
+                eval(ine);
+			})
+		};
 }
 
 public Script discardHTML(Script s) {
-	solve(s) {
-		s = bottom-up visit(s) {
+	return bottom-up visit(s) {
 			case inlineHTML(_) => inlineHTML(no_html_text())
-		}
-	}
-	return s;
-}
-
-public Script normalizeScript(Script sc) {
-		sc = oldNamespaces(sc);
-		sc = normalizeIf(sc);
-		sc = flattenBlocks(sc);
-		sc = discardEmpties(sc);
-		sc = useBuiltins(sc);
-		sc = discardHTML(sc);
-		return sc;
+    };
 }
