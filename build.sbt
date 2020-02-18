@@ -17,7 +17,7 @@ organization := "com.github.itu-square"
 organizationName := "SQUARE @ IT University of Copenhagen"
 organizationHomepage := Some(url("https://github.com/itu-square"))
 
-scalaVersion := "2.12.1"
+scalaVersion := "2.12.2"
 
 resolvers += Resolver.sonatypeRepo("releases")
 

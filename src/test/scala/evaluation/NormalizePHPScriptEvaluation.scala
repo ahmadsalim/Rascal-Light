@@ -18,7 +18,7 @@ class NormalizePHPScriptEvaluation extends Evaluation("normalize-php-script-eval
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("Script"), Some(memoinfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, DataType("Script"), Some(memoinfo), Some(duration), s"discardHTML: $confname")
       }
     }
   }
@@ -49,7 +49,7 @@ class NormalizePHPScriptEvaluation extends Evaluation("normalize-php-script-eval
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("Script"), Some(memoinfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, DataType("Script"), Some(memoinfo), Some(duration), s"useBultins: $confname")
       }
     }
   }

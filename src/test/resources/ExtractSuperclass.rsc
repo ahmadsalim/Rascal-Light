@@ -61,4 +61,3 @@ Package extractSuperclass(Package pkg, ClassNominal clsupername) {
 	pkg.superclass = justclass(clsuper);
 	return pkg;
 }
-

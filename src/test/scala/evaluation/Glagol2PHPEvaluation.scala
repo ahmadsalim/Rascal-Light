@@ -32,7 +32,7 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("PhpExpr"), Some(memoinfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, DataType("PhpExpr"), Some(memoinfo), Some(duration), s"simple expr: $confname")
       }
     }
   }
@@ -60,7 +60,7 @@ class Glagol2PHPEvaluation extends Evaluation("glagol-2-php-evaluation") {
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("PhpExpr"), Some(memoinfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, DataType("PhpExpr"), Some(memoinfo), Some(duration), s"unary expr: $confname")
       }
     }
   }

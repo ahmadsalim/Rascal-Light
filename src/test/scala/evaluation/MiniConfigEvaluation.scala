@@ -32,7 +32,7 @@ class MiniConfigEvaluation extends Evaluation("mini-config-evaluation") {
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("Expression"), Some(memoinfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, DataType("Expression"), Some(memoinfo), Some(duration), s"ifelse: $confname")
       }
     }
   }
@@ -63,7 +63,7 @@ class MiniConfigEvaluation extends Evaluation("mini-config-evaluation") {
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("Expression"), Some(memoinfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, DataType("Expression"), Some(memoinfo), Some(duration), s"rel: $confname")
       }
     }
   }

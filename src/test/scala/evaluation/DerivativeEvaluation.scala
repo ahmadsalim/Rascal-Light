@@ -37,7 +37,7 @@ class DerivativeEvaluation extends Evaluation("derivative-evaluation") {
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("Exp"), Some(memoinfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, DataType("Exp"), Some(memoinfo), Some(duration), s"zero: $confname")
       }
     }
   }
@@ -73,12 +73,12 @@ class DerivativeEvaluation extends Evaluation("derivative-evaluation") {
             "e" -> VoideableRefinementType(possiblyVoid = false, DataRefinementType("Exp", Some(expref))),
             "v" -> VoideableRefinementType(possiblyVoid = false, DataRefinementType("VarNominal", Some(xref)))
           ))
-        AbstractRefinementTypeExecutor.execute(moddef, "derivative", initialRefinements = initialRefinements,
+        AbstractRefinementTypeExecutor.execute(moddef, "dd", initialRefinements = initialRefinements,
           initialStore = Some(initialStore), refinedMatches = refinement, memoWidening = memowidening)
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("Exp"), Some(memoinfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, DataType("Exp"), Some(memoinfo), Some(duration), s"linear: $confname")
       }
     }
   }

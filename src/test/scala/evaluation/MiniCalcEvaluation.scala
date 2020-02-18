@@ -19,7 +19,7 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("CExpr"), Some(memoinfo), Some(duration))
+        memsOK(module, refinements, tmems, DataType("CExpr"), Some(memoinfo), Some(duration), s"simpl: $confname")
       }
     }
   }
@@ -50,7 +50,7 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("CType"), Some(memoinfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, DataType("CType"), Some(memoinfo), Some(duration), s"type: $confname")
       }
     }
   }
@@ -81,7 +81,7 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, meminfo, duration) =>
-        memsOK(module, refinements, tmems, DataType("CVal"), Some(meminfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, DataType("CVal"), Some(meminfo), Some(duration), s"eval: $confname")
       }
     }
   }
@@ -114,7 +114,7 @@ class MiniCalcEvaluation extends Evaluation("mini-calc-evaluation") {
       }
       modExecRes shouldBe a[\/-[_]]
       modExecRes.foreach { case (module, refinements, tmems, memoinfo, duration) =>
-        memsOK(module, refinements, tmems, ListType(DataType("CInstr")), Some(memoinfo), Some(duration), confname)
+        memsOK(module, refinements, tmems, ListType(DataType("CInstr")), Some(memoinfo), Some(duration), s"comp: $confname")
       }
     }
   }
