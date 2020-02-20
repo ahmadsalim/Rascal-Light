@@ -1147,12 +1147,6 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
         val (funresty, funpars, funbody) = module.funs(functionName)
         val argpartyps = argtys.zip(funpars.map(_.typ))
         def go(argtys: List[VoideableRefinementType], callstore: TypeStore, prevRes: TypeMemories[VoideableRefinementType, Unit], reccount: Int): TypeMemories[VoideableRefinementType, Unit] = {
-          if (functionName == "compile")
-            logger.debug(
-              s"""
-                 | call: $functionName(${argtys.mkString(", ")})
-                 | store: ${TypeStore.pretty(callstore)}
-               """.stripMargin)
           val memoKey = functionName -> argtys.map(at => atyping.inferType(at.refinementType))
           val newFunMemo: FunMemo = funMemo.updated(memoKey, ((argtys, callstore), prevRes))
           val newRes = funbody match {
@@ -1207,11 +1201,6 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
             funMemo.get(functionName -> argtys.map(at => atyping.inferType(at.refinementType)))
               .fold {
                 _memoMissesCount.set(_memoMissesCount.get + 1)
-                if (functionName == "compile")
-                  logger.debug(
-                    s"""
-                       | miss
-                     """.stripMargin)
                 go(argtys, callstore, Lattice[TypeMemories[VoideableRefinementType, Unit]].bot, reccount = 0)
               } { case ((prevargtys, prevstore), prevres) =>
               val paapairs = prevargtys.zip(argtys)
@@ -1220,13 +1209,6 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
               val memores =
                 if (allLess && storeLess) {
                   _memoHitsCount.set(_memoHitsCount.get + 1)
-                  if (functionName == "compile")
-                    logger.debug(
-                      s"""
-                        | hit
-                        | mem: ${TypeMemories.pretty(prevres)}
-                        | result: $prevres
-                      """.stripMargin)
                  prevres
                 }
                 else {
@@ -1238,12 +1220,6 @@ case class AbstractRefinementTypeExecutor(module: Module, initialRefinements: Re
                     prevargtys :+ paapwid
                   }
                   val newstore = Lattice[TypeStore].widen(prevstore, callstore)
-                  if (functionName == "compile")
-                    logger.debug(s"""
-                       | widen
-                       | widened args: ${newargtys.mkString(", ")}
-                       | wiedened store: ${TypeStore.pretty(newstore)}
-                     """.stripMargin)
                   go(newargtys, newstore, Lattice[TypeMemories[VoideableRefinementType, Unit]].bot, reccount = 0)
                 }
               memores

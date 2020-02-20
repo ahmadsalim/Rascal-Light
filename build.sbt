@@ -38,6 +38,6 @@ libraryDependencies += "org.codehaus.groovy" % "groovy-all" % "2.5.8"
 
 addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3")
 
-testOptions in Test += Tests.Argument("-oDF")
+testOptions in Test += Tests.Argument("-oD")
 
 cancelable in Global := true
